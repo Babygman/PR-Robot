@@ -13,9 +13,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from app.core.config import settings  # noqa: E402
 from app.db.base import Base  # noqa: E402
-
-# Phase 2 จะ import model modules ที่นี่ เพื่อให้ Base.metadata เห็นตารางทั้งหมด
-# from app.models import purchasing_requisition  # noqa: F401
+import app.models  # noqa: E402,F401  — import ทุก Model ให้ Base.metadata เห็นตารางทั้งหมด
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

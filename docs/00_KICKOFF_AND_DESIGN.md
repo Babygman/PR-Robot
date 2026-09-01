@@ -133,18 +133,31 @@ Docker Compose ไฟล์จริงสำหรับ UAT/PROD ของ PR-
 
 ---
 
-## 4. Database Design (High-level)
+## 4. Database Design (High-level) — Implemented Phase 2 (2026-09-01)
+
+**Business Decisions ที่ Product Owner ยืนยันแล้ว (มีผลต่อ Schema นี้):**
+- ไม่มีแบบฟอร์มหน้า 2-3 — ใช้เฉพาะฟิลด์หน้า 1/3 ไปก่อน อาจ Redesign ทั้งฟอร์มทีหลัง
+- `pr_no` เป็น Running Number ต่อเนื่องตลอด ไม่รีเซ็ตรายปี/แผนก — Unique Integer, วิธี
+  Generate เลขถัดไปเป็น Business Logic ชั้น Application (Phase 4-5) ไม่ใช่ DB Sequence
+- `requested_by_id` / `reviewed_by_id` / `approved_by_id` / `received_by_id` ทั้งหมดคือ
+  FK ไปยัง `users` — คือผู้ใช้ที่ Login ตอนทำ Action นั้น ไม่ใช่ช่องกรอกข้อความอิสระ
+  ใช้แสดงชื่อตอนพิมพ์ฟอร์มให้เซ็นจริงเท่านั้น
 
 | Table | Field หลัก |
 |---|---|
-| `users` | id, name, email, password_hash, role (requester / reviewer / approver / receiver / admin), department, is_active |
-| `purchasing_requisitions` | id, pr_no, section, division, doc_date, status (draft / reviewed / approved / received), requested_by_id, reviewed_by_id, approved_by_id, received_by_id, remark, created_at, updated_at |
-| `pr_items` | id, pr_id (FK), item_no, account_code, description, quantity, required_date, reason, ref_po |
-| `pr_budget_control` | id, pr_id (FK), account_code_1, account_code_2, budget, used_before_amount, this_application, balance |
-| `source_documents` | id, pr_id (FK, nullable), file_path, doc_type (quotation / receiving_note / other), uploaded_by_id, uploaded_at, ai_extraction_raw_json, ai_confidence |
-| `audit_log` | id, pr_id (FK), action, actor_id, timestamp, detail |
+| `users` | id, name, email (unique), password_hash, department, is_active, can_review, can_approve, can_receive, is_admin, created_at |
+| `purchasing_requisitions` | id, pr_no (unique), section, division, doc_date, status (`pr_status` enum: draft/reviewed/approved/received), requested_by_id (FK), reviewed_by_id/reviewed_at, approved_by_id/approved_at, received_by_id/received_at, remark, created_at, updated_at |
+| `pr_items` | id, pr_id (FK, cascade delete), item_no, account_code, description, quantity, required_date, reason, ref_po |
+| `pr_budget_control` | id, pr_id (FK, unique, cascade delete), account_code_1, account_code_2, budget, used_before_amount, this_application, balance |
+| `source_documents` | id, pr_id (FK, nullable, set null), file_path, doc_type (`source_doc_type` enum: quotation/receiving_note/other), uploaded_by_id (FK), uploaded_at, ai_extraction_raw_json (JSON), ai_confidence |
+| `audit_log` | id, pr_id (FK, nullable, set null), action, actor_id (FK, nullable), timestamp, detail (JSON) |
 
-หมายเหตุ: ฟิลด์ข้างต้นอ้างอิงจากแบบฟอร์มหน้า 1/3 เท่านั้น (Section, Division, No., Date, Item/Account Code/Description/Quantity/Required Date/Reason/Ref.PO, Budget Control, Remark, Requested/Reviewed/Approved/Received by) — จะปรับเพิ่มเมื่อได้รับหน้า 2-3
+**Implementation:** SQLAlchemy 2.0 Typed Models ใน `app/models/`, Alembic Migration
+`alembic/versions/cdfbb940153e_pr_core_schema.py` (Revises baseline `3e95cf5ab690`)
+
+**Verification (2026-09-01):** `ruff check .` ผ่านสะอาด, `pytest` ผ่าน, ทดสอบ
+Upgrade → Downgrade → Upgrade ตาม PROJECT_STANDARD ข้อ 6 ผ่านสมบูรณ์ (SQLite Sandbox),
+ทดสอบ ORM Round-trip จริง (สร้าง User → PR → Item → Budget Control → Query กลับ) ผ่าน
 
 ---
 
@@ -154,7 +167,7 @@ Docker Compose ไฟล์จริงสำหรับ UAT/PROD ของ PR-
 |---|---|---|
 | 0 | Kickoff & Design (เอกสารนี้) | เอกสารนี้ + อนุมัติจาก Product Owner |
 | 1 | Infra Readiness: Init Repo, Docker Compose (Dev DB), Alembic baseline, โครง FastAPI project, `.env.example` | Repo พร้อม Dev Environment รันได้ |
-| 2 | Database Schema + Migration จริงตามข้อ 4 | Schema ใช้งานได้ ผ่าน Alembic Upgrade/Downgrade |
+| 2 | Database Schema + Migration จริงตามข้อ 4 | **เสร็จแล้ว (2026-09-01)** — Schema ใช้งานได้ ผ่าน Alembic Upgrade/Downgrade/Upgrade + ORM Round-trip จริง |
 | 3 | Authentication & Role-based Access (Login, จัดการ User/Role) | ระบบ Login แยกสิทธิ์ 4 บทบาท |
 | 4 | Upload + AI Extraction (Gemini) + หน้าตรวจทาน/แก้ไขข้อมูล | อัปโหลดเอกสาร → เห็นข้อมูลที่ AI สกัด → แก้ไขได้ |
 | 5 | บันทึก PR + Generate PDF ตาม Template จริง | ได้ไฟล์ PR ที่กรอกครบ พิมพ์ได้ |
@@ -164,11 +177,15 @@ Docker Compose ไฟล์จริงสำหรับ UAT/PROD ของ PR-
 
 ---
 
-## 6. Open Items — รอข้อมูลเพิ่มจาก Product Owner
+## 6. Open Items
 
-- [ ] แบบฟอร์มหน้า 2/3 และ 3/3 ของ Purchasing Requisition (ผู้ใช้แจ้งว่าจะส่งให้เพิ่มเติม)
-- [ ] Google Gemini API Key (ต้องขอ Free Tier API Key มาใส่ใน `.env`)
-- [ ] รูปแบบเลขที่ PR (Running Number ต่อปี? ต่อ Section?) — เอกสารตัวอย่างมีเลข "0290" ที่มุมขวาบน
-- [ ] รายชื่อ User เริ่มต้นและบทบาท (ใครเป็น Requester/Reviewer/Approver/Receiver)
-- [ ] Sub-domain สำหรับ UAT/PROD ที่จะตั้งใน Nginx Proxy Manager
+**ตอบแล้ว (2026-09-01):**
+- [x] แบบฟอร์มหน้า 2/3, 3/3 — ไม่มี ใช้เฉพาะหน้า 1 ไปก่อน อาจ Redesign ทั้งฟอร์มทีหลัง
+- [x] รูปแบบเลขที่ PR — Running Number ต่อเนื่องตลอด ไม่รีเซ็ตรายปี/แผนก
+- [x] Requested/Reviewed/Approved/Received by — คือผู้ใช้ที่ Login ทำ Action นั้น ไม่ใช่ช่องกรอกข้อมูล
+
+**ยังรออยู่:**
+- [ ] Google Gemini API Key (ต้องขอ Free Tier มาใส่ใน `.env` — จำเป็นตอน Phase 4 ยังไม่ Block Phase 2-3)
+- [ ] รายชื่อ User เริ่มต้นและบทบาท (ใครมีสิทธิ์ can_review / can_approve / can_receive) — จำเป็นตอน Phase 3
+- [ ] Sub-domain สำหรับ UAT/PROD ที่จะตั้งใน Nginx Proxy Manager — จำเป็นตอน Phase 7
 
