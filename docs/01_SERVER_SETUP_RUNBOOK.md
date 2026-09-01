@@ -47,28 +47,96 @@ docker network inspect npm_proxy --format '{{range .Containers}}{{.Name}} {{end}
 
 ## ขั้นตอนที่ 6 (สำคัญ — กันหลุดตอน Redeploy ในอนาคต)
 
-ขั้นตอนที่ 4 เป็นการต่อ Network แบบ Manual บน Container ที่รันอยู่ตอนนี้เท่านั้น
-ถ้าวันหลัง Redeploy Stack ของ NPM ใหม่ผ่าน Portainer (เช่นตอนอัปเดตเวอร์ชัน)
-Container จะถูกสร้างใหม่และหลุดจาก Network นี้ทันที ต้องแก้ที่ตัว Stack ให้ถาวร:
+**ยืนยันแล้วจาก Server จริง (2026-09-01):** Stack `nginx-proxy-manager` รันด้วย
+`docker compose` ตรงจาก Terminal (ไม่ได้ผ่าน Portainer สร้าง) Portainer จึงมองเห็น
+แต่ขึ้น "This stack was created outside of Portainer. Control over this stack is
+limited." — ไม่มี Editor ให้แก้ผ่านหน้าเว็บ ต้องแก้ไฟล์ตัวจริงบน Server แทน:
 
-1. Portainer → **Stacks** → เลือก Stack ของ Nginx Proxy Manager
-2. เปิดไฟล์ Compose ของ Stack ดูชื่อ Service จริง (ตัวอย่างสมมติว่าชื่อ `app`)
-   แล้วเพิ่ม:
+- ไฟล์: `/opt/docker/nginx-proxy-manager/compose.yaml`
+- Service name: `npm`
 
-   ```yaml
-   services:
-     app:                 # แก้ชื่อให้ตรงกับ Service จริงในไฟล์
-       networks:
-         - default
-         - npm_proxy
+เนื้อหาต้นฉบับ (ก่อนแก้):
 
-   networks:
-     npm_proxy:
-       external: true
-   ```
+```yaml
+services:
+  npm:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "81:81"
+      - "443:443"
+    volumes:
+      - ./data:/data
+      - ./letsencrypt:/etc/letsencrypt
+```
 
-3. กด **Update the stack** — Portainer จะ Recreate Container แต่ครั้งนี้
-   `npm_proxy` จะติดมาด้วยถาวร ไม่หลุดอีก
+แก้เป็น (เพิ่ม `networks:` ให้ Service `npm` และประกาศ `npm_proxy` เป็น External):
+
+```yaml
+services:
+  npm:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "81:81"
+      - "443:443"
+    volumes:
+      - ./data:/data
+      - ./letsencrypt:/etc/letsencrypt
+    networks:
+      - default
+      - npm_proxy
+
+networks:
+  default:
+  npm_proxy:
+    external: true
+```
+
+วิธีเขียนทับไฟล์บน Server (SSH):
+
+```bash
+sudo tee /opt/docker/nginx-proxy-manager/compose.yaml > /dev/null << 'EOF'
+services:
+  npm:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "81:81"
+      - "443:443"
+    volumes:
+      - ./data:/data
+      - ./letsencrypt:/etc/letsencrypt
+    networks:
+      - default
+      - npm_proxy
+
+networks:
+  default:
+  npm_proxy:
+    external: true
+EOF
+```
+
+จากนั้น Apply การเปลี่ยนแปลง (Container จะถูก Recreate สั้นๆ ไม่กี่วินาที ตอนนี้ยัง
+ไม่มี Proxy Host ตั้งค่าใช้งานจริง จึงไม่กระทบ Traffic ใคร):
+
+```bash
+cd /opt/docker/nginx-proxy-manager
+docker compose up -d
+```
+
+ตรวจสอบผลว่ายังอยู่ใน `npm_proxy` เหมือนเดิม:
+
+```bash
+docker network inspect npm_proxy --format '{{range .Containers}}{{.Name}} {{end}}'
+```
 
 ---
 
