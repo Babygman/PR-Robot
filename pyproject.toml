@@ -1,0 +1,11 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# env.py ต้อง sys.path.append() ก่อน import app.* โดยเจตนา จึงจัดกลุ่ม import แบบ isort ปกติไม่ได้
+"alembic/env.py" = ["I001"]

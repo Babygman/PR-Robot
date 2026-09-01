@@ -1,0 +1,33 @@
+# Dev-only Docker Compose: ให้บริการเฉพาะ PostgreSQL
+# ตาม PROJECT_STANDARD.md ข้อ 3 (Runtime Architecture) — Database Server
+# ให้บริการ Database เท่านั้น ไม่รวม Application ไว้ด้วยกัน
+#
+# วิธีใช้ (รันบน MacBook Air ผ่าน Terminal ของโปรเจกต์):
+#   docker compose up -d
+#   docker compose logs -f db
+#   docker compose down          # หยุดแต่เก็บข้อมูลไว้ใน volume
+#
+# Application (FastAPI) รันแยกด้วย uvicorn จาก Virtual Environment
+# ไม่ได้รวมอยู่ใน Compose นี้สำหรับ Dev (ตามมาตรฐาน Runtime Architecture)
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: pr_robot_dev_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pr_robot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pr_robot}
+      POSTGRES_DB: ${POSTGRES_DB:-pr_robot}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pr_robot_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pr_robot} -d ${POSTGRES_DB:-pr_robot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pr_robot_pgdata:
