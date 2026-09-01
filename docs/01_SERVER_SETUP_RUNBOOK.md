@@ -1,5 +1,7 @@
 # Server Setup Runbook — SCTUBUNTU01 (One-time, Manual)
 
+**สถานะ: เสร็จสมบูรณ์แล้ว (ยืนยัน 2026-09-01)** — `npm_proxy` network สร้างแล้ว, `nginx-proxy-manager` ต่อเข้า Network นี้แบบถาวรผ่านไฟล์ Compose แล้ว (ทดสอบ Recreate Container ผ่าน `docker compose up -d` แล้วยังอยู่ใน Network เหมือนเดิม) พร้อมสำหรับ Deploy App แรกในอนาคต
+
 ทำครั้งเดียวก่อน Deploy App แรกที่ต้องผ่าน Nginx Proxy Manager (NPM)
 ต้องทำเองผ่าน SSH หรือ Portainer UI — Session นี้ไม่มีเครื่องมือเข้าถึง
 Server 10.206.1.107 โดยตรง
