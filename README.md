@@ -86,5 +86,6 @@ ruff check .
 | Alembic Baseline | ✅ | `alembic/versions/<hash>_baseline.py` (upgrade/downgrade ว่าง รอ Phase 2 ใส่ Schema จริง) |
 | Application Code (FastAPI/Alembic/SQLAlchemy) ทำงานถูกต้องจริง | ✅ | ตรวจใน Sandbox แยกต่างหาก: `alembic upgrade head` รันจริงกับ SQLite (Postgres ติดตั้งไม่ได้ใน Sandbox นี้ — ไม่มี root, ไม่มี Wheel ของ pgserver สำหรับ Linux aarch64), สร้างตาราง `alembic_version` สำเร็จ, `uvicorn` รันแอปจริง, `curl /health` และ `/health/db` ตอบ 200 พร้อม Query ฐานข้อมูลจริงสำเร็จ |
 | `docker-compose.yml` Schema ถูกต้อง | ✅ | Parse ผ่าน PyYAML, มี `services.db`, `healthcheck`, Named Volume ครบ |
-| Docker Desktop ทำงานจริงบน MacBook Air | ⏳ รอ | **จุดเดียวที่ตรวจจากระยะไกลไม่ได้จริงๆ** — ต้องใช้ Docker Desktop ของคุณเองบนเครื่องคุณ ไม่มีเครื่องมือใดที่ Claude เข้าถึงได้ (Cowork Sandbox, Cloud Container) ที่เป็นเครื่อง Mac จริงของคุณ ทางเลือก: รันเองครั้งเดียว หรือให้ผมช่วย Validate ผ่าน Docker บน SCTUBUNTU01 (มี Docker จริงอยู่แล้ว) แทน |
+| Migration + Driver ทำงานจริงกับ PostgreSQL จริง (ไม่ใช่ SQLite) | ✅ | ยืนยันแล้ว 2026-09-01 บน Docker จริงที่ SCTUBUNTU01: `alembic upgrade head` รันกับ postgres:16-alpine จริง สำเร็จ (`3e95cf5ab690 (head)`), เชื่อมต่อผ่าน psycopg2 จริง (`LIVE POSTGRES VERSION: PostgreSQL 16.15`) — Container/Network ที่ใช้ทดสอบถูกลบทิ้งหมดแล้วหลัง Test, ไม่กระทบ Stack อื่นบนเครื่อง |
+| Docker Desktop บน MacBook Air ของคุณเอง | ⏳ ไม่บังคับ | ยังไม่เคยตรวจจริง แต่ความเสี่ยงต่ำมากแล้ว เพราะ Code เดียวกันนี้พิสูจน์แล้วว่าใช้ได้กับ PostgreSQL จริงบน Docker เครื่องอื่น (SCTUBUNTU01) — ไม่ Block การไป Phase 2 |
 
