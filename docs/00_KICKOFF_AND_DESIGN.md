@@ -78,17 +78,58 @@ Requirement Analysis → Architecture → Database → Workflow → Roadmap
 
 ### 3.3 Runtime Architecture (Deployment)
 
+ยืนยันจากข้อมูล Server จริงที่ Product Owner ส่งมา (2026-09-01): SCTUBUNTU01 รัน
+Docker Standalone 29.7.2 ผ่าน Portainer CE (Community Edition) และมี Nginx Proxy
+Manager ติดตั้งพร้อมใช้งานแล้ว (ยังไม่มี Proxy Host ตั้งค่า) — เครื่องมี 8 CPU
+Cores / 16.1 GB RAM และมีเป้าหมายรันหลาย App หลาย Database บนเครื่องเดียวกัน
+(ไม่ใช่แค่ PR-Robot) จึงต้องออกแบบ Convention ที่ใช้ซ้ำได้กับทุก App ในอนาคต ไม่ใช่
+ออกแบบเฉพาะ PR-Robot เท่านั้น
+
 ```
 Hyper-V
-└── SCTUBUNTU01 (10.206.1.107) — Ubuntu 26.04 LTS
-    ├── Docker Engine + Portainer (:9443) + Nginx Proxy Manager (:81 / :80 / :443)
+└── SCTUBUNTU01 (10.206.1.107) — Ubuntu, Docker Standalone + Portainer CE
+    │
+    ├── Network: npm_proxy  (External, สร้างครั้งเดียว, ใช้ร่วมกันทุก App)
+    │     └── เชื่อม Web Container ของทุก Stack เข้ากับ Nginx Proxy Manager
+    │
     ├── Stack: pr-robot-uat
-    │     ├── Web (FastAPI, Uvicorn/Gunicorn)
-    │     └── DB (PostgreSQL)
-    └── Stack: pr-robot-prod
-          ├── Web (FastAPI, Uvicorn/Gunicorn)
-          └── DB (PostgreSQL)
+    │     ├── Network: pr-robot-uat_internal   (เฉพาะ Stack นี้)
+    │     ├── Web  (FastAPI) — อยู่ทั้งใน internal และ npm_proxy, ไม่ Publish Port
+    │     └── DB   (PostgreSQL) — อยู่ใน internal เท่านั้น, ไม่ Publish Port ออก Host
+    │
+    ├── Stack: pr-robot-prod  (โครงเดียวกับ uat แยกกันคนละ Stack/Network/Volume)
+    │
+    └── Stack: <app อื่นในอนาคต>  (App02, App03, ... ใช้ Convention เดียวกัน)
 ```
+
+**หลักการสำหรับ Host ที่รันหลาย App หลาย Database (ใช้กับทุก App บนเครื่องนี้ ไม่ใช่แค่ PR-Robot):**
+
+1. **1 Stack ต่อ 1 App ต่อ 1 Environment** — เช่น `pr-robot-uat`, `pr-robot-prod` ตรงตาม Diagram ใน PROJECT_STANDARD ข้อ 14 (แยก Logical Stack ต่อระบบ พร้อม DB ของตัวเอง)
+2. **2 Docker Network ต่อ Stack:**
+   - `internal` — สร้างใหม่ทุก Stack (เช่น `pr-robot-uat_internal`), เชื่อม Web ↔ DB ภายใน Stack เดียวกันเท่านั้น
+   - `npm_proxy` — Network เดียว สร้างครั้งเดียว ใช้ร่วมกันทุก Stack, เชื่อม Web Container ของทุก App เข้ากับ Nginx Proxy Manager ให้ Route ตามชื่อ Container ได้โดยไม่ต้อง Publish Port ออกสู่ Host
+3. **ห้าม Publish Port ของ Database ออกจาก Host โดยเด็ดขาดใน UAT/PROD** (ไม่มี `ports:` ใน DB Service) — เข้าถึง DB ได้จาก `internal` Network ของ Stack เดียวกันเท่านั้น ต่างจาก Dev ที่เปิด `127.0.0.1:5432` เพื่อความสะดวกบน Local ของ Developer
+4. **ตั้ง Resource Limit ทุก Service** (CPU/Memory Limit ผ่าน Portainer UI หรือ Compose `deploy.resources.limits`) กัน App ใด App หนึ่งกิน CPU/RAM จนกระทบ App อื่นบนเครื่องเดียวกัน — เครื่องมีจำกัดที่ 8 Core / 16GB ต้องแบ่งให้ทุก App
+5. **Naming Convention** กันชื่อชนกันเมื่อมีหลาย App ใน Portainer เดียวกัน:
+   - Stack: `<app>-<env>`
+   - Container: `<app>-<env>-<service>` เช่น `pr-robot-uat-web`, `pr-robot-uat-db`
+   - Volume: `<app>-<env>-pgdata`
+6. **Subdomain ผ่าน Nginx Proxy Manager:** `pr-robot.sct.local` (Prod), `pr-robot-uat.sct.local` (UAT) — ตั้ง Forward Hostname/Port เป็นชื่อ Container Web (เช่น `pr-robot-prod-web`) เพราะ NPM อยู่ใน `npm_proxy` Network เดียวกัน ไม่ต้องอิง IP หรือ Port ที่ Publish จาก Host เลย
+7. **Backup แยกตาม Stack:** แต่ละ App มี DB ของตัวเอง จึงต้องมี Job สำรองข้อมูล (`pg_dump`) แยกต่อ Stack ด้วย — ไม่มี Backup กลางที่ครอบคลุมทุก App อัตโนมัติ
+
+**สิ่งที่ต้องทำครั้งเดียวบน Server ก่อน Deploy App แรก (ทำผ่าน SSH หรือ Portainer UI เท่านั้น — Session นี้ไม่มีเครื่องมือเข้าถึง Server 10.206.1.107 โดยตรง):**
+
+```bash
+docker network create npm_proxy
+```
+
+จากนั้นแก้ Container ของ Nginx Proxy Manager ให้ Attach เข้า Network `npm_proxy` นี้ด้วย
+(ถ้ายังไม่ได้อยู่ใน Network เดียวกัน) — ทำผ่าน Portainer → Containers → nginx-proxy-manager
+→ Duplicate/Edit → Network เพิ่ม `npm_proxy` หรือแก้ Compose ของ NPM แล้ว Deploy ใหม่
+
+Docker Compose ไฟล์จริงสำหรับ UAT/PROD ของ PR-Robot จะเขียนใน **Phase 7 (Deploy)**
+ตาม Roadmap ข้อ 5 — เอกสารนี้บันทึก Convention ไว้ล่วงหน้าเพื่อให้ App อื่นในอนาคต
+ใช้ Pattern เดียวกันได้ทันที
 
 ---
 
