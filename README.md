@@ -84,7 +84,7 @@ ruff check .
 | Environment Configuration พร้อมใช้งาน | ✅ | `.env.example` พร้อม, ต้อง copy เป็น `.env` และกรอกค่าจริงเอง |
 | Secrets ถูกแยกออกจาก Git | ✅ | `.env` อยู่ใน `.gitignore` |
 | Alembic Baseline | ✅ | `alembic/versions/<hash>_baseline.py` (upgrade/downgrade ว่าง รอ Phase 2 ใส่ Schema จริง) |
-| Virtual Environment บนเครื่องจริง | ⏳ รอ | ต้องสร้างบน MacBook Air จริงตามขั้นตอนข้างต้น (สภาพแวดล้อมที่ใช้ตรวจสอบไฟล์เป็นแค่ Sandbox ไม่ใช่เครื่องจริง) |
-| Docker / Database Server ทำงานจริง | ⏳ รอ | ต้องรัน `docker compose up -d` บนเครื่องจริง (Docker ไม่สามารถเข้าถึงได้จาก Sandbox ที่ใช้เตรียมไฟล์นี้) |
-| Direct Database Connection / ORM Connection ผ่าน | ⏳ รอ | ตรวจสอบได้ด้วย `alembic upgrade head` และเปิด `/health/db` หลังรัน Docker แล้ว |
+| Application Code (FastAPI/Alembic/SQLAlchemy) ทำงานถูกต้องจริง | ✅ | ตรวจใน Sandbox แยกต่างหาก: `alembic upgrade head` รันจริงกับ SQLite (Postgres ติดตั้งไม่ได้ใน Sandbox นี้ — ไม่มี root, ไม่มี Wheel ของ pgserver สำหรับ Linux aarch64), สร้างตาราง `alembic_version` สำเร็จ, `uvicorn` รันแอปจริง, `curl /health` และ `/health/db` ตอบ 200 พร้อม Query ฐานข้อมูลจริงสำเร็จ |
+| `docker-compose.yml` Schema ถูกต้อง | ✅ | Parse ผ่าน PyYAML, มี `services.db`, `healthcheck`, Named Volume ครบ |
+| Docker Desktop ทำงานจริงบน MacBook Air | ⏳ รอ | **จุดเดียวที่ตรวจจากระยะไกลไม่ได้จริงๆ** — ต้องใช้ Docker Desktop ของคุณเองบนเครื่องคุณ ไม่มีเครื่องมือใดที่ Claude เข้าถึงได้ (Cowork Sandbox, Cloud Container) ที่เป็นเครื่อง Mac จริงของคุณ ทางเลือก: รันเองครั้งเดียว หรือให้ผมช่วย Validate ผ่าน Docker บน SCTUBUNTU01 (มี Docker จริงอยู่แล้ว) แทน |
 
