@@ -168,7 +168,7 @@ Upgrade → Downgrade → Upgrade ตาม PROJECT_STANDARD ข้อ 6 ผ่�
 | 0 | Kickoff & Design (เอกสารนี้) | เอกสารนี้ + อนุมัติจาก Product Owner |
 | 1 | Infra Readiness: Init Repo, Docker Compose (Dev DB), Alembic baseline, โครง FastAPI project, `.env.example` | Repo พร้อม Dev Environment รันได้ |
 | 2 | Database Schema + Migration จริงตามข้อ 4 | **เสร็จแล้ว (2026-09-01)** — Schema ใช้งานได้ ผ่าน Alembic Upgrade/Downgrade/Upgrade + ORM Round-trip จริง |
-| 3 | Authentication & Role-based Access (Login, จัดการ User/Role) | ระบบ Login แยกสิทธิ์ 4 บทบาท |
+| 3 | Authentication & Role-based Access (Login, จัดการ User/Role) | **เสร็จแล้ว (2026-09-01)** — Login/Logout/Me ผ่าน HttpOnly Cookie + JWT, Role-based Access Control (can_review/can_approve/can_receive/is_admin), Admin สร้าง/ดูรายชื่อ User ได้, สคริปต์ Bootstrap Admin คนแรก |
 | 4 | Upload + AI Extraction (Gemini) + หน้าตรวจทาน/แก้ไขข้อมูล | อัปโหลดเอกสาร → เห็นข้อมูลที่ AI สกัด → แก้ไขได้ |
 | 5 | บันทึก PR + Generate PDF ตาม Template จริง | ได้ไฟล์ PR ที่กรอกครบ พิมพ์ได้ |
 | 6 | Workflow อนุมัติ (Reviewed/Approved/Received) + ประวัติ/ค้นหา PR | ครบ Flow ตั้งแต่ขอซื้อถึงรับของ + History Search |
@@ -186,6 +186,6 @@ Upgrade → Downgrade → Upgrade ตาม PROJECT_STANDARD ข้อ 6 ผ่�
 
 **ยังรออยู่:**
 - [ ] Google Gemini API Key (ต้องขอ Free Tier มาใส่ใน `.env` — จำเป็นตอน Phase 4 ยังไม่ Block Phase 2-3)
-- [ ] รายชื่อ User เริ่มต้นและบทบาท (ใครมีสิทธิ์ can_review / can_approve / can_receive) — จำเป็นตอน Phase 3
+- [ ] รายชื่อ User เริ่มต้นและบทบาทจริง (ใครมีสิทธิ์ can_review / can_approve / can_receive / is_admin) — กลไก Bootstrap Admin คนแรกทำเสร็จแล้วใน Phase 3 (`app/scripts/create_admin.py`) แต่ยังไม่ได้รับรายชื่อ User จริงจาก Product Owner เพื่อสร้างในระบบ
 - [ ] Sub-domain สำหรับ UAT/PROD ที่จะตั้งใน Nginx Proxy Manager — จำเป็นตอน Phase 7
 

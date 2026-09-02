@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     upload_dir: str = "storage/uploads"
     generated_dir: str = "storage/generated"
 
+    # --- Auth (Phase 3) ---
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 480  # 8 ชั่วโมงทำงาน, ปรับได้ผ่าน .env
+
 
 @lru_cache
 def get_settings() -> Settings:
