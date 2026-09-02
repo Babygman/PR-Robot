@@ -1,15 +1,15 @@
 # --- Web framework ---
-fastapi==0.115.6
+fastapi==0.141.1
 uvicorn[standard]==0.34.0
-python-multipart==0.0.20
-jinja2==3.1.5
+python-multipart==0.0.31
+jinja2==3.1.6
 
 # --- Settings / env ---
 # หมายเหตุ: อัปเดตจาก 2.10.4 -> 2.13.5 เพราะ google-genai (Phase 4) ต้องการ pydantic>=2.12.5
 pydantic==2.13.5
 email-validator==2.2.0
 pydantic-settings==2.15.0
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 
 # --- Database / ORM / Migration ---
 sqlalchemy==2.0.36
@@ -19,7 +19,7 @@ psycopg2-binary==2.9.10
 # --- Auth ---
 # หมายเหตุ: ใช้ bcrypt ตรงๆ ไม่ผ่าน passlib (เข้ากันไม่ได้กับ bcrypt รุ่นใหม่ — ดูคอมเมนต์ใน app/core/security.py)
 bcrypt==5.0.0
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]==3.4.0
 
 # --- AI extraction (Google Gemini, Free Tier) ---
 # หมายเหตุ: google-generativeai รุ่นเก่าเลิกใช้แล้ว (Deprecated) เปลี่ยนมาใช้ google-genai
@@ -28,3 +28,14 @@ google-genai==2.21.0
 
 # --- PDF generation (Phase 5) ---
 weasyprint==63.1
+
+# --- Security Review (Phase 8, 2026-09-02) ---
+# ยกระดับ fastapi/python-multipart/jinja2/python-dotenv/python-jose ตามผล
+# pip-audit จริง (พบ CVE ที่แก้แล้วในเวอร์ชันใหม่กว่า) — fastapi ต้องยกใหญ่ตามไป
+# ด้วยเพื่อดึง starlette เวอร์ชันที่แก้ Host Header Vulnerability (fastapi เดิม
+# 0.115.6 ล็อก starlette<0.42 ซึ่งไม่มี Patch ให้เลย) — ตรวจสอบด้วย Full Test
+# Suite + Alembic Cycle + Playwright E2E ซ้ำหลังอัปเกรดแล้ว ดู docs/00_KICKOFF_
+# AND_DESIGN.md ข้อ 4f สำหรับรายละเอียดและ CVE ที่เหลือ (weasyprint SSRF —
+# Mitigate แล้วด้วย Jinja2 Autoescape แทนการอัปเกรด Major Version เสี่ยงพัง PDF
+# Rendering ที่ตรวจสอบละเอียดไว้แล้ว, ecdsa — ไม่มี Fix จาก Upstream ไม่กระทบ
+# เพราะเราใช้ HS256 ไม่ใช่ ES256)

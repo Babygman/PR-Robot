@@ -340,6 +340,97 @@ Static Files ใน `app/main.py`)
 - ยังไม่ได้ทดสอบบน Browser จริงของผู้ใช้ (Chrome/Safari/Edge บนเครื่องจริง) มีแค่
   Chromium Headless ใน Sandbox — ควรให้ Product Owner ลองใช้จริงใน UAT (Phase 8)
 
+## 4f. Phase 8 — Production Readiness: Dockerfile + Security Review (2026-09-02, กำลังดำเนินการ)
+
+**สถานะ:** ทำเสร็จเฉพาะส่วนที่ทำได้ใน Sandbox แล้ว (Dockerfile, docker-compose.prod.yml,
+Security Review, อัปเกรด Dependency ตามผลสแกนจริง) — ส่วน Deploy จริงบน SCTUBUNTU01
+ยังไม่เริ่ม รอ Subdomain จาก Product Owner + ทำทีละคำสั่งผ่าน SSH ตามที่ตกลงกันไว้
+
+### Dockerfile + docker-compose.prod.yml
+
+Multi-stage Build (`builder` ติดตั้ง Dependency ลง venv แยก, `runtime` มีแค่ Library ที่
+จำเป็นจริง) รันด้วย User ที่ไม่ใช่ Root (`prrobot`), มี HEALTHCHECK เรียก `/health`,
+`docker-entrypoint.sh` รัน `alembic upgrade head` ก่อน Start ทุกครั้งอัตโนมัติ —
+ติดตั้ง `fonts-noto-core` ใน Image ตามที่บันทึกเป็น Open Item ไว้ตั้งแต่ Phase 5/7
+(ยืนยันชื่อ Package ถูกต้องแล้วเทียบกับ apt Index จริง — ดูหัวข้อข้อจำกัดด้านล่าง)
+
+`docker-compose.prod.yml` ใช้ไฟล์เดียวกัน Deploy ได้ทั้ง UAT/PROD ผ่าน
+`docker compose -p pr-robot-<env> --env-file .env.<env>` ตรงตาม Convention ที่วางไว้
+ล่วงหน้าในข้อ 3.3 (Network `npm_proxy` ภายนอก + `internal` แยกต่อ Stack, ไม่ Publish
+Port Database, Resource Limit ต่อ Service) — Template `.env.prod.example` ระบุ Field
+ที่ต้องกรอกจริงบน Server (ไม่ Commit ค่าจริงขึ้น Git)
+
+### Security Review — พบและแก้ไขจริง 1 รายการสำคัญ
+
+**[แก้แล้ว] HTML/CSS Injection ใน PDF ผ่าน Field ที่ผู้ใช้ควบคุมได้ (Critical):**
+ตรวจโค้ด `app/services/pr_pdf.py` พบว่า Jinja2 `Environment()` ที่ใช้ Render Template
+ก่อนส่งให้ WeasyPrint ไม่ได้เปิด `autoescape` — Field อย่าง Description/Reason/
+Section/Division/Remark มาจาก Gemini AI สกัดข้อมูลจากเอกสารที่อัปโหลด (ควบคุมโดย
+ผู้ไม่หวังดีได้ผ่านเอกสารปลอม) หรือผู้ใช้พิมพ์ตรงๆ ก็ได้ — เมื่อรวมกับช่องโหว่ SSRF ที่
+รู้จักแล้วใน WeasyPrint (`default_url_fetcher` ไม่ป้องกัน Redirect ไป Internal
+Network/Cloud Metadata อย่างสมบูรณ์ — PYSEC-2026-2034 พบจาก `pip-audit`) จะทำให้ PDF
+Generation กลายเป็นช่องทาง SSRF จริงได้ (ฝัง `<link rel="attachment"
+href="http://169.254.169.254/...">` ผ่าน Description) — **แก้แล้ว** ด้วย
+`autoescape=select_autoescape(["html"])` และเขียน Regression Test พิสูจน์จริงใน
+`tests/test_pr_pdf_security.py` (ยืนยันว่า Payload อันตรายถูก Escape เป็นข้อความ
+เฉยๆ ไม่ใช่ Tag ที่ Render จริง และข้อความไทย/อังกฤษปกติยังแสดงผลถูกต้องเหมือนเดิม)
+— หน้าเว็บ Phase 7 (`app/api/routes/pages.py`) ใช้ FastAPI `Jinja2Templates` ซึ่ง
+เปิด Autoescape เป็นค่าเริ่มต้นอยู่แล้ว ไม่ได้รับผลกระทบ
+
+**[ยืนยันแล้วว่าไม่มีปัญหา]** Cookie Login เป็น HttpOnly + SameSite=Lax +
+Secure (เปิดอัตโนมัติเมื่อ `APP_ENV` ไม่ใช่ dev/test) อยู่แล้วตั้งแต่ Phase 3, Upload
+File ตรวจ Content-Type Allowlist + ขนาดสูงสุด 15MB + ไม่เชื่อ Filename ผู้ใช้ (ใช้
+UUID สุ่มตั้งชื่อไฟล์เก็บจริง ตัดความเสี่ยง Path Traversal), Bootstrap Admin Script
+รับ Credential ผ่าน Argument เท่านั้น ไม่ Hard-code, ไม่มี CORS Middleware เปิดไว้
+(ไม่จำเป็นเพราะ Frontend/API อยู่ Origin เดียวกัน), RBAC ตรวจสิทธิ์ครบทุก Endpoint
+ที่ควรมี
+
+**[Dependency Scan จริงด้วย `pip-audit`]** พบ 25 ช่องโหว่ใน 7 Package — อัปเกรดแล้ว
+5 ตัว (`fastapi` 0.115.6→0.141.1 ต้องยกใหญ่ตามเพื่อดึง `starlette` เวอร์ชันที่แก้ Host
+Header Vulnerability เพราะเวอร์ชันเดิมล็อก `starlette<0.42` ซึ่งไม่มี Patch ให้เลย,
+`python-multipart` 0.0.20→0.0.31, `jinja2` 3.1.5→3.1.6, `python-dotenv` 1.0.1→1.2.2,
+`python-jose` 3.3.0→3.4.0) เหลือ 9 ช่องโหว่ใน 3 Package ที่ประเมินแล้วว่าความเสี่ยงต่ำ
+สำหรับระบบนี้โดยเฉพาะ (ไม่ใช่ไม่มีช่องโหว่จริง แต่ Attack Path ที่จำเป็นไม่ตรงกับการใช้งาน
+จริงของเรา):
+- `weasyprint` SSRF (PYSEC-2026-2034) — Mitigate แล้วด้วย Autoescape ด้านบน
+  (ปิดช่องทางเดียวที่ผู้ใช้จะฝัง URL เข้าไปได้) ยังไม่อัปเกรด Major Version (63.1→68.0
+  ห่างกัน 5 เวอร์ชัน) เพราะเสี่ยงกระทบ Thai PDF Rendering ที่ตรวจสอบละเอียดไว้แล้วตั้งแต่
+  Phase 5 — บันทึกเป็น Open Item ให้ทดสอบแยกต่างหากทีหลัง ไม่ใช่ตอนก่อน Deploy
+- `pyasn1`/`ecdsa` (DoS จาก ASN.1 Parsing / Timing Attack บน ECDSA) — เป็น
+  Dependency ของ `python-jose[cryptography]` แต่ระบบเราใช้ HS256 (Symmetric HMAC)
+  เซ็น JWT เท่านั้น ไม่เคย Parse ASN.1/ใช้ ECDSA Key เลยในโค้ดจริง (`app/core/
+  security.py`) จึง Attack Path ที่ต้องมีอยู่จริง (Decode ASN.1/Key จากภายนอกที่ไม่
+  น่าเชื่อถือ) ไม่เกิดขึ้นในระบบนี้ — `python-jose` เองก็ล็อก `pyasn1<0.5.0` ไว้ทำให้
+  บังคับอัปเกรดแยกไม่ได้อยู่แล้ว, `ecdsa` ทาง Upstream ประกาศไม่แก้ (Side-channel
+  ถือว่านอกขอบเขต)
+
+**Verification (2026-09-02):** หลังแก้/อัปเกรดแล้ว รันซ้ำครบชุดใน Scratch venv —
+`ruff check .` สะอาด, Alembic Upgrade→Downgrade→Upgrade ผ่าน, `pytest` ผ่าน **53/53**
+(เพิ่ม 2 Test ใหม่เฉพาะช่องโหว่นี้ใน `tests/test_pr_pdf_security.py`) — และรัน Playwright
+E2E ซ้ำอีกรอบ (คนละรอบจาก Phase 7) เจาะจงพิสูจน์ว่าการยก `fastapi`/`starlette` ครั้งใหญ่
+(Starlette 0.41.3 → 1.6.0 ผ่าน Dependency Resolution) ไม่กระทบพฤติกรรมจริง: Login
+ด้วย Cookie, Multipart File Upload (Package ที่อัปเกรดตรงๆ), StaticFiles Mount,
+Jinja2Templates ยังทำงานถูกต้องทั้งหมด ผ่าน Flow เต็มอีกครั้ง 10/10 จุดตรวจสอบ
+
+### ข้อจำกัดที่พบระหว่างทำ Phase นี้ (บันทึกตามจริง)
+
+**ยังไม่สามารถ Build/รัน Docker Image จริงใน Sandbox ได้:** Egress Proxy ของ
+Sandbox บล็อก Container Registry ทุกตัวที่ลองแล้ว (Docker Hub, public.ecr.aws,
+quay.io — ทั้งหมดคืน `403 Forbidden`) รูปแบบเดียวกับที่ Block
+`generativelanguage.googleapis.com` ใน Phase 4 — จึง Build Image จาก Dockerfile
+จริงไม่ได้ในนี้ ตรวจสอบเท่าที่ทำได้แทน: (1) เทียบชื่อ apt Package ทุกตัวใน Dockerfile
+กับ apt Index จริงของ Ubuntu 24.04 (Package Family เดียวกับ Debian Slim ที่เป็น Base
+Image) ยืนยันว่ามีอยู่จริงทุกตัว (`libpango-1.0-0`, `libpangoft2-1.0-0`,
+`libgdk-pixbuf-2.0-0`, `shared-mime-info`, `fonts-noto-core`, `curl`,
+`build-essential`, `libpq-dev`) (2) Python Dependency ชุดเดียวกับที่จะติดตั้งใน Image
+(`requirements.txt`) ผ่านการทดสอบเต็มรูปแบบแล้วในข้อบนนี้ (3) ตรวจโค้ด Dockerfile/
+entrypoint ด้วยตาอย่างละเอียดทีละบรรทัด — **สิ่งที่ยังพิสูจน์ไม่ได้จนกว่าจะถึง
+SCTUBUNTU01 จริง (มี Internet ปกติ):** Image Build จบสำเร็จจริงหรือไม่, ขนาด Image,
+Runtime Library ครบตามที่ WeasyPrint ต้องการจริงหรือไม่ (โดยเฉพาะถ้า Debian Slim มี
+ชื่อ Package ต่างจาก Ubuntu ที่ตรวจสอบไว้) — **แผนคือ Build + รัน Health Check +
+ทดสอบ PDF ภาษาไทยจริงเป็นขั้นตอนแรกบน SCTUBUNTU01 ก่อนเข้าสู่ UAT Walkthrough**
+ไม่ปิดบังว่าเป็นข้อจำกัดจริง ไม่ใช่ "ตรวจแล้วผ่าน" เหมือน Dependency อื่น
+
 ## 5. Roadmap (แบ่ง Phase ตามมาตรฐาน — รออนุมัติก่อนเริ่มแต่ละ Phase)
 
 | Phase | เนื้อหา | Output |

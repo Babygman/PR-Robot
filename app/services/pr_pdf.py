@@ -17,7 +17,7 @@ from __future__ import annotations
 from decimal import Decimal
 from pathlib import Path
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.orm import Session
 from weasyprint import HTML
 
@@ -72,8 +72,21 @@ def _resolve_names(db: Session, pr: PurchasingRequisition) -> dict[str, str | No
     }
 
 
-def render_pr_pdf(db: Session, pr: PurchasingRequisition) -> bytes:
-    env = Environment(loader=FileSystemLoader(str(_TEMPLATE_DIR)))
+def render_pr_html(db: Session, pr: PurchasingRequisition) -> str:
+    """Render แค่ HTML String (แยกจากขั้น WeasyPrint แปลงเป็น PDF) — เปิดให้ Test
+    ตรวจสอบ Autoescape ได้ตรงๆ โดยไม่ต้อง Parse PDF Bytes กลับมา (ดู
+    tests/test_pr_pdf_security.py)
+    """
+    # Security Review (Phase 8, 2026-09-02): Autoescape ต้องเปิดเสมอ — description/
+    # reason/remark/section/division ฯลฯ อาจมาจาก Gemini AI สกัดข้อมูลจากเอกสารที่
+    # อัปโหลด (ควบคุมโดยผู้ไม่หวังดีได้) หรือผู้ใช้พิมพ์เองตรงๆ ก็ได้ ถ้าไม่ Escape
+    # HTML จะเปิดช่องให้ฝัง Tag แปลกปลอมเข้าไปใน HTML ก่อนส่งให้ WeasyPrint Render
+    # เป็น PDF ซึ่งอาจนำไปสู่ SSRF ผ่าน WeasyPrint url_fetcher เริ่มต้น (เช่น
+    # <link rel="attachment" href="http://169.254.169.254/..."> หรือ Layout เพี้ยน)
+    env = Environment(
+        loader=FileSystemLoader(str(_TEMPLATE_DIR)),
+        autoescape=select_autoescape(["html"]),
+    )
     template = env.get_template("pr_form.html")
 
     names = _resolve_names(db, pr)
@@ -117,12 +130,16 @@ def render_pr_pdf(db: Session, pr: PurchasingRequisition) -> bytes:
     budget_view.this_application = _fmt_money(bc.this_application) if bc else ""
     budget_view.balance = _fmt_money(bc.balance) if bc else ""
 
-    html_out = template.render(
+    return template.render(
         pr=pr_view,
         display_items=display_items,
         budget=budget_view,
         generated_at=_now_str(),
     )
+
+
+def render_pr_pdf(db: Session, pr: PurchasingRequisition) -> bytes:
+    html_out = render_pr_html(db, pr)
     return HTML(string=html_out, base_url=str(_TEMPLATE_DIR)).write_pdf()
 
 

@@ -1,0 +1,82 @@
+# PR-Robot — Production/UAT Docker Compose (Phase 8)
+#
+# ใช้ไฟล์เดียวกันนี้ Deploy ได้ทั้ง UAT และ PROD บน SCTUBUNTU01 โดยแยกกันด้วย
+# Compose Project Name + .env คนละไฟล์ ตาม Convention ที่ตกลงไว้ล่วงหน้าใน
+# docs/00_KICKOFF_AND_DESIGN.md ข้อ 3.3:
+#
+#   UAT:   APP_ENV=uat  docker compose -p pr-robot-uat  --env-file .env.uat  -f docker-compose.prod.yml up -d
+#   PROD:  APP_ENV=prod docker compose -p pr-robot-prod --env-file .env.prod -f docker-compose.prod.yml up -d
+#
+# ก่อนรันครั้งแรกบน Server ต้องมี Network npm_proxy อยู่แล้ว (สร้างครั้งเดียว ใช้ร่วมกัน
+# ทุก App — ทำเสร็จแล้วเมื่อ 2026-09-01 ดู docs/01_SERVER_SETUP_RUNBOOK.md)
+#
+# ตาม Convention ข้อ 3 (ห้าม Publish Port Database ออก Host ใน UAT/PROD): db ไม่มี
+# ports: เลย เข้าถึงได้จาก internal network ของ Stack เดียวกันเท่านั้น
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pr-robot:${IMAGE_TAG:-latest}
+    container_name: pr-robot-${APP_ENV:-uat}-web
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      APP_ENV: ${APP_ENV:-uat}
+    networks:
+      - internal
+      - npm_proxy
+    volumes:
+      - pr_robot_storage:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  db:
+    image: postgres:16-alpine
+    container_name: pr-robot-${APP_ENV:-uat}-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    networks:
+      - internal
+    volumes:
+      - pr_robot_pgdata:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+networks:
+  internal:
+    # สร้างใหม่ทุก Stack (Compose เติม Prefix ชื่อ Project ให้อัตโนมัติ เช่น
+    # pr-robot-uat_internal) — ตรงตาม Convention ข้อ 3.3
+    driver: bridge
+  npm_proxy:
+    # Network กลาง สร้างไว้ล่วงหน้าครั้งเดียวบน Server (ไม่ได้สร้างจาก Compose นี้)
+    external: true
+
+volumes:
+  pr_robot_pgdata:
+  pr_robot_storage:

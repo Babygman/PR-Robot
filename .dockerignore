@@ -1,0 +1,20 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+storage/uploads/
+storage/generated/
+*.sqlite3
+*.db
+tests/
+docs/
+README.md
+PROJECT_STANDARD_for claude.md
+pr_robot_src.tar.gz

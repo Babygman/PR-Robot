@@ -13,6 +13,7 @@ env/
 .env
 .env.*
 !.env.example
+!.env.prod.example
 
 # Uploaded documents & generated PDFs (local dev storage)
 storage/uploads/
