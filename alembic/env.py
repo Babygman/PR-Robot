@@ -43,7 +43,15 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        # SQLite ไม่รองรับ ALTER TABLE แบบปกติ (เช่น เพิ่ม Foreign Key) ต้องใช้ Batch Mode
+        # (Copy-and-move) — เปิดใช้เฉพาะตอนรันบน SQLite เท่านั้น (ใช้ทดสอบ Migration ใน Sandbox
+        # ที่ไม่มี Postgres จริง) ไม่กระทบพฤติกรรมตอนรันบน Postgres จริงใน Dev/UAT/PROD
+        render_as_batch = connection.dialect.name == "sqlite"
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            render_as_batch=render_as_batch,
+        )
         with context.begin_transaction():
             context.run_migrations()
 

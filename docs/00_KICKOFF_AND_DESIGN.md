@@ -161,6 +161,53 @@ Upgrade → Downgrade → Upgrade ตาม PROJECT_STANDARD ข้อ 6 ผ่�
 
 ---
 
+## 4b. AI Extraction Design — Implemented Phase 4 (2026-09-02)
+
+**Flow:** ผู้ใช้ Login แล้วอัปโหลดเอกสารต้นทาง (ใบเสนอราคา/ใบรับของ ไฟล์ PDF/PNG/JPEG/WEBP
+ไม่เกิน 15MB) ผ่าน `POST /documents/upload` → ระบบบันทึกไฟล์ + สร้าง Record ใน
+`source_documents` → เรียก Gemini สกัดข้อมูลทันที (Synchronous) → คืนผลลัพธ์ให้ผู้ใช้ดู
+ถ้า Gemini เรียกไม่สำเร็จ (Network/Quota/Key ผิด) จะไม่ทำให้ Request ล้มเหลว — บันทึก
+`extraction_error` ไว้แทน ผู้ใช้ Key ข้อมูลเองได้ในขั้น Review
+
+**Extraction Schema** (`ExtractionResult`, ใช้เป็นทั้ง Response Schema ที่ส่งให้ Gemini
+แบบ Structured Output และ Schema ของข้อมูลที่ผู้ใช้แก้ไข): `vendor_name`, `document_no`,
+`document_date`, `items[]` (description/quantity/unit/unit_price/amount), `notes`,
+`ai_confidence` (ประเมินโดย AI เอง 0-1 — เป็นค่าประมาณ ไม่ใช่ค่า Calibrate จริง)
+
+**Business Decision (2026-09-02):** `unit_price`/`amount` เก็บไว้เป็นข้อมูลอ้างอิงเท่านั้น
+เพราะ Schema ของ `pr_items` (Phase 2) ไม่มีช่องราคา มีแต่ `pr_budget_control` ระดับ
+Account Code
+
+**Schema เพิ่มเติมใน `source_documents`** (Migration `f2b89a3880f2`, Revises
+`cdfbb940153e`): `extraction_error` (Text), `reviewed_data` (JSON), `reviewed_by_id` (FK
+users), `reviewed_at` — แยกออกจาก `ai_extraction_raw_json` เดิมโดยเจตนา เพื่อรักษาผลดิบ
+จาก AI ไว้เป็น Audit Trail เสมอ ไม่ถูกเขียนทับตอนผู้ใช้แก้ไขข้อมูล
+
+**Endpoints:** `POST /documents/upload`, `GET /documents`, `GET /documents/{id}`,
+`PATCH /documents/{id}/review` (ทุก Endpoint ต้อง Login) — บันทึก AuditLog ทุกครั้งที่
+Upload/Review
+
+**Tech:** SDK `google-genai` (ตัวเก่า `google-generativeai` เลิกใช้แล้ว — ยืนยันจาก Google
+AI Docs และ GitHub `googleapis/python-genai` จริงวันที่ 2026-09-02) เรียกผ่าน
+`client.models.generate_content()` พร้อม `response_json_schema` Model กำหนดผ่าน
+`.env` (`GEMINI_MODEL`, Default `gemini-2.5-flash`) ไม่ Hardcode
+
+**Verification (2026-09-02):** `ruff check .` ผ่านสะอาด, `pytest` ผ่านทั้งหมด 18/18
+(รวม 7 Test ใหม่ของ Phase 4 — Mock Gemini Client ไม่ยิง Network จริง), Alembic
+Upgrade → Downgrade → Upgrade → Downgrade → Upgrade ผ่านสมบูรณ์ (SQLite Sandbox, ใช้
+`op.batch_alter_table()` ให้ Migration พกพาข้าม Dialect ได้), FastAPI Boot + OpenAPI
+Schema ตรวจแล้วว่า Register ครบ 4 Routes, ทดสอบ Fail-fast เมื่อไม่มี API Key จริง
+
+**ข้อจำกัดที่ต้องระบุตรงๆ:** Sandbox ที่ใช้พัฒนา (ทั้ง Cowork Container และ Device Bash)
+ถูก Block Network Egress ไปยัง `generativelanguage.googleapis.com` ด้วย Policy ระดับ
+Organization (ยืนยันด้วย `curl -v` เห็น `403 blocked-by-allowlist` ชัดเจน) ทำให้ไม่สามารถ
+ยิง Request จริงไปหา Gemini API เพื่อพิสูจน์ Response จริงได้ในสภาพแวดล้อมนี้ — Code การ
+เรียก Gemini อ้างอิงจาก README ตัวจริงของ `googleapis/python-genai` (Verified 2026-09-02)
+แต่ยังไม่ผ่านการยิง Request จริงสักครั้ง จำเป็นต้อง Live Test เพิ่มเติมในสภาพแวดล้อมที่มี
+Internet จริง (เช่น เครื่อง Mac ของผู้ใช้ หรือ SCTUBUNTU01) ก่อนเชื่อถือได้ 100%
+
+---
+
 ## 5. Roadmap (แบ่ง Phase ตามมาตรฐาน — รออนุมัติก่อนเริ่มแต่ละ Phase)
 
 | Phase | เนื้อหา | Output |
@@ -169,7 +216,7 @@ Upgrade → Downgrade → Upgrade ตาม PROJECT_STANDARD ข้อ 6 ผ่�
 | 1 | Infra Readiness: Init Repo, Docker Compose (Dev DB), Alembic baseline, โครง FastAPI project, `.env.example` | Repo พร้อม Dev Environment รันได้ |
 | 2 | Database Schema + Migration จริงตามข้อ 4 | **เสร็จแล้ว (2026-09-01)** — Schema ใช้งานได้ ผ่าน Alembic Upgrade/Downgrade/Upgrade + ORM Round-trip จริง |
 | 3 | Authentication & Role-based Access (Login, จัดการ User/Role) | **เสร็จแล้ว (2026-09-01)** — Login/Logout/Me ผ่าน HttpOnly Cookie + JWT, Role-based Access Control (can_review/can_approve/can_receive/is_admin), Admin สร้าง/ดูรายชื่อ User ได้, สคริปต์ Bootstrap Admin คนแรก |
-| 4 | Upload + AI Extraction (Gemini) + หน้าตรวจทาน/แก้ไขข้อมูล | อัปโหลดเอกสาร → เห็นข้อมูลที่ AI สกัด → แก้ไขได้ |
+| 4 | Upload + AI Extraction (Gemini) + หน้าตรวจทาน/แก้ไขข้อมูล | **เสร็จแล้ว (2026-09-02)** — Upload PDF/รูปภาพ → Gemini สกัดข้อมูลแบบ Structured JSON → บันทึก reviewed_data เมื่อผู้ใช้แก้ไข (ดู 4b.) |
 | 5 | บันทึก PR + Generate PDF ตาม Template จริง | ได้ไฟล์ PR ที่กรอกครบ พิมพ์ได้ |
 | 6 | Workflow อนุมัติ (Reviewed/Approved/Received) + ประวัติ/ค้นหา PR | ครบ Flow ตั้งแต่ขอซื้อถึงรับของ + History Search |
 | 7 | UAT รวม + Security Review + Deploy จริงบน SCTUBUNTU01 | ระบบใช้งานจริงบน UAT/PROD |
@@ -184,8 +231,12 @@ Upgrade → Downgrade → Upgrade ตาม PROJECT_STANDARD ข้อ 6 ผ่�
 - [x] รูปแบบเลขที่ PR — Running Number ต่อเนื่องตลอด ไม่รีเซ็ตรายปี/แผนก
 - [x] Requested/Reviewed/Approved/Received by — คือผู้ใช้ที่ Login ทำ Action นั้น ไม่ใช่ช่องกรอกข้อมูล
 
+**ตอบแล้ว (เพิ่มเติม):**
+- Google Gemini API Key: ได้รับและตั้งค่าใน `.env` แล้ว (2026-09-02, ไม่ Commit ขึ้น Git) —
+  ยังไม่ผ่านการยิง Request จริงเพราะ Sandbox พัฒนา Block Network ไปยัง Google API (ดู
+  ข้อจำกัดใน 4b.) ต้อง Live Test เพิ่มเติมนอก Sandbox
+
 **ยังรออยู่:**
-- [ ] Google Gemini API Key (ต้องขอ Free Tier มาใส่ใน `.env` — จำเป็นตอน Phase 4 ยังไม่ Block Phase 2-3)
 - [ ] รายชื่อ User เริ่มต้นและบทบาทจริง (ใครมีสิทธิ์ can_review / can_approve / can_receive / is_admin) — กลไก Bootstrap Admin คนแรกทำเสร็จแล้วใน Phase 3 (`app/scripts/create_admin.py`) แต่ยังไม่ได้รับรายชื่อ User จริงจาก Product Owner เพื่อสร้างในระบบ
 - [ ] Sub-domain สำหรับ UAT/PROD ที่จะตั้งใน Nginx Proxy Manager — จำเป็นตอน Phase 7
 

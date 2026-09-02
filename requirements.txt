@@ -5,9 +5,10 @@ python-multipart==0.0.20
 jinja2==3.1.5
 
 # --- Settings / env ---
-pydantic==2.10.4
+# หมายเหตุ: อัปเดตจาก 2.10.4 -> 2.13.5 เพราะ google-genai (Phase 4) ต้องการ pydantic>=2.12.5
+pydantic==2.13.5
 email-validator==2.2.0
-pydantic-settings==2.7.1
+pydantic-settings==2.15.0
 python-dotenv==1.0.1
 
 # --- Database / ORM / Migration ---
@@ -21,7 +22,9 @@ bcrypt==5.0.0
 python-jose[cryptography]==3.3.0
 
 # --- AI extraction (Google Gemini, Free Tier) ---
-google-generativeai==0.8.3
+# หมายเหตุ: google-generativeai รุ่นเก่าเลิกใช้แล้ว (Deprecated) เปลี่ยนมาใช้ google-genai
+# ตรวจสอบยืนยันจาก Google AI Docs / GitHub googleapis/python-genai จริงวันที่ 2026-09-02
+google-genai==2.21.0
 
 # --- PDF generation (Phase 5) ---
 weasyprint==63.1

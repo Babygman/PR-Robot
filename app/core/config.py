@@ -19,8 +19,9 @@ class Settings(BaseSettings):
     # ตัวอย่างรูปแบบ: postgresql+psycopg2://user:password@host:5432/dbname
     database_url: str = "postgresql+psycopg2://pr_robot:pr_robot@localhost:5432/pr_robot"
 
-    # Google Gemini API (Free Tier) — ใช้สำหรับสกัดข้อมูลจากเอกสารต้นทาง
+    # Google Gemini API (Free Tier) — ใช้สำหรับสกัดข้อมูลจากเอกสารต้นทาง (Phase 4)
     gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash"  # ปรับได้ผ่าน .env ตาม Quota จริงของ Key
 
     upload_dir: str = "storage/uploads"
     generated_dir: str = "storage/generated"

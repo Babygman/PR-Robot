@@ -5,7 +5,7 @@ import enum
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Numeric, String, func
+from sqlalchemy import JSON, DateTime, ForeignKey, Numeric, String, Text, func
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -35,3 +35,12 @@ class SourceDocument(Base):
     )
     ai_extraction_raw_json: Mapped[dict | None] = mapped_column(JSON)
     ai_confidence: Mapped[Decimal | None] = mapped_column(Numeric(5, 4))
+    extraction_error: Mapped[str | None] = mapped_column(
+        Text, comment="ข้อความ Error ถ้า Gemini สกัดข้อมูลไม่สำเร็จ (ai_extraction_raw_json จะเป็น null)"
+    )
+
+    # ข้อมูลที่ผู้ใช้ตรวจทาน/แก้ไขแล้ว (Phase 4) — แยกจาก ai_extraction_raw_json
+    # เพื่อรักษาผลดิบจาก AI ไว้เป็น Audit Trail เสมอ ไม่ถูกเขียนทับ
+    reviewed_data: Mapped[dict | None] = mapped_column(JSON)
+    reviewed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

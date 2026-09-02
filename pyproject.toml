@@ -7,7 +7,8 @@ extend-exclude = ["alembic/versions"]
 select = ["E", "F", "I", "UP", "B"]
 # B008: Depends(...) as a default arg is FastAPI's official, intended pattern — not a bug
 # UP017: keep timezone.utc (not datetime.UTC) — portable across Python 3.10/3.11/3.12
-ignore = ["B008", "UP017"]
+# UP042: keep (str, enum.Enum) (not enum.StrEnum, which needs Python 3.11+) — same portability reason
+ignore = ["B008", "UP017", "UP042"]
 
 [tool.ruff.lint.per-file-ignores]
 # env.py ต้อง sys.path.append() ก่อน import app.* โดยเจตนา จึงจัดกลุ่ม import แบบ isort ปกติไม่ได้
