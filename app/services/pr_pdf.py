@@ -21,7 +21,8 @@ from jinja2 import Environment, FileSystemLoader
 from sqlalchemy.orm import Session
 from weasyprint import HTML
 
-from app.models import PurchasingRequisition, User
+from app.models import PurchasingRequisition
+from app.services.user_lookup import resolve_user_names
 
 _TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
 _MIN_DISPLAY_ROWS = 6
@@ -60,14 +61,9 @@ def _fmt_date(value) -> str:
 
 
 def _resolve_names(db: Session, pr: PurchasingRequisition) -> dict[str, str | None]:
-    ids = {
-        i
-        for i in (pr.requested_by_id, pr.reviewed_by_id, pr.approved_by_id, pr.received_by_id)
-        if i is not None
-    }
-    names: dict[int, str] = {}
-    if ids:
-        names = {u.id: u.name for u in db.query(User).filter(User.id.in_(ids)).all()}
+    names = resolve_user_names(
+        db, {pr.requested_by_id, pr.reviewed_by_id, pr.approved_by_id, pr.received_by_id}
+    )
     return {
         "requested_by_name": names.get(pr.requested_by_id),
         "reviewed_by_name": names.get(pr.reviewed_by_id) if pr.reviewed_by_id else None,

@@ -86,17 +86,39 @@ class PRRead(BaseModel):
     doc_date: date
     status: PRStatus
     requested_by_id: int
+    requested_by_name: str | None = None
     reviewed_by_id: int | None
+    reviewed_by_name: str | None = None
     reviewed_at: datetime | None
     approved_by_id: int | None
+    approved_by_name: str | None = None
     approved_at: datetime | None
     received_by_id: int | None
+    received_by_name: str | None = None
     received_at: datetime | None
     remark: str | None
     items: list[PRItemRead]
     budget_control: PRBudgetControlRead | None
     created_at: datetime
     updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PRWorkflowAction(BaseModel):
+    """Body ของ POST /prs/{id}/review, /approve, /receive — Actor มาจาก Login เสมอ
+    (ไม่รับจาก Client) ไม่บังคับส่ง note มาก็ได้"""
+
+    note: str | None = None
+
+
+class AuditLogRead(BaseModel):
+    id: int
+    action: str
+    actor_id: int | None
+    actor_name: str | None = None
+    timestamp: datetime
+    detail: dict | None
 
     model_config = {"from_attributes": True}
 

@@ -250,6 +250,33 @@ apt) — **สิ่งที่ต้องทำต่อ:** เมื่อ�
 ต้องติดตั้ง Font ไทยไว้ใน Image ด้วย ไม่เช่นนั้นจะ Fallback ไปใช้ Font ที่ไม่รองรับ
 ภาษาไทยดีพอ — บันทึกไว้ใน Open Items แล้ว
 
+## 4d. Workflow อนุมัติ + ประวัติ/ค้นหา — Implemented Phase 6 (2026-09-02)
+
+**Workflow:** เดินหน้าทางเดียวตามลำดับตรงตาม `PRStatus` ที่ออกแบบไว้ตั้งแต่ Phase 2 —
+`draft --review--> reviewed --approve--> approved --receive--> received` ผ่าน
+`POST /prs/{id}/review`, `/approve`, `/receive` แต่ละ Endpoint ตรวจสอบทั้งสิทธิ์
+(`require_can_review`/`require_can_approve`/`require_can_receive` จาก Phase 3) และ
+สถานะปัจจุบันต้องตรงตามลำดับเท่านั้น (409 ถ้าข้ามขั้นหรือทำซ้ำ) — Reviewed/Approved/
+Received by = ผู้ Login ตอนกดปุ่มเสมอ (Business Decision 2026-09-01) รับ `note`
+ทางเลือกเพื่อบันทึกลง Audit Log
+
+**ยังไม่มี Reject/ตีกลับ:** Schema `PRStatus` ปัจจุบันมีแค่ 4 สถานะเดินหน้าทางเดียว
+ไม่มีสถานะ "ตีกลับ" หรือ "ปฏิเสธ" — ถ้าต้องการต้องคุยเรื่อง Schema เพิ่ม (เพิ่ม Status
+ใหม่ + Migration + ตัดสินใจว่าตีกลับแล้วกลับไปที่ไหน) บันทึกเป็น Open Item ไว้
+
+**ประวัติ/ค้นหา:** `GET /prs/{id}/history` คืนค่า Audit Log ทั้งหมดของ PR นั้น
+เรียงตามเวลา พร้อมชื่อผู้กระทำ (Resolve จาก User ID) — `GET /prs` ขยาย Filter เพิ่ม
+`status_filter`, `pr_no`, `q` (ค้นหาใน Section/Division/Remark), `doc_date_from/to`,
+`requested_by_me`, `limit`/`offset` (Pagination) — `PRRead` (Response ของ
+Create/Get/Update/Review/Approve/Receive) เพิ่มชื่อผู้กระทำ 4 บทบาท
+(`requested_by_name` ฯลฯ) ให้อ่านง่ายขึ้นโดยไม่ต้องเทียบ User ID เอง
+
+**Verification (2026-09-02):** `ruff check .` ผ่านสะอาด, `pytest` ผ่านทั้งหมด 43/43
+(รวม 13 Test ใหม่ของ Phase 6 — ครอบคลุม Happy Path ครบ 4 สถานะ, ข้ามขั้นไม่ได้, ทำซ้ำ
+ไม่ได้, ไม่มีสิทธิ์ทำไม่ได้ (403), แก้ไข PR ที่ผ่าน Review แล้วไม่ได้ (409), ค้นหา/กรอง
+ทุกแบบ), Alembic Upgrade → Downgrade → Upgrade ยืนยันซ้ำ (ไม่มี Schema เปลี่ยนใน
+Phase นี้)
+
 ## 5. Roadmap (แบ่ง Phase ตามมาตรฐาน — รออนุมัติก่อนเริ่มแต่ละ Phase)
 
 | Phase | เนื้อหา | Output |
@@ -260,7 +287,7 @@ apt) — **สิ่งที่ต้องทำต่อ:** เมื่อ�
 | 3 | Authentication & Role-based Access (Login, จัดการ User/Role) | **เสร็จแล้ว (2026-09-01)** — Login/Logout/Me ผ่าน HttpOnly Cookie + JWT, Role-based Access Control (can_review/can_approve/can_receive/is_admin), Admin สร้าง/ดูรายชื่อ User ได้, สคริปต์ Bootstrap Admin คนแรก |
 | 4 | Upload + AI Extraction (Gemini) + หน้าตรวจทาน/แก้ไขข้อมูล | **เสร็จแล้ว (2026-09-02)** — Upload PDF/รูปภาพ → Gemini สกัดข้อมูลแบบ Structured JSON → บันทึก reviewed_data เมื่อผู้ใช้แก้ไข (ดู 4b.) |
 | 5 | บันทึก PR + Generate PDF ตาม Template จริง | **เสร็จแล้ว (2026-09-02)** — POST/GET/PATCH /prs + GET /prs/{id}/pdf ตรงตามฟอร์ม FM-PU-02 (ดู 4c.) |
-| 6 | Workflow อนุมัติ (Reviewed/Approved/Received) + ประวัติ/ค้นหา PR | ครบ Flow ตั้งแต่ขอซื้อถึงรับของ + History Search |
+| 6 | Workflow อนุมัติ (Reviewed/Approved/Received) + ประวัติ/ค้นหา PR | **เสร็จแล้ว (2026-09-02)** — POST /prs/{id}/review,approve,receive + GET /prs/{id}/history + GET /prs Filter ครบ (ดู 4d.) |
 | 7 | UAT รวม + Security Review + Deploy จริงบน SCTUBUNTU01 | ระบบใช้งานจริงบน UAT/PROD |
 | 8 | Documentation (README/RELEASE) + Lessons Learned | เอกสารครบตามมาตรฐานข้อ 10 และ 13 |
 
@@ -281,6 +308,10 @@ apt) — **สิ่งที่ต้องทำต่อ:** เมื่อ�
 - [ ] ติดตั้งฟอนต์ไทย (`fonts-noto-core` หรือเทียบเท่า) ใน Docker Image ตอนสร้าง
   Dockerfile จริง — จำเป็นตอน Phase 7 ไม่เช่นนั้น PDF จะ Fallback ไป Font ที่ไม่รองรับ
   ภาษาไทยดีพอ (ดู 4c.)
+
+- [ ] Reject/ตีกลับ PR: Schema `PRStatus` ปัจจุบันเดินหน้าทางเดียวเท่านั้น (draft ->
+  reviewed -> approved -> received) ยังไม่รองรับการตีกลับ/ปฏิเสธ — ถ้าต้องการต้องเพิ่ม
+  Status ใหม่ + Migration (ดู 4d.)
 
 **ยังรออยู่:**
 - [ ] รายชื่อ User เริ่มต้นและบทบาทจริง (ใครมีสิทธิ์ can_review / can_approve / can_receive / is_admin) — กลไก Bootstrap Admin คนแรกทำเสร็จแล้วใน Phase 3 (`app/scripts/create_admin.py`) แต่ยังไม่ได้รับรายชื่อ User จริงจาก Product Owner เพื่อสร้างในระบบ

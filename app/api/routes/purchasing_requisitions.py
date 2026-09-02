@@ -1,21 +1,37 @@
-"""บันทึก PR + Generate PDF ตาม Template จริง (Phase 5)
+"""บันทึก PR + Generate PDF (Phase 5) + Workflow อนุมัติ + ประวัติ/ค้นหา (Phase 6)
 
 Requested by = ผู้ใช้ที่ Login ตอนสร้าง PR เสมอ (Business Decision 2026-09-01)
-Reviewed/Approved/Received by ยังเป็น null จนกว่าจะถึง Workflow อนุมัติ (Phase 6)
+Reviewed/Approved/Received by = ผู้ใช้ที่ Login ตอนกดปุ่มแต่ละ Action เสมอ (ไม่รับจาก
+Client) ตาม Business Decision เดียวกัน
+
+Workflow เดินหน้าทางเดียวตามลำดับ (ตรงตาม PRStatus ที่ออกแบบไว้ตั้งแต่ Phase 2):
+draft --review--> reviewed --approve--> approved --receive--> received
+ยังไม่มี Endpoint ตีกลับ/ปฏิเสธ (Reject) เพราะไม่มี Status รองรับใน Schema ปัจจุบัน —
+ถ้าต้องการ ต้องคุยเรื่อง Schema เพิ่มก่อน (ดู Open Items)
 
 Flow:
-1. POST /prs -> สร้าง PR ใหม่ (Status = draft) พร้อม Item และ Budget Control จองเลขที่ PR
-   (pr_no) แบบต่อเนื่องอัตโนมัติ ผูก source_document_ids (ถ้ามี) เข้ากับ PR นี้
-2. GET /prs, GET /prs/{id} -> ดูรายการ/รายละเอียด PR
+1. POST /prs -> สร้าง PR ใหม่ (Status = draft)
+2. GET /prs (รองรับค้นหา/กรอง), GET /prs/{id} -> ดูรายการ/รายละเอียด PR
 3. PATCH /prs/{id} -> แก้ไขได้เฉพาะตอน Status = draft เท่านั้น
 4. GET /prs/{id}/pdf -> Generate PDF ตาม Template จริงของฟอร์ม FM-PU-02
+5. POST /prs/{id}/review, /approve, /receive -> เปลี่ยน Status ตามลำดับ ต้องมีสิทธิ์ตรง
+   (can_review/can_approve/can_receive หรือ is_admin)
+6. GET /prs/{id}/history -> ประวัติการกระทำทั้งหมดของ PR นี้จาก audit_log
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from datetime import date, datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.deps import get_current_user
+from app.core.deps import (
+    get_current_user,
+    require_can_approve,
+    require_can_receive,
+    require_can_review,
+)
 from app.db.session import get_db
 from app.models import (
     AuditLog,
@@ -26,9 +42,17 @@ from app.models import (
     SourceDocument,
     User,
 )
-from app.schemas.purchasing_requisition import PRCreate, PRListItem, PRRead, PRUpdate
+from app.schemas.purchasing_requisition import (
+    AuditLogRead,
+    PRCreate,
+    PRListItem,
+    PRRead,
+    PRUpdate,
+    PRWorkflowAction,
+)
 from app.services.pr_numbering import allocate_pr_no
 from app.services.pr_pdf import render_pr_pdf
+from app.services.user_lookup import resolve_user_names
 
 router = APIRouter(prefix="/prs", tags=["purchasing-requisitions"])
 
@@ -86,12 +110,61 @@ def _get_pr_or_404(db: Session, pr_id: int) -> PurchasingRequisition:
     return pr
 
 
+def _to_pr_read(db: Session, pr: PurchasingRequisition) -> PRRead:
+    names = resolve_user_names(
+        db, {pr.requested_by_id, pr.reviewed_by_id, pr.approved_by_id, pr.received_by_id}
+    )
+    data = PRRead.model_validate(pr, from_attributes=True)
+    return data.model_copy(
+        update={
+            "requested_by_name": names.get(pr.requested_by_id),
+            "reviewed_by_name": names.get(pr.reviewed_by_id) if pr.reviewed_by_id else None,
+            "approved_by_name": names.get(pr.approved_by_id) if pr.approved_by_id else None,
+            "received_by_name": names.get(pr.received_by_id) if pr.received_by_id else None,
+        }
+    )
+
+
+def _transition(
+    db: Session,
+    pr: PurchasingRequisition,
+    *,
+    required_status: PRStatus,
+    next_status: PRStatus,
+    by_field: str,
+    at_field: str,
+    action: str,
+    current_user: User,
+    note: str | None,
+) -> PurchasingRequisition:
+    if pr.status != required_status:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"ทำรายการนี้ได้เฉพาะ PR ที่สถานะเป็น {required_status.value} เท่านั้น "
+            f"(สถานะปัจจุบัน: {pr.status.value})",
+        )
+    setattr(pr, by_field, current_user.id)
+    setattr(pr, at_field, datetime.now(timezone.utc))
+    pr.status = next_status
+    db.add(
+        AuditLog(
+            pr_id=pr.id,
+            action=action,
+            actor_id=current_user.id,
+            detail={"note": note} if note else None,
+        )
+    )
+    db.commit()
+    db.refresh(pr)
+    return pr
+
+
 @router.post("", response_model=PRRead, status_code=status.HTTP_201_CREATED)
 def create_pr(
     body: PRCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> PurchasingRequisition:
+) -> PRRead:
     if body.source_document_ids:
         found = (
             db.query(SourceDocument.id)
@@ -129,26 +202,54 @@ def create_pr(
     )
     db.commit()
     db.refresh(pr)
-    return pr
+    return _to_pr_read(db, pr)
 
 
 @router.get("", response_model=list[PRListItem])
 def list_prs(
     status_filter: PRStatus | None = None,
+    pr_no: int | None = None,
+    q: str | None = Query(default=None, description="ค้นหาใน Section/Division/Remark"),
+    doc_date_from: date | None = None,
+    doc_date_to: date | None = None,
+    requested_by_me: bool = False,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> list[PurchasingRequisition]:
     query = db.query(PurchasingRequisition)
     if status_filter is not None:
         query = query.filter(PurchasingRequisition.status == status_filter)
-    return query.order_by(PurchasingRequisition.pr_no.desc()).all()
+    if pr_no is not None:
+        query = query.filter(PurchasingRequisition.pr_no == pr_no)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            or_(
+                PurchasingRequisition.section.ilike(like),
+                PurchasingRequisition.division.ilike(like),
+                PurchasingRequisition.remark.ilike(like),
+            )
+        )
+    if doc_date_from is not None:
+        query = query.filter(PurchasingRequisition.doc_date >= doc_date_from)
+    if doc_date_to is not None:
+        query = query.filter(PurchasingRequisition.doc_date <= doc_date_to)
+    if requested_by_me:
+        query = query.filter(PurchasingRequisition.requested_by_id == current_user.id)
+
+    return (
+        query.order_by(PurchasingRequisition.pr_no.desc()).offset(offset).limit(limit).all()
+    )
 
 
 @router.get("/{pr_id}", response_model=PRRead)
 def get_pr(
     pr_id: int, db: Session = Depends(get_db), _current_user: User = Depends(get_current_user)
-) -> PurchasingRequisition:
-    return _get_pr_or_404(db, pr_id)
+) -> PRRead:
+    pr = _get_pr_or_404(db, pr_id)
+    return _to_pr_read(db, pr)
 
 
 @router.patch("/{pr_id}", response_model=PRRead)
@@ -157,7 +258,7 @@ def update_pr(
     body: PRUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> PurchasingRequisition:
+) -> PRRead:
     pr = _get_pr_or_404(db, pr_id)
     if pr.status != PRStatus.DRAFT:
         raise HTTPException(
@@ -165,12 +266,10 @@ def update_pr(
         )
 
     _apply_items_and_budget(pr, body)
-    db.add(
-        AuditLog(pr_id=pr.id, action="pr.updated", actor_id=current_user.id, detail=None)
-    )
+    db.add(AuditLog(pr_id=pr.id, action="pr.updated", actor_id=current_user.id, detail=None))
     db.commit()
     db.refresh(pr)
-    return pr
+    return _to_pr_read(db, pr)
 
 
 @router.get("/{pr_id}/pdf")
@@ -184,3 +283,89 @@ def get_pr_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="PR-{pr.pr_no}.pdf"'},
     )
+
+
+@router.post("/{pr_id}/review", response_model=PRRead)
+def review_pr(
+    pr_id: int,
+    body: PRWorkflowAction | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_can_review),
+) -> PRRead:
+    pr = _get_pr_or_404(db, pr_id)
+    pr = _transition(
+        db,
+        pr,
+        required_status=PRStatus.DRAFT,
+        next_status=PRStatus.REVIEWED,
+        by_field="reviewed_by_id",
+        at_field="reviewed_at",
+        action="pr.reviewed",
+        current_user=current_user,
+        note=body.note if body else None,
+    )
+    return _to_pr_read(db, pr)
+
+
+@router.post("/{pr_id}/approve", response_model=PRRead)
+def approve_pr(
+    pr_id: int,
+    body: PRWorkflowAction | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_can_approve),
+) -> PRRead:
+    pr = _get_pr_or_404(db, pr_id)
+    pr = _transition(
+        db,
+        pr,
+        required_status=PRStatus.REVIEWED,
+        next_status=PRStatus.APPROVED,
+        by_field="approved_by_id",
+        at_field="approved_at",
+        action="pr.approved",
+        current_user=current_user,
+        note=body.note if body else None,
+    )
+    return _to_pr_read(db, pr)
+
+
+@router.post("/{pr_id}/receive", response_model=PRRead)
+def receive_pr(
+    pr_id: int,
+    body: PRWorkflowAction | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_can_receive),
+) -> PRRead:
+    pr = _get_pr_or_404(db, pr_id)
+    pr = _transition(
+        db,
+        pr,
+        required_status=PRStatus.APPROVED,
+        next_status=PRStatus.RECEIVED,
+        by_field="received_by_id",
+        at_field="received_at",
+        action="pr.received",
+        current_user=current_user,
+        note=body.note if body else None,
+    )
+    return _to_pr_read(db, pr)
+
+
+@router.get("/{pr_id}/history", response_model=list[AuditLogRead])
+def get_pr_history(
+    pr_id: int, db: Session = Depends(get_db), _current_user: User = Depends(get_current_user)
+) -> list[AuditLogRead]:
+    _get_pr_or_404(db, pr_id)  # 404 ถ้าไม่มี PR นี้จริง
+    logs = (
+        db.query(AuditLog)
+        .filter(AuditLog.pr_id == pr_id)
+        .order_by(AuditLog.timestamp.asc())
+        .all()
+    )
+    names = resolve_user_names(db, {log.actor_id for log in logs})
+    return [
+        AuditLogRead.model_validate(log, from_attributes=True).model_copy(
+            update={"actor_name": names.get(log.actor_id) if log.actor_id else None}
+        )
+        for log in logs
+    ]
