@@ -27,7 +27,16 @@ class SourceDocument(Base):
     )
     file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
     doc_type: Mapped[SourceDocType] = mapped_column(
-        SAEnum(SourceDocType, name="source_doc_type", native_enum=True), nullable=False
+        # values_callable: เหตุผลเดียวกับ PRStatus ใน purchasing_requisition.py —
+        # บังคับเก็บ .value ("quotation") ไม่ใช่ .name ("QUOTATION") ให้ตรงกับ Native
+        # Enum Type ที่ Alembic Migration สร้างไว้จริงบน PostgreSQL
+        SAEnum(
+            SourceDocType,
+            name="source_doc_type",
+            native_enum=True,
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
+        nullable=False,
     )
     uploaded_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     uploaded_at: Mapped[datetime] = mapped_column(

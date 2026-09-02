@@ -14,6 +14,7 @@ Business Decisions ที่มีผลต่อ Schema นี้ (2026-09-01):
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -46,6 +47,19 @@ def upgrade() -> None:
 
     pr_status = sa.Enum(*PR_STATUS_VALUES, name="pr_status")
     pr_status.create(op.get_bind(), checkfirst=True)
+    # create_type เป็น Attribute เฉพาะของ postgresql.ENUM (Dialect-Specific) ไม่มีใน
+    # sa.Enum ทั่วไป — ต้อง Import จาก sqlalchemy.dialects.postgresql มาใช้ตรงๆ ถึงจะ
+    # ปิด Auto-Create Type ตอน op.create_table ด้านล่างได้จริง (มิฉะนั้นจะพยายาม
+    # CREATE TYPE ซ้ำกับที่สร้างไปแล้วข้างบน แล้วชน DuplicateObject บน PostgreSQL จริง
+    # — พบระหว่าง Deploy UAT ครั้งแรก 2026-09-02: pytest Suite รันบน SQLite ซึ่งไม่มี
+    # Native ENUM/CREATE TYPE เลยไม่เคยเจอบั๊กนี้มาก่อน — ยืนยันแก้ถูกจริงด้วยการรัน
+    # ซ้ำกับ PostgreSQL 16 จริง Upgrade/Downgrade/Upgrade วนครบรอบ)
+    pr_status_col = postgresql.ENUM(*PR_STATUS_VALUES, name="pr_status", create_type=False)
+    # ปิด Auto-Create Type ของ op.create_table ด้านล่าง (มิฉะนั้นจะพยายาม CREATE TYPE
+    # ซ้ำกับที่สร้างไปแล้วบรรทัดบน แล้วชน DuplicateObject บน PostgreSQL จริง — พบระหว่าง
+    # Deploy UAT ครั้งแรก 2026-09-02: pytest Suite รันบน SQLite ซึ่งไม่มี Native
+    # ENUM/CREATE TYPE เลยไม่เคยเจอบั๊กนี้มาก่อน)
+    pr_status.create_type = False
 
     op.create_table(
         "purchasing_requisitions",
@@ -54,7 +68,7 @@ def upgrade() -> None:
         sa.Column("section", sa.String(length=255), nullable=False),
         sa.Column("division", sa.String(length=255), nullable=False),
         sa.Column("doc_date", sa.Date(), nullable=False),
-        sa.Column("status", pr_status, nullable=False, server_default="draft"),
+        sa.Column("status", pr_status_col, nullable=False, server_default="draft"),
         sa.Column("requested_by_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
         sa.Column("reviewed_by_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=True),
         sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True),
@@ -114,6 +128,10 @@ def upgrade() -> None:
 
     source_doc_type = sa.Enum(*SOURCE_DOC_TYPE_VALUES, name="source_doc_type")
     source_doc_type.create(op.get_bind(), checkfirst=True)
+    source_doc_type_col = postgresql.ENUM(
+        *SOURCE_DOC_TYPE_VALUES, name="source_doc_type", create_type=False
+    )  # เหตุผลเดียวกับ pr_status ด้านบน
+    source_doc_type.create_type = False  # เหตุผลเดียวกับ pr_status ด้านบน
 
     op.create_table(
         "source_documents",
@@ -125,7 +143,7 @@ def upgrade() -> None:
             nullable=True,
         ),
         sa.Column("file_path", sa.String(length=1024), nullable=False),
-        sa.Column("doc_type", source_doc_type, nullable=False),
+        sa.Column("doc_type", source_doc_type_col, nullable=False),
         sa.Column("uploaded_by_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
         sa.Column("uploaded_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("ai_extraction_raw_json", sa.JSON(), nullable=True),

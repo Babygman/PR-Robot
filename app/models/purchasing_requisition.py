@@ -38,7 +38,19 @@ class PurchasingRequisition(Base):
     doc_date: Mapped[date] = mapped_column(Date, nullable=False)
 
     status: Mapped[PRStatus] = mapped_column(
-        SAEnum(PRStatus, name="pr_status", native_enum=True),
+        # values_callable: บังคับให้เก็บ .value ("draft") ลง DB ไม่ใช่ .name ("DRAFT")
+        # ที่เป็น Default ของ SQLAlchemy — ต้องตรงกับค่าที่ Alembic Migration
+        # (cdfbb940153e_pr_core_schema.py) สร้าง Native Enum Type ไว้จริงบน PostgreSQL
+        # (พบ Mismatch นี้ระหว่าง Deploy UAT ครั้งแรก 2026-09-02 — pytest Suite ใช้
+        # Base.metadata.create_all() สร้าง Schema จาก Model ตรงๆ ไม่ผ่าน Alembic เลย
+        # ไม่เคยเจอ Mismatch ระหว่างสองฝั่งนี้มาก่อน — ยืนยันแก้ถูกจริงด้วย Insert/Update
+        # จริงผ่าน PostgreSQL 16)
+        SAEnum(
+            PRStatus,
+            name="pr_status",
+            native_enum=True,
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
         default=PRStatus.DRAFT,
         nullable=False,
     )
