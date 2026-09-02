@@ -22,7 +22,7 @@ services:
     container_name: pr-robot-${APP_ENV:-uat}-web
     restart: unless-stopped
     env_file:
-      - .env
+      - .env.${APP_ENV:-uat}
     environment:
       APP_ENV: ${APP_ENV:-uat}
     networks:
