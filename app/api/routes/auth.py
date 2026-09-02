@@ -14,9 +14,14 @@ from app.schemas.user import UserRead
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# Secure Cookie เฉพาะเมื่อไม่ใช่ Dev/Sandbox (Production ต้องรันหลัง HTTPS ผ่าน Nginx
-# Proxy Manager เสมอตามมาตรฐาน — ดู docs/00_KICKOFF_AND_DESIGN.md ข้อ 3.3)
-_SECURE_COOKIE = settings.app_env not in ("dev", "verify-sandbox", "test")
+# Secure Cookie เฉพาะ Production เท่านั้น (ต้องรันหลัง HTTPS ผ่าน Nginx Proxy Manager
+# เสมอ — ดู docs/00_KICKOFF_AND_DESIGN.md ข้อ 3.3) — UAT ตัดสินใจแล้ว (2026-09-02)
+# ให้รันบน HTTP ธรรมดาไปก่อน (Let's Encrypt ใช้กับ .sct.local Internal Domain
+# ไม่ได้ ต้องรอ Internal CA จาก IT) ถ้ายังคง Secure=True ไว้ Browser จะไม่ยอมเก็บ
+# Cookie บน HTTP เลย ทำให้ Login สำเร็จจริงที่ Server แต่วน Loop กลับมาหน้า Login
+# ตลอด (พบจริงตอน UAT Walkthrough ครั้งแรก 2026-09-02) — ต้องกลับมาเอา "uat" ออก
+# จาก List นี้ทันทีที่ตั้ง HTTPS ให้ UAT ได้จริง
+_SECURE_COOKIE = settings.app_env not in ("dev", "verify-sandbox", "test", "uat")
 
 
 @router.post("/login", response_model=UserRead)
