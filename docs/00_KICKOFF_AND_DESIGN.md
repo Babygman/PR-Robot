@@ -208,6 +208,48 @@ Internet จริง (เช่น เครื่อง Mac ของผู้
 
 ---
 
+## 4c. บันทึก PR + Generate PDF — Implemented Phase 5 (2026-09-02)
+
+**PR Numbering:** ตาราง `pr_number_counters` (Migration `f6511609ec30`) มีแถวเดียวเสมอ
+(id=1) จองเลขถัดไปแบบ Atomic ด้วย `UPDATE ... RETURNING` (ดู
+`app/services/pr_numbering.py`) — ไม่พึ่ง `SELECT ... FOR UPDATE` (SQLite ไม่รองรับ)
+จึงพกพาข้าม Postgres/SQLite ได้ ตรงตาม Business Decision 2026-09-01 (ต่อเนื่องตลอด
+ไม่รีเซ็ต)
+
+**Endpoints:** `POST /prs` (สร้าง Draft พร้อม Item + Budget Control, จองเลข PR
+อัตโนมัติ, Requested by = ผู้ Login เสมอ, ผูก `source_document_ids` เข้ากับ PR ถ้ามี),
+`GET /prs`, `GET /prs/{id}`, `PATCH /prs/{id}` (แก้ไขได้เฉพาะ Status = draft),
+`GET /prs/{id}/pdf` (Generate PDF)
+
+**PDF Generation:** Jinja2 Template (`app/templates/pr_form.html`) + WeasyPrint —
+ออกแบบให้ตรงกับฟอร์มจริง FM-PU-02 Rev.2 ของ Sunstar Chemical (Thailand) ที่ Product
+Owner ส่งมา (เทียบ Layout ทีละส่วน: Header/Company Block, No./Date, Section/Division,
+ตาราง Item 7 คอลัมน์, Budget Control, Remark, ลายเซ็น 4 ช่อง) — **เบี่ยงเบนจากต้นฉบับ
+โดยเจตนา:** ไม่ใส่เลขที่พิมพ์ล่วงหน้า "0290", ป้าย "Original" และ "PAGE 1/3" เพราะเป็น
+ร่องรอยของกระดาษ Carbonless หลายชั้นที่พิมพ์ไว้ล่วงหน้า ไม่เกี่ยวกับ PDF ที่ระบบสร้างขึ้นใหม่
+ทุกครั้ง — คงไว้เฉพาะ "Code: FM-PU-02 / Revision: 2" ที่ Footer เพราะเป็นข้อมูลควบคุม
+เอกสารจริง
+
+**Verification (2026-09-02):** `ruff check .` ผ่านสะอาด, `pytest` ผ่านทั้งหมด 30/30
+(รวม 12 Test ใหม่ของ Phase 5 — ครอบคลุม PR Numbering ต่อเนื่อง, ผูก Source Document,
+แก้ไขเฉพาะ Draft, Reject การแก้ไข PR ที่ผ่าน Workflow ไปแล้ว, PDF Endpoint คืนค่า
+`application/pdf` ที่ถูกต้อง), Alembic Upgrade → Downgrade → Upgrade → Downgrade →
+Upgrade ผ่านสมบูรณ์ (SQLite Sandbox) — พบและแก้ Bug จริงระหว่างทดสอบ: แก้ไข Budget
+Control เดิมด้วยการสร้าง Object ใหม่ทับตรงๆ ทำให้ SQLAlchemy พยายาม Insert แถวใหม่ก่อน
+Delete แถวเก่า ชน Unique Constraint บน `pr_id` (One-to-One Relationship) — แก้โดย
+Mutate แถวเดิมแทนเมื่อมีอยู่แล้ว
+
+**Visual QA จริง:** Render PDF ตัวอย่างด้วยข้อมูลจำลอง เปิดดูด้วยตาจริง (ไม่ใช่แค่ตรวจ
+Code) เทียบกับฟอร์มต้นฉบับ — ภาษาไทยแสดงผลถูกต้องสมบูรณ์รวมสระซับซ้อน (เช่น สระอำ)
+เมื่อใช้ฟอนต์ Noto Sans Thai — **Known Limitation:** Text Layer ภายใน PDF (สำหรับ
+Copy/ค้นหาข้อความ) สูญเสียสระอำในบางคำ เป็นข้อจำกัดระดับ Library ของ WeasyPrint/Pango
+ไม่กระทบการแสดงผล/พิมพ์ซึ่งเป็น Use Case หลัก — Sandbox พัฒนาไม่มีฟอนต์ไทยติดตั้งไว้
+เดิม (มีแค่ Font ตระกูล TLWG) ต้องติดตั้ง `fonts-noto-core` เพิ่มเอง (ยืนยันว่าใช้ได้จริง
+ทั้ง Cloud Container และ Device Bash โดยไม่ต้องใช้ Root/Sudo เพิ่มเติมนอกเหนือจาก
+apt) — **สิ่งที่ต้องทำต่อ:** เมื่อสร้าง Dockerfile จริงใน Phase 7 (Deploy UAT/PROD)
+ต้องติดตั้ง Font ไทยไว้ใน Image ด้วย ไม่เช่นนั้นจะ Fallback ไปใช้ Font ที่ไม่รองรับ
+ภาษาไทยดีพอ — บันทึกไว้ใน Open Items แล้ว
+
 ## 5. Roadmap (แบ่ง Phase ตามมาตรฐาน — รออนุมัติก่อนเริ่มแต่ละ Phase)
 
 | Phase | เนื้อหา | Output |
@@ -217,7 +259,7 @@ Internet จริง (เช่น เครื่อง Mac ของผู้
 | 2 | Database Schema + Migration จริงตามข้อ 4 | **เสร็จแล้ว (2026-09-01)** — Schema ใช้งานได้ ผ่าน Alembic Upgrade/Downgrade/Upgrade + ORM Round-trip จริง |
 | 3 | Authentication & Role-based Access (Login, จัดการ User/Role) | **เสร็จแล้ว (2026-09-01)** — Login/Logout/Me ผ่าน HttpOnly Cookie + JWT, Role-based Access Control (can_review/can_approve/can_receive/is_admin), Admin สร้าง/ดูรายชื่อ User ได้, สคริปต์ Bootstrap Admin คนแรก |
 | 4 | Upload + AI Extraction (Gemini) + หน้าตรวจทาน/แก้ไขข้อมูล | **เสร็จแล้ว (2026-09-02)** — Upload PDF/รูปภาพ → Gemini สกัดข้อมูลแบบ Structured JSON → บันทึก reviewed_data เมื่อผู้ใช้แก้ไข (ดู 4b.) |
-| 5 | บันทึก PR + Generate PDF ตาม Template จริง | ได้ไฟล์ PR ที่กรอกครบ พิมพ์ได้ |
+| 5 | บันทึก PR + Generate PDF ตาม Template จริง | **เสร็จแล้ว (2026-09-02)** — POST/GET/PATCH /prs + GET /prs/{id}/pdf ตรงตามฟอร์ม FM-PU-02 (ดู 4c.) |
 | 6 | Workflow อนุมัติ (Reviewed/Approved/Received) + ประวัติ/ค้นหา PR | ครบ Flow ตั้งแต่ขอซื้อถึงรับของ + History Search |
 | 7 | UAT รวม + Security Review + Deploy จริงบน SCTUBUNTU01 | ระบบใช้งานจริงบน UAT/PROD |
 | 8 | Documentation (README/RELEASE) + Lessons Learned | เอกสารครบตามมาตรฐานข้อ 10 และ 13 |
@@ -235,6 +277,10 @@ Internet จริง (เช่น เครื่อง Mac ของผู้
 - Google Gemini API Key: ได้รับและตั้งค่าใน `.env` แล้ว (2026-09-02, ไม่ Commit ขึ้น Git) —
   ยังไม่ผ่านการยิง Request จริงเพราะ Sandbox พัฒนา Block Network ไปยัง Google API (ดู
   ข้อจำกัดใน 4b.) ต้อง Live Test เพิ่มเติมนอก Sandbox
+
+- [ ] ติดตั้งฟอนต์ไทย (`fonts-noto-core` หรือเทียบเท่า) ใน Docker Image ตอนสร้าง
+  Dockerfile จริง — จำเป็นตอน Phase 7 ไม่เช่นนั้น PDF จะ Fallback ไป Font ที่ไม่รองรับ
+  ภาษาไทยดีพอ (ดู 4c.)
 
 **ยังรออยู่:**
 - [ ] รายชื่อ User เริ่มต้นและบทบาทจริง (ใครมีสิทธิ์ can_review / can_approve / can_receive / is_admin) — กลไก Bootstrap Admin คนแรกทำเสร็จแล้วใน Phase 3 (`app/scripts/create_admin.py`) แต่ยังไม่ได้รับรายชื่อ User จริงจาก Product Owner เพื่อสร้างในระบบ

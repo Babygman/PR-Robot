@@ -1,5 +1,6 @@
 """Import ทุก Model ที่นี่ ให้ Base.metadata เห็นครบสำหรับ Alembic"""
 from app.models.audit_log import AuditLog
+from app.models.pr_number_counter import PRNumberCounter
 from app.models.purchasing_requisition import (
     PRBudgetControl,
     PRItem,
@@ -13,6 +14,7 @@ __all__ = [
     "AuditLog",
     "PRBudgetControl",
     "PRItem",
+    "PRNumberCounter",
     "PRStatus",
     "PurchasingRequisition",
     "SourceDocType",

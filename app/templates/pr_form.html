@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<style>
+  @page {
+    size: A4;
+    margin: 14mm 12mm 12mm 12mm;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Noto Sans Thai", "Noto Sans", "TH Sarabun New", sans-serif;
+    font-size: 10.5pt;
+    color: #111;
+    margin: 0;
+  }
+  table { border-collapse: collapse; width: 100%; }
+
+  /* ---------- Header ---------- */
+  .header { width: 100%; margin-bottom: 3mm; }
+  .header td { vertical-align: top; padding: 0; }
+  .badge {
+    display: inline-block;
+    background: #4a4a4a;
+    color: #fff;
+    font-weight: bold;
+    font-size: 10pt;
+    padding: 3mm 4mm;
+    border-radius: 4mm;
+    letter-spacing: 0.3pt;
+  }
+  .company-th { font-weight: bold; font-size: 11pt; margin: 0 0 1mm 0; }
+  .company-en { font-weight: bold; font-size: 10.5pt; margin: 0 0 1mm 0; }
+  .company-addr { font-size: 8pt; line-height: 1.35; color: #333; }
+  .company-block { text-align: center; }
+  .brand {
+    text-align: right;
+    font-size: 20pt;
+    font-weight: 700;
+    color: #1a3a6b;
+    letter-spacing: 1pt;
+    font-family: Georgia, "Times New Roman", serif;
+  }
+
+  /* ---------- No./Date + Section/Division ---------- */
+  .meta-table { margin-top: 3mm; }
+  .meta-table td {
+    border: 1pt solid #000;
+    padding: 2.5mm 3mm;
+    vertical-align: top;
+  }
+  .meta-left { width: 62%; }
+  .meta-right { width: 38%; }
+  .field-line { margin-bottom: 3mm; }
+  .field-line:last-child { margin-bottom: 0; }
+  .field-label { font-weight: normal; }
+  .field-value {
+    border-bottom: 0.75pt solid #000;
+    display: inline-block;
+    min-width: 60mm;
+    padding-left: 2mm;
+  }
+
+  /* ---------- Items table ---------- */
+  .items-table { margin-top: 3mm; }
+  .items-table th, .items-table td {
+    border: 1pt solid #000;
+    padding: 1.5mm 2mm;
+    font-size: 9.5pt;
+  }
+  .items-table th { font-weight: bold; text-align: center; background: #f2f2f2; }
+  .items-table td.center { text-align: center; }
+  .items-table td.item-row { height: 8mm; vertical-align: top; }
+  .col-item { width: 6%; }
+  .col-acct { width: 11%; }
+  .col-desc { width: 32%; }
+  .col-qty { width: 9%; }
+  .col-reqdate { width: 11%; }
+  .col-reason { width: 21%; }
+  .col-refpo { width: 10%; }
+
+  /* ---------- Budget control ---------- */
+  .budget-wrap { margin-top: 4mm; display: flex; }
+  .budget-box {
+    border: 1.25pt solid #000;
+    border-radius: 2mm;
+    padding: 3mm;
+    width: 62%;
+  }
+  .budget-title { font-weight: bold; font-size: 11pt; margin-bottom: 2mm; }
+  .budget-table td, .budget-table th {
+    border: 1pt solid #000;
+    padding: 1.5mm 2mm;
+    font-size: 9.5pt;
+  }
+  .budget-table th { text-align: center; font-weight: bold; }
+  .budget-table td.label { width: 40%; }
+  .budget-table td.num { text-align: right; }
+
+  /* ---------- Remark ---------- */
+  .remark-box {
+    margin-top: 4mm;
+    border: 1pt solid #000;
+    border-radius: 1.5mm;
+    padding: 4mm 3mm 3mm 3mm;
+    position: relative;
+    min-height: 18mm;
+  }
+  .remark-label {
+    position: absolute;
+    top: -3mm;
+    left: 3mm;
+    background: #fff;
+    padding: 0 1.5mm;
+    font-weight: bold;
+    font-size: 9pt;
+  }
+  .remark-text { font-size: 9.5pt; white-space: pre-wrap; }
+
+  /* ---------- Signatures ---------- */
+  .sign-wrap { margin-top: 5mm; width: 100%; }
+  .sign-wrap td { width: 25%; padding: 0 1.5mm; vertical-align: top; }
+  .sign-box {
+    border: 1pt solid #000;
+    border-radius: 1.5mm;
+    padding: 4mm 2mm 3mm 2mm;
+    position: relative;
+    height: 20mm;
+    text-align: center;
+  }
+  .sign-label {
+    position: absolute;
+    top: -3mm;
+    left: 3mm;
+    background: #fff;
+    padding: 0 1.5mm;
+    font-weight: bold;
+    font-size: 8.5pt;
+  }
+  .sign-name { margin-top: 5mm; font-size: 9.5pt; }
+
+  /* ---------- Footer ---------- */
+  .footer {
+    margin-top: 5mm;
+    text-align: right;
+    font-size: 8pt;
+    color: #333;
+  }
+</style>
+</head>
+<body>
+
+  <table class="header">
+    <tr>
+      <td style="width: 22%;"><span class="badge">PURCHASING REQUISITION</span></td>
+      <td style="width: 56%;" class="company-block">
+        <div class="company-th">บริษัท ซันสตาร์ เคมิคัล (ประเทศไทย) จำกัด</div>
+        <div class="company-en">Sunstar Chemical (Thailand) Co., Ltd.</div>
+        <div class="company-addr">
+          624 หมู่ 4 นิคมอุตสาหกรรมบางปู ซอย 7 เอ ถ.สุขุมวิท ต.แพรกษา<br>
+          อ.เมืองสมุทรปราการ จ.สมุทรปราการ 10280<br>
+          624 MOO 4 BANGPOO INDUSTRIAL ESTATE SOI 7A, SUKHUMVIT Rd., PRAKSA,<br>
+          MUANG SAMUTPRAKARN, SAMUTPRAKARN 10280<br>
+          Tel: +66 2709 4531&nbsp;&nbsp; Fax: +66 2324 0310
+        </div>
+      </td>
+      <td style="width: 22%;">
+        <div class="brand">SUNSTAR</div>
+      </td>
+    </tr>
+  </table>
+
+  <table class="meta-table">
+    <tr>
+      <td class="meta-left">
+        <div class="field-line">
+          <span class="field-label">Section</span>
+          <span class="field-value">{{ pr.section }}</span>
+        </div>
+        <div class="field-line">
+          <span class="field-label">Division</span>
+          <span class="field-value">{{ pr.division }}</span>
+        </div>
+      </td>
+      <td class="meta-right">
+        <div class="field-line">
+          <span class="field-label">No.</span>
+          <span class="field-value">{{ pr.pr_no }}</span>
+        </div>
+        <div class="field-line">
+          <span class="field-label">Date</span>
+          <span class="field-value">{{ pr.doc_date }}</span>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th class="col-item">Item</th>
+        <th class="col-acct">Account<br>Code</th>
+        <th class="col-desc">Description</th>
+        <th class="col-qty">Quantity</th>
+        <th class="col-reqdate">Required<br>Date</th>
+        <th class="col-reason">Reason</th>
+        <th class="col-refpo">Ref.<br>PO</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in display_items %}
+      <tr>
+        <td class="item-row center">{{ item.item_no or "" }}</td>
+        <td class="item-row">{{ item.account_code or "" }}</td>
+        <td class="item-row">{{ item.description or "" }}</td>
+        <td class="item-row center">{{ item.quantity or "" }}</td>
+        <td class="item-row center">{{ item.required_date or "" }}</td>
+        <td class="item-row">{{ item.reason or "" }}</td>
+        <td class="item-row">{{ item.ref_po or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="budget-wrap">
+    <div class="budget-box">
+      <div class="budget-title">Budget Control</div>
+      <table class="budget-table">
+        <tr>
+          <th></th>
+          <th>Account Code</th>
+          <th>Account Code</th>
+        </tr>
+        <tr>
+          <td class="label">Budget</td>
+          <td class="num">{{ budget.budget }}</td>
+          <td class="num"></td>
+        </tr>
+        <tr>
+          <td class="label">Used Before Amount</td>
+          <td class="num">{{ budget.used_before_amount }}</td>
+          <td class="num"></td>
+        </tr>
+        <tr>
+          <td class="label">This Application</td>
+          <td class="num">{{ budget.this_application }}</td>
+          <td class="num"></td>
+        </tr>
+        <tr>
+          <td class="label">Balance</td>
+          <td class="num">{{ budget.balance }}</td>
+          <td class="num"></td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="remark-box">
+    <div class="remark-label">Remark</div>
+    <div class="remark-text">{{ pr.remark or "" }}</div>
+  </div>
+
+  <table class="sign-wrap">
+    <tr>
+      <td>
+        <div class="sign-box">
+          <div class="sign-label">Requested by</div>
+          <div class="sign-name">{{ pr.requested_by_name or "" }}</div>
+        </div>
+      </td>
+      <td>
+        <div class="sign-box">
+          <div class="sign-label">Reviewed by</div>
+          <div class="sign-name">{{ pr.reviewed_by_name or "" }}</div>
+        </div>
+      </td>
+      <td>
+        <div class="sign-box">
+          <div class="sign-label">Approved by</div>
+          <div class="sign-name">{{ pr.approved_by_name or "" }}</div>
+        </div>
+      </td>
+      <td>
+        <div class="sign-box">
+          <div class="sign-label">Received by</div>
+          <div class="sign-name">{{ pr.received_by_name or "" }}</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="footer">
+    Code: FM-PU-02 &nbsp;&nbsp; Revision: 2 &nbsp;&nbsp; Generated: {{ generated_at }}
+  </div>
+
+</body>
+</html>

@@ -13,7 +13,7 @@ from app.core.security import hash_password
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models import User
+from app.models import PRNumberCounter, User
 
 
 @pytest.fixture()
@@ -26,6 +26,11 @@ def db_session():
     Base.metadata.create_all(engine)
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     session = TestingSessionLocal()
+    # Base.metadata.create_all() สร้างแค่ Schema ไม่รัน Data Seed ของ Alembic Migration
+    # (pr_number_counters ต้องมีแถว id=1 เสมอในระบบจริง — ดู
+    # alembic/versions/f6511609ec30_pr_number_counter.py) จำลองผลลัพธ์เดียวกันที่นี่
+    session.add(PRNumberCounter(id=1, next_value=1))
+    session.commit()
     try:
         yield session
     finally:
