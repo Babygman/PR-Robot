@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block title %}{% if pr_id %}แก้ไข PR{% else %}สร้าง PR ใหม่{% endif %} — PR-Robot{% endblock %}
+{% block content %}
+<h1 id="page-title">{% if pr_id %}แก้ไข PR{% else %}สร้าง PR ใหม่{% endif %}</h1>
+
+<div class="error hidden" id="load-error"></div>
+
+<form id="pr-form" class="hidden">
+  <div class="card">
+    <div class="row">
+      <div class="field"><label for="f-section">Section</label><input type="text" id="f-section" required></div>
+      <div class="field"><label for="f-division">Division</label><input type="text" id="f-division" required></div>
+      <div class="field"><label for="f-docdate">วันที่เอกสาร</label><input type="date" id="f-docdate" required></div>
+    </div>
+    <div class="field"><label for="f-remark">Remark</label><textarea id="f-remark"></textarea></div>
+  </div>
+
+  <div class="card" id="source-doc-card">
+    <h2>แนบเอกสารต้นทาง (ถ้ามี)</h2>
+    <p class="muted">เลือกเอกสารที่อัปโหลดและตรวจทานไว้แล้วเพื่อผูกกับ PR นี้ (ไม่บังคับ)</p>
+    <div id="source-doc-list" class="muted">กำลังโหลดรายการเอกสาร...</div>
+  </div>
+
+  <div class="card">
+    <h2>รายการสินค้า</h2>
+    <div id="items-container"></div>
+    <button type="button" class="secondary" id="add-item-btn">+ เพิ่มรายการ</button>
+  </div>
+
+  <div class="card">
+    <label style="display:flex; align-items:center; gap:6px; font-size:14px; color:#333; margin-bottom: 10px;">
+      <input type="checkbox" id="has-budget" style="width:auto;"> มี Budget Control
+    </label>
+    <div id="budget-fields" class="hidden">
+      <div class="row">
+        <div class="field"><label for="bc-code1">Account Code 1</label><input type="text" id="bc-code1"></div>
+        <div class="field"><label for="bc-code2">Account Code 2</label><input type="text" id="bc-code2"></div>
+      </div>
+      <div class="row">
+        <div class="field"><label for="bc-budget">Budget</label><input type="text" id="bc-budget"></div>
+        <div class="field"><label for="bc-used">Used Before Amount</label><input type="text" id="bc-used"></div>
+        <div class="field"><label for="bc-this">This Application</label><input type="text" id="bc-this"></div>
+        <div class="field"><label for="bc-balance">Balance</label><input type="text" id="bc-balance"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="error hidden" id="submit-error"></div>
+  <div class="actions">
+    <button type="submit">{% if pr_id %}บันทึกการแก้ไข{% else %}สร้าง PR{% endif %}</button>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+const PR_ID = {{ pr_id if pr_id is not none else "null" }};
+const params = new URLSearchParams(window.location.search);
+const SOURCE_DOC_ID = params.get("source_document_id") ? Number(params.get("source_document_id")) : null;
+const selectedDocIds = new Set(SOURCE_DOC_ID ? [SOURCE_DOC_ID] : []);
+
+function itemRowHtml(item) {
+  item = item || {};
+  return `<div class="item-row">
+    <button type="button" class="remove-item">ลบ</button>
+    <div class="row">
+      <div class="field"><label>Account Code</label><input type="text" class="it-account" value="${escapeHtml(item.account_code)}"></div>
+      <div class="field" style="flex:2;"><label>Description</label><input type="text" class="it-desc" value="${escapeHtml(item.description)}" required></div>
+      <div class="field"><label>Quantity</label><input type="text" class="it-qty" value="${escapeHtml(item.quantity)}"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Required Date</label><input type="date" class="it-reqdate" value="${escapeHtml(item.required_date)}"></div>
+      <div class="field" style="flex:2;"><label>Reason</label><input type="text" class="it-reason" value="${escapeHtml(item.reason)}"></div>
+      <div class="field"><label>Ref. PO</label><input type="text" class="it-refpo" value="${escapeHtml(item.ref_po)}"></div>
+    </div>
+  </div>`;
+}
+
+function addItemRow(item) {
+  const wrap = document.createElement("div");
+  wrap.innerHTML = itemRowHtml(item);
+  const row = wrap.firstElementChild;
+  row.querySelector(".remove-item").addEventListener("click", () => row.remove());
+  document.getElementById("items-container").appendChild(row);
+}
+
+document.getElementById("add-item-btn").addEventListener("click", () => addItemRow());
+
+document.getElementById("has-budget").addEventListener("change", (e) => {
+  document.getElementById("budget-fields").classList.toggle("hidden", !e.target.checked);
+});
+
+async function loadSourceDocuments() {
+  const res = await apiFetch("/documents");
+  const listEl = document.getElementById("source-doc-list");
+  if (!res.ok) {
+    listEl.textContent = "โหลดรายการเอกสารไม่สำเร็จ";
+    return;
+  }
+  const docs = await res.json();
+  if (docs.length === 0) {
+    listEl.textContent = "ยังไม่มีเอกสารที่อัปโหลดไว้";
+    return;
+  }
+  listEl.innerHTML = docs
+    .slice(0, 20)
+    .map((doc) => {
+      const label = doc.reviewed_data?.vendor_name || doc.ai_extraction_raw_json?.vendor_name || `เอกสาร #${doc.id}`;
+      const checked = selectedDocIds.has(doc.id) ? "checked" : "";
+      return `<label style="display:block; margin-bottom:4px; font-size:13.5px;">
+        <input type="checkbox" class="source-doc-checkbox" value="${doc.id}" style="width:auto;" ${checked}>
+        #${doc.id} — ${escapeHtml(doc.doc_type)} — ${escapeHtml(label)}
+      </label>`;
+    })
+    .join("");
+
+  // ถ้ามาจากลิงก์ "ไปสร้าง PR จากเอกสารนี้" ให้ดึงข้อมูลมา Prefill รายการสินค้าอัตโนมัติ
+  if (SOURCE_DOC_ID && !PR_ID) {
+    const doc = docs.find((d) => d.id === SOURCE_DOC_ID);
+    const data = doc?.reviewed_data || doc?.ai_extraction_raw_json;
+    if (data && data.items && data.items.length) {
+      document.getElementById("items-container").innerHTML = "";
+      data.items.forEach((it) =>
+        addItemRow({
+          description: it.description,
+          quantity: [it.quantity, it.unit].filter(Boolean).join(" "),
+        })
+      );
+    }
+  }
+}
+
+async function loadForEdit() {
+  const res = await apiFetch(`/prs/${PR_ID}`);
+  if (!res.ok) {
+    document.getElementById("load-error").textContent = "โหลด PR ไม่สำเร็จ";
+    document.getElementById("load-error").classList.remove("hidden");
+    return false;
+  }
+  const pr = await res.json();
+  if (pr.status !== "draft") {
+    document.getElementById("load-error").textContent =
+      "แก้ไขไม่ได้ — PR นี้ผ่านขั้นตอน Review ไปแล้ว (สถานะปัจจุบัน: " + pr.status + ")";
+    document.getElementById("load-error").classList.remove("hidden");
+    return false;
+  }
+  document.getElementById("f-section").value = pr.section;
+  document.getElementById("f-division").value = pr.division;
+  document.getElementById("f-docdate").value = pr.doc_date;
+  document.getElementById("f-remark").value = pr.remark || "";
+  document.getElementById("items-container").innerHTML = "";
+  pr.items.forEach(addItemRow);
+  if (pr.budget_control) {
+    document.getElementById("has-budget").checked = true;
+    document.getElementById("budget-fields").classList.remove("hidden");
+    document.getElementById("bc-code1").value = pr.budget_control.account_code_1 || "";
+    document.getElementById("bc-code2").value = pr.budget_control.account_code_2 || "";
+    document.getElementById("bc-budget").value = pr.budget_control.budget ?? "";
+    document.getElementById("bc-used").value = pr.budget_control.used_before_amount ?? "";
+    document.getElementById("bc-this").value = pr.budget_control.this_application ?? "";
+    document.getElementById("bc-balance").value = pr.budget_control.balance ?? "";
+  }
+  document.getElementById("source-doc-card").classList.add("hidden"); // แก้ไขเอกสารที่ผูกไว้ ทำใน Phase หน้า
+  return true;
+}
+
+document.getElementById("pr-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById("submit-error");
+  errEl.classList.add("hidden");
+
+  const items = Array.from(document.querySelectorAll("#items-container .item-row")).map((row) => ({
+    account_code: row.querySelector(".it-account").value || null,
+    description: row.querySelector(".it-desc").value,
+    quantity: row.querySelector(".it-qty").value || null,
+    required_date: row.querySelector(".it-reqdate").value || null,
+    reason: row.querySelector(".it-reason").value || null,
+    ref_po: row.querySelector(".it-refpo").value || null,
+  }));
+
+  const hasBudget = document.getElementById("has-budget").checked;
+  const budgetControl = hasBudget
+    ? {
+        account_code_1: document.getElementById("bc-code1").value || null,
+        account_code_2: document.getElementById("bc-code2").value || null,
+        budget: document.getElementById("bc-budget").value || null,
+        used_before_amount: document.getElementById("bc-used").value || null,
+        this_application: document.getElementById("bc-this").value || null,
+        balance: document.getElementById("bc-balance").value || null,
+      }
+    : null;
+
+  const payload = {
+    section: document.getElementById("f-section").value,
+    division: document.getElementById("f-division").value,
+    doc_date: document.getElementById("f-docdate").value,
+    items,
+    budget_control: budgetControl,
+    remark: document.getElementById("f-remark").value || null,
+  };
+
+  let res;
+  if (PR_ID) {
+    res = await apiFetch(`/prs/${PR_ID}`, { method: "PATCH", body: JSON.stringify(payload) });
+  } else {
+    payload.source_document_ids = Array.from(document.querySelectorAll(".source-doc-checkbox:checked")).map(
+      (cb) => Number(cb.value)
+    );
+    res = await apiFetch("/prs", { method: "POST", body: JSON.stringify(payload) });
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    errEl.textContent = body.detail ? JSON.stringify(body.detail) : "บันทึกไม่สำเร็จ";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  const pr = await res.json();
+  window.location.href = `/app/prs/${pr.id}`;
+});
+
+(async () => {
+  const me = await requireLogin();
+  if (!me) return;
+
+  await loadSourceDocuments();
+
+  if (PR_ID) {
+    const ok = await loadForEdit();
+    if (!ok) return;
+  } else if (document.querySelectorAll("#items-container .item-row").length === 0) {
+    addItemRow();
+  }
+
+  document.getElementById("pr-form").classList.remove("hidden");
+})();
+</script>
+{% endblock %}

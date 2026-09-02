@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}อัปโหลดเอกสาร — PR-Robot{% endblock %}
+{% block content %}
+<h1>อัปโหลดเอกสารต้นทาง</h1>
+<p class="muted">อัปโหลดใบเสนอราคาหรือใบรับของ (PDF/PNG/JPEG/WEBP) ให้ AI อ่านข้อมูลให้อัตโนมัติ ตรวจทาน/แก้ไขก่อนนำไปสร้าง PR</p>
+
+<div class="card">
+  <form id="upload-form">
+    <div class="row">
+      <div class="field">
+        <label for="doc-file">ไฟล์เอกสาร</label>
+        <input type="file" id="doc-file" accept="application/pdf,image/png,image/jpeg,image/webp" required>
+      </div>
+      <div class="field">
+        <label for="doc-type">ประเภทเอกสาร</label>
+        <select id="doc-type">
+          <option value="quotation">ใบเสนอราคา</option>
+          <option value="receiving_note">ใบรับของ</option>
+          <option value="other">อื่นๆ</option>
+        </select>
+      </div>
+    </div>
+    <button type="submit" id="upload-btn">อัปโหลดและให้ AI อ่านข้อมูล</button>
+  </form>
+  <div class="muted hidden" id="upload-loading">กำลังให้ AI อ่านข้อมูล... อาจใช้เวลาสักครู่</div>
+  <div class="error hidden" id="upload-error"></div>
+</div>
+
+<div class="card hidden" id="review-card">
+  <h2>ข้อมูลที่ AI สกัดได้ (ตรวจทาน/แก้ไขก่อนบันทึก)</h2>
+  <div class="error hidden" id="extraction-error-box"></div>
+  <div class="muted" id="confidence-note"></div>
+  <div class="row">
+    <div class="field"><label for="rv-vendor">ชื่อผู้ขาย/ร้านค้า</label><input type="text" id="rv-vendor"></div>
+    <div class="field"><label for="rv-docno">เลขที่เอกสาร</label><input type="text" id="rv-docno"></div>
+    <div class="field"><label for="rv-docdate">วันที่เอกสาร</label><input type="date" id="rv-docdate"></div>
+  </div>
+  <div class="field"><label for="rv-notes">หมายเหตุ</label><textarea id="rv-notes"></textarea></div>
+
+  <h2>รายการสินค้า</h2>
+  <div id="rv-items"></div>
+  <button type="button" class="secondary" id="rv-add-item">+ เพิ่มรายการ</button>
+
+  <div class="actions">
+    <button type="button" id="rv-save-btn">บันทึกข้อมูลที่ตรวจแล้ว</button>
+  </div>
+  <div class="success hidden" id="rv-saved-msg">
+    บันทึกแล้ว — <a id="rv-create-pr-link" href="#">ไปสร้าง PR จากเอกสารนี้ →</a>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let currentDocId = null;
+
+function itemRowHtml(item) {
+  item = item || {};
+  return `<div class="item-row">
+    <button type="button" class="remove-item">ลบ</button>
+    <div class="row">
+      <div class="field"><label>รายละเอียด</label><input type="text" class="rv-item-desc" value="${escapeHtml(item.description)}"></div>
+      <div class="field"><label>จำนวน</label><input type="text" class="rv-item-qty" value="${escapeHtml(item.quantity)}"></div>
+      <div class="field"><label>หน่วย</label><input type="text" class="rv-item-unit" value="${escapeHtml(item.unit)}"></div>
+      <div class="field"><label>ราคาต่อหน่วย</label><input type="text" class="rv-item-unitprice" value="${escapeHtml(item.unit_price)}"></div>
+      <div class="field"><label>ราคารวม</label><input type="text" class="rv-item-amount" value="${escapeHtml(item.amount)}"></div>
+    </div>
+  </div>`;
+}
+
+function addItemRow(item) {
+  const wrap = document.createElement("div");
+  wrap.innerHTML = itemRowHtml(item);
+  const row = wrap.firstElementChild;
+  row.querySelector(".remove-item").addEventListener("click", () => row.remove());
+  document.getElementById("rv-items").appendChild(row);
+}
+
+document.getElementById("rv-add-item").addEventListener("click", () => addItemRow());
+
+function populateReviewForm(data) {
+  data = data || {};
+  document.getElementById("rv-vendor").value = data.vendor_name || "";
+  document.getElementById("rv-docno").value = data.document_no || "";
+  document.getElementById("rv-docdate").value = data.document_date || "";
+  document.getElementById("rv-notes").value = data.notes || "";
+  document.getElementById("rv-items").innerHTML = "";
+  const items = data.items && data.items.length ? data.items : [{}];
+  items.forEach(addItemRow);
+  const conf = document.getElementById("confidence-note");
+  if (data.ai_confidence !== undefined && data.ai_confidence !== null) {
+    conf.textContent = `ความมั่นใจของ AI (ประเมินเอง): ${(data.ai_confidence * 100).toFixed(0)}%`;
+  } else {
+    conf.textContent = "";
+  }
+}
+
+document.getElementById("upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fileInput = document.getElementById("doc-file");
+  if (!fileInput.files.length) return;
+
+  const errEl = document.getElementById("upload-error");
+  errEl.classList.add("hidden");
+  document.getElementById("upload-loading").classList.remove("hidden");
+  document.getElementById("upload-btn").disabled = true;
+
+  const formData = new FormData();
+  formData.append("file", fileInput.files[0]);
+  formData.append("doc_type", document.getElementById("doc-type").value);
+
+  try {
+    const res = await apiFetch("/documents/upload", { method: "POST", body: formData });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      errEl.textContent = body.detail || "อัปโหลดไม่สำเร็จ";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    const doc = await res.json();
+    currentDocId = doc.id;
+
+    const extractionErrorBox = document.getElementById("extraction-error-box");
+    if (doc.extraction_error) {
+      extractionErrorBox.textContent = "AI สกัดข้อมูลไม่สำเร็จ: " + doc.extraction_error + " — กรอกข้อมูลด้วยตนเองด้านล่างได้";
+      extractionErrorBox.classList.remove("hidden");
+      populateReviewForm(null);
+    } else {
+      extractionErrorBox.classList.add("hidden");
+      populateReviewForm(doc.ai_extraction_raw_json);
+    }
+    document.getElementById("review-card").classList.remove("hidden");
+    document.getElementById("rv-saved-msg").classList.add("hidden");
+  } finally {
+    document.getElementById("upload-loading").classList.add("hidden");
+    document.getElementById("upload-btn").disabled = false;
+  }
+});
+
+document.getElementById("rv-save-btn").addEventListener("click", async () => {
+  const items = Array.from(document.querySelectorAll("#rv-items .item-row")).map((row) => ({
+    description: row.querySelector(".rv-item-desc").value,
+    quantity: row.querySelector(".rv-item-qty").value || null,
+    unit: row.querySelector(".rv-item-unit").value || null,
+    unit_price: row.querySelector(".rv-item-unitprice").value || null,
+    amount: row.querySelector(".rv-item-amount").value || null,
+  }));
+  const reviewedData = {
+    vendor_name: document.getElementById("rv-vendor").value || null,
+    document_no: document.getElementById("rv-docno").value || null,
+    document_date: document.getElementById("rv-docdate").value || null,
+    items,
+    notes: document.getElementById("rv-notes").value || null,
+  };
+
+  const res = await apiFetch(`/documents/${currentDocId}/review`, {
+    method: "PATCH",
+    body: JSON.stringify({ reviewed_data: reviewedData }),
+  });
+  if (!res.ok) {
+    alert("บันทึกไม่สำเร็จ");
+    return;
+  }
+  document.getElementById("rv-create-pr-link").href = `/app/prs/new?source_document_id=${currentDocId}`;
+  document.getElementById("rv-saved-msg").classList.remove("hidden");
+});
+
+requireLogin();
+</script>
+{% endblock %}

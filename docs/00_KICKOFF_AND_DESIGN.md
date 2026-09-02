@@ -127,7 +127,7 @@ docker network create npm_proxy
 (ถ้ายังไม่ได้อยู่ใน Network เดียวกัน) — ทำผ่าน Portainer → Containers → nginx-proxy-manager
 → Duplicate/Edit → Network เพิ่ม `npm_proxy` หรือแก้ Compose ของ NPM แล้ว Deploy ใหม่
 
-Docker Compose ไฟล์จริงสำหรับ UAT/PROD ของ PR-Robot จะเขียนใน **Phase 7 (Deploy)**
+Docker Compose ไฟล์จริงสำหรับ UAT/PROD ของ PR-Robot จะเขียนใน **Phase 8 (Deploy)**
 ตาม Roadmap ข้อ 5 — เอกสารนี้บันทึก Convention ไว้ล่วงหน้าเพื่อให้ App อื่นในอนาคต
 ใช้ Pattern เดียวกันได้ทันที
 
@@ -246,7 +246,7 @@ Copy/ค้นหาข้อความ) สูญเสียสระอำ�
 ไม่กระทบการแสดงผล/พิมพ์ซึ่งเป็น Use Case หลัก — Sandbox พัฒนาไม่มีฟอนต์ไทยติดตั้งไว้
 เดิม (มีแค่ Font ตระกูล TLWG) ต้องติดตั้ง `fonts-noto-core` เพิ่มเอง (ยืนยันว่าใช้ได้จริง
 ทั้ง Cloud Container และ Device Bash โดยไม่ต้องใช้ Root/Sudo เพิ่มเติมนอกเหนือจาก
-apt) — **สิ่งที่ต้องทำต่อ:** เมื่อสร้าง Dockerfile จริงใน Phase 7 (Deploy UAT/PROD)
+apt) — **สิ่งที่ต้องทำต่อ:** เมื่อสร้าง Dockerfile จริงใน Phase 8 (Deploy UAT/PROD)
 ต้องติดตั้ง Font ไทยไว้ใน Image ด้วย ไม่เช่นนั้นจะ Fallback ไปใช้ Font ที่ไม่รองรับ
 ภาษาไทยดีพอ — บันทึกไว้ใน Open Items แล้ว
 
@@ -277,6 +277,69 @@ Create/Get/Update/Review/Approve/Receive) เพิ่มชื่อผู้�
 ทุกแบบ), Alembic Upgrade → Downgrade → Upgrade ยืนยันซ้ำ (ไม่มี Schema เปลี่ยนใน
 Phase นี้)
 
+## 4e. Web Frontend ขั้นต่ำ — Implemented Phase 7 (2026-09-02)
+
+**สาเหตุที่เพิ่ม Phase นี้:** Roadmap เดิมข้าม Frontend ไปตรง Phase Deploy ทั้งที่ตอนเริ่ม
+โปรเจกต์เลือกไว้ชัดเจนว่าต้องการ "Upload ผ่านหน้าเว็บ" — เมื่อพบช่องว่างนี้ได้หยุดถาม
+Product Owner ก่อนแทนที่จะเดาเอง (2026-09-02) และได้รับคำตอบให้สร้าง Frontend ขั้นต่ำ
+ก่อน Deploy
+
+**สถาปัตยกรรม:** Server-rendered Jinja2 HTML Shell (ไม่มี Build Step, ไม่มี JS
+Framework) อยู่ใต้ FastAPI Route Prefix `/app` (แยกจาก JSON API เดิมชัดเจน เช่น
+`/app/prs/{id}` หน้าเว็บ vs `/prs/{id}` JSON API — กัน Path ชนกัน) ข้อมูลทั้งหมดโหลด/
+บันทึกผ่าน `fetch()` ไปยัง JSON API เดิมของ Phase 3-6 จาก Browser โดยตรง — **ไม่มีการ
+แก้ไข Backend API เลยแม้แต่บรรทัดเดียว** ในเชิง Behavior (มีแค่เพิ่ม Route ใหม่ + Mount
+Static Files ใน `app/main.py`)
+
+**Auth ฝั่ง Client ทั้งหมด:** หน้า Route คืน HTML เสมอไม่ว่าจะ Login หรือยัง — ไม่ Enforce
+ที่ Server เพื่อไม่ต้อง Duplicate Logic ตรวจสิทธิ์ระหว่าง Server/Client — `static/app.js`
+มี `requireLogin()` เรียก `GET /auth/me` ตอนโหลดหน้า ถ้า 401 จะ Redirect ไป `/app/login`
+เอง
+
+**หน้าที่มี:** `login.html`, `dashboard.html` (List + Filter: ค้นหา/สถานะ/เลขที่ PR/ช่วง
+วันที่/เฉพาะที่ฉันสร้าง), `pr_edit.html` (ใช้ร่วมกันทั้งสร้าง/แก้ไข — Prefill รายการจาก
+เอกสารที่ตรวจทานแล้วถ้ามาจากปุ่ม "ไปสร้าง PR จากเอกสารนี้"), `pr_detail.html` (ดู PR +
+ปุ่ม Workflow ตามสิทธิ์ผู้ใช้ + ประวัติ + ลิงก์ดาวน์โหลด PDF), `upload.html` (อัปโหลด +
+แสดงผลตรวจทานจาก AI หรือกรอกเองถ้า AI ล้มเหลว)
+
+**Verification (2026-09-02) — 2 รอบ ตามมาตรฐาน "ต้องทดสอบจริง":**
+
+1. **Unit/Smoke Test (Scratch venv):** `ruff check .` ผ่านสะอาด, Alembic
+   Upgrade → Downgrade → Upgrade → Downgrade → Upgrade ผ่านซ้ำ (ไม่มี Schema เปลี่ยน
+   ใน Phase นี้), `pytest` ผ่านทั้งหมด **51/51** (43 เดิม + 8 Smoke Test ใหม่ของทุก Page
+   Route ใน `tests/test_pages.py` — ยืนยัน HTTP 200 + Content-Type ถูกต้อง + เนื้อหาที่
+   คาดหวังในแต่ละหน้า, ยืนยัน `StaticFiles` Mount ใช้งานได้จริงโดยไม่ต้องเพิ่ม `aiofiles`
+   เป็น Dependency ใหม่)
+
+2. **Browser E2E จริง (Playwright + Chromium):** รันแอปจริงผ่าน `uvicorn` (SQLite
+   ชั่วคราว) แล้วขับเคลื่อน Browser จริงทำ Flow เต็ม: Login จริง → สร้าง PR ผ่านฟอร์มจริง
+   → Review → Approve → Receive (ผ่านปุ่มจริงบนหน้าเว็บ ไม่ใช่เรียก API ตรง) → ดาวน์โหลด
+   PDF จริงแล้วตรวจ Byte Header + ขนาดไฟล์ → เปิดดู PDF ที่ Render จริงด้วยตาเพื่อยืนยัน
+   ภาษาไทยแสดงผลถูกต้อง (Section/Division/Description/Reason ภาษาไทย + ชื่อผู้ใช้ 4
+   บทบาทถูก Auto-fill จากผู้ Login จริง) — ทดสอบเพิ่มเติมที่หน้า Upload ว่าเมื่อ Gemini
+   API เรียกไม่สำเร็จ (Sandbox Block Network ไปยัง Google จริง ได้ Error 403 จาก Proxy
+   จริง ไม่ใช่ Mock) หน้าเว็บแสดงข้อความ Error ภาษาไทยและยังให้กรอกข้อมูลเองต่อได้ ไม่ค้าง
+   หรือ Crash — **ผลลัพธ์: ผ่านทุกจุดที่ทดสอบ (21/21 Assertion)**
+
+   **พบ 1 รายการที่ตรวจสอบแล้วไม่ใช่ Bug:** ระหว่าง E2E เจอ Console Message
+   `Failed to load resource: 404` หนึ่งครั้ง — ตรวจสอบด้วยการดัก Network Response จริง
+   ของหน้าเว็บทั้ง Flow พบว่าไม่มี Request ใดของแอปเราเองที่ได้ 404 (Response ที่ผิดพลาด
+   มีแค่ `401` จาก `/auth/me` ตอนยังไม่ Login ซึ่งเป็นพฤติกรรมที่ถูกต้องตามออกแบบ) —
+   สรุปว่าเป็น Noise จาก Sandbox เอง (Chromium พยายามเรียก Google Domain เช่น
+   `content-autofill.googleapis.com` ที่ถูก Egress Proxy ขององค์กร Block) ไม่ใช่ปัญหาจาก
+   Code ของเรา — บันทึกไว้เพื่อความโปร่งใส ไม่ได้ปิดบัง
+
+**ข้อจำกัดที่ทราบ (Known Limitations):**
+- ไม่มี CSS Framework — ใช้ Custom CSS ขั้นต่ำ (`app/static/style.css`) เน้นใช้งานได้
+  ก่อน ความสวยงามเป็นรอง เหมาะสำหรับ Internal Tool ระยะแรก
+- Auth บังคับฝั่ง Client เท่านั้น (ตามที่ออกแบบไว้ข้างต้น) — หน้า HTML เปิดดู Source ได้
+  โดยไม่ต้อง Login แต่ข้อมูลจริงทั้งหมดยังถูก JSON API ป้องกันด้วย Cookie/JWT เหมือนเดิม
+  (ไม่ใช่ช่องโหว่ เพราะไม่มีข้อมูลจริงอยู่ใน HTML Shell)
+- ยังไม่มี Favicon (Browser จะขึ้น 404 เงียบๆ ที่ `/favicon.ico` — Cosmetic ไม่กระทบ
+  การทำงาน)
+- ยังไม่ได้ทดสอบบน Browser จริงของผู้ใช้ (Chrome/Safari/Edge บนเครื่องจริง) มีแค่
+  Chromium Headless ใน Sandbox — ควรให้ Product Owner ลองใช้จริงใน UAT (Phase 8)
+
 ## 5. Roadmap (แบ่ง Phase ตามมาตรฐาน — รออนุมัติก่อนเริ่มแต่ละ Phase)
 
 | Phase | เนื้อหา | Output |
@@ -288,8 +351,9 @@ Phase นี้)
 | 4 | Upload + AI Extraction (Gemini) + หน้าตรวจทาน/แก้ไขข้อมูล | **เสร็จแล้ว (2026-09-02)** — Upload PDF/รูปภาพ → Gemini สกัดข้อมูลแบบ Structured JSON → บันทึก reviewed_data เมื่อผู้ใช้แก้ไข (ดู 4b.) |
 | 5 | บันทึก PR + Generate PDF ตาม Template จริง | **เสร็จแล้ว (2026-09-02)** — POST/GET/PATCH /prs + GET /prs/{id}/pdf ตรงตามฟอร์ม FM-PU-02 (ดู 4c.) |
 | 6 | Workflow อนุมัติ (Reviewed/Approved/Received) + ประวัติ/ค้นหา PR | **เสร็จแล้ว (2026-09-02)** — POST /prs/{id}/review,approve,receive + GET /prs/{id}/history + GET /prs Filter ครบ (ดู 4d.) |
-| 7 | UAT รวม + Security Review + Deploy จริงบน SCTUBUNTU01 | ระบบใช้งานจริงบน UAT/PROD |
-| 8 | Documentation (README/RELEASE) + Lessons Learned | เอกสารครบตามมาตรฐานข้อ 10 และ 13 |
+| 7 | Web Frontend ขั้นต่ำ (Login, Upload+ตรวจทาน, สร้าง/ดู/แก้ไข PR, ปุ่ม Workflow, ดาวน์โหลด PDF) | **เสร็จแล้ว (2026-09-02)** — Server-rendered Jinja2 Shell + Vanilla JS ทับ JSON API เดิม (ไม่มี Framework/Build Step) ครบทุกหน้า — Login, Dashboard+ค้นหา/กรอง, สร้าง/แก้ไข PR, ดู PR+ปุ่ม Workflow+ประวัติ+ดาวน์โหลด PDF, Upload+ตรวจทานเอกสาร (ดู 4e.) |
+| 8 | UAT รวม + Security Review + Deploy จริงบน SCTUBUNTU01 | ระบบใช้งานจริงบน UAT/PROD |
+| 9 | Documentation (README/RELEASE) + Lessons Learned | เอกสารครบตามมาตรฐานข้อ 10 และ 13 |
 
 ---
 
@@ -306,7 +370,7 @@ Phase นี้)
   ข้อจำกัดใน 4b.) ต้อง Live Test เพิ่มเติมนอก Sandbox
 
 - [ ] ติดตั้งฟอนต์ไทย (`fonts-noto-core` หรือเทียบเท่า) ใน Docker Image ตอนสร้าง
-  Dockerfile จริง — จำเป็นตอน Phase 7 ไม่เช่นนั้น PDF จะ Fallback ไป Font ที่ไม่รองรับ
+  Dockerfile จริง — จำเป็นตอน Phase 8 ไม่เช่นนั้น PDF จะ Fallback ไป Font ที่ไม่รองรับ
   ภาษาไทยดีพอ (ดู 4c.)
 
 - [ ] Reject/ตีกลับ PR: Schema `PRStatus` ปัจจุบันเดินหน้าทางเดียวเท่านั้น (draft ->
@@ -315,5 +379,5 @@ Phase นี้)
 
 **ยังรออยู่:**
 - [ ] รายชื่อ User เริ่มต้นและบทบาทจริง (ใครมีสิทธิ์ can_review / can_approve / can_receive / is_admin) — กลไก Bootstrap Admin คนแรกทำเสร็จแล้วใน Phase 3 (`app/scripts/create_admin.py`) แต่ยังไม่ได้รับรายชื่อ User จริงจาก Product Owner เพื่อสร้างในระบบ
-- [ ] Sub-domain สำหรับ UAT/PROD ที่จะตั้งใน Nginx Proxy Manager — จำเป็นตอน Phase 7
+- [ ] Sub-domain สำหรับ UAT/PROD ที่จะตั้งใน Nginx Proxy Manager — จำเป็นตอน Phase 8
 

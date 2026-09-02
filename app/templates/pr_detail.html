@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}รายละเอียด PR — PR-Robot{% endblock %}
+{% block content %}
+<div id="loading" class="muted">กำลังโหลด...</div>
+<div id="error" class="error hidden"></div>
+
+<div id="pr-content" class="hidden">
+  <h1>
+    PR No. <span id="pr-no"></span>
+    <span id="pr-status-badge"></span>
+  </h1>
+
+  <div class="card">
+    <div class="row">
+      <div class="field"><label>Section</label><div id="pr-section"></div></div>
+      <div class="field"><label>Division</label><div id="pr-division"></div></div>
+      <div class="field"><label>วันที่เอกสาร</label><div id="pr-date"></div></div>
+    </div>
+    <div class="field"><label>Remark</label><div id="pr-remark" class="muted"></div></div>
+    <div class="row">
+      <div class="field"><label>Requested by</label><div id="pr-requested"></div></div>
+      <div class="field"><label>Reviewed by</label><div id="pr-reviewed"></div></div>
+      <div class="field"><label>Approved by</label><div id="pr-approved"></div></div>
+      <div class="field"><label>Received by</label><div id="pr-received"></div></div>
+    </div>
+    <div class="actions">
+      <a class="btn secondary" id="pdf-link" href="#" target="_blank">ดาวน์โหลด PDF</a>
+      <a class="btn secondary hidden" id="edit-link" href="#">แก้ไข PR</a>
+      <button class="hidden" id="review-btn">Review</button>
+      <button class="hidden" id="approve-btn">Approve</button>
+      <button class="hidden" id="receive-btn">Receive</button>
+    </div>
+    <div class="error hidden" id="action-error"></div>
+  </div>
+
+  <div class="card">
+    <h2>รายการสินค้า</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Item</th><th>Account Code</th><th>Description</th><th>Quantity</th>
+          <th>Required Date</th><th>Reason</th><th>Ref. PO</th>
+        </tr>
+      </thead>
+      <tbody id="items-body"></tbody>
+    </table>
+  </div>
+
+  <div class="card hidden" id="budget-card">
+    <h2>Budget Control</h2>
+    <table>
+      <tbody>
+        <tr><th>Account Code 1 / 2</th><td id="bc-accounts"></td></tr>
+        <tr><th>Budget</th><td id="bc-budget"></td></tr>
+        <tr><th>Used Before Amount</th><td id="bc-used"></td></tr>
+        <tr><th>This Application</th><td id="bc-this"></td></tr>
+        <tr><th>Balance</th><td id="bc-balance"></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>ประวัติ</h2>
+    <ul class="history-list" id="history-list"></ul>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const PR_ID = {{ pr_id }};
+
+function fmtMoney(v) {
+  if (v === null || v === undefined) return "-";
+  return Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+async function loadDetail(me) {
+  const res = await apiFetch(`/prs/${PR_ID}`);
+  if (!res.ok) {
+    document.getElementById("loading").classList.add("hidden");
+    const errEl = document.getElementById("error");
+    errEl.textContent = res.status === 404 ? "ไม่พบ PR นี้" : "โหลดข้อมูลไม่สำเร็จ";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  const pr = await res.json();
+
+  document.getElementById("pr-no").textContent = pr.pr_no;
+  document.getElementById("pr-status-badge").innerHTML = statusBadge(pr.status);
+  document.getElementById("pr-section").textContent = pr.section;
+  document.getElementById("pr-division").textContent = pr.division;
+  document.getElementById("pr-date").textContent = pr.doc_date;
+  document.getElementById("pr-remark").textContent = pr.remark || "-";
+  document.getElementById("pr-requested").textContent = pr.requested_by_name || "-";
+  document.getElementById("pr-reviewed").textContent = pr.reviewed_by_name || "-";
+  document.getElementById("pr-approved").textContent = pr.approved_by_name || "-";
+  document.getElementById("pr-received").textContent = pr.received_by_name || "-";
+  document.getElementById("pdf-link").href = `/prs/${PR_ID}/pdf`;
+
+  document.getElementById("items-body").innerHTML = pr.items
+    .map(
+      (it) => `<tr>
+      <td>${it.item_no}</td><td>${escapeHtml(it.account_code)}</td>
+      <td>${escapeHtml(it.description)}</td><td>${escapeHtml(it.quantity)}</td>
+      <td>${escapeHtml(it.required_date)}</td><td>${escapeHtml(it.reason)}</td>
+      <td>${escapeHtml(it.ref_po)}</td>
+    </tr>`
+    )
+    .join("");
+
+  if (pr.budget_control) {
+    document.getElementById("budget-card").classList.remove("hidden");
+    const bc = pr.budget_control;
+    document.getElementById("bc-accounts").textContent =
+      `${bc.account_code_1 || "-"} / ${bc.account_code_2 || "-"}`;
+    document.getElementById("bc-budget").textContent = fmtMoney(bc.budget);
+    document.getElementById("bc-used").textContent = fmtMoney(bc.used_before_amount);
+    document.getElementById("bc-this").textContent = fmtMoney(bc.this_application);
+    document.getElementById("bc-balance").textContent = fmtMoney(bc.balance);
+  }
+
+  // ปุ่ม Action แสดงตามสถานะปัจจุบัน + สิทธิ์ของผู้ใช้ที่ Login (จาก GET /auth/me)
+  if (pr.status === "draft") {
+    document.getElementById("edit-link").href = `/app/prs/${PR_ID}/edit`;
+    document.getElementById("edit-link").classList.remove("hidden");
+  }
+  if (pr.status === "draft" && (me.can_review || me.is_admin)) {
+    document.getElementById("review-btn").classList.remove("hidden");
+  }
+  if (pr.status === "reviewed" && (me.can_approve || me.is_admin)) {
+    document.getElementById("approve-btn").classList.remove("hidden");
+  }
+  if (pr.status === "approved" && (me.can_receive || me.is_admin)) {
+    document.getElementById("receive-btn").classList.remove("hidden");
+  }
+
+  document.getElementById("loading").classList.add("hidden");
+  document.getElementById("pr-content").classList.remove("hidden");
+}
+
+async function loadHistory() {
+  const res = await apiFetch(`/prs/${PR_ID}/history`);
+  if (!res.ok) return;
+  const logs = await res.json();
+  document.getElementById("history-list").innerHTML = logs
+    .map(
+      (log) =>
+        `<li><strong>${escapeHtml(log.action)}</strong> — ${escapeHtml(log.actor_name || "ระบบ")} — ` +
+        `<span class="muted">${escapeHtml(log.timestamp)}</span>` +
+        (log.detail && log.detail.note ? `<br><span class="muted">หมายเหตุ: ${escapeHtml(log.detail.note)}</span>` : "") +
+        `</li>`
+    )
+    .join("");
+}
+
+async function doAction(action) {
+  const errEl = document.getElementById("action-error");
+  errEl.classList.add("hidden");
+  const res = await apiFetch(`/prs/${PR_ID}/${action}`, { method: "POST", body: JSON.stringify({}) });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    errEl.textContent = body.detail || "ทำรายการไม่สำเร็จ";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  window.location.reload();
+}
+
+document.getElementById("review-btn").addEventListener("click", () => doAction("review"));
+document.getElementById("approve-btn").addEventListener("click", () => doAction("approve"));
+document.getElementById("receive-btn").addEventListener("click", () => doAction("receive"));
+
+(async () => {
+  const me = await requireLogin();
+  if (!me) return;
+  await loadDetail(me);
+  await loadHistory();
+})();
+</script>
+{% endblock %}

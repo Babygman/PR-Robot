@@ -1,0 +1,58 @@
+"""หน้าเว็บ (Server-rendered Shell) — Phase 7
+
+ทุกหน้าที่นี่คืนแค่ HTML Shell + JS ฝังไว้ (Vanilla JS ไม่มี Framework) ข้อมูลจริงทั้งหมด
+โหลดผ่าน Fetch ไปยัง JSON API ที่มีอยู่แล้ว (Phase 3-6) จาก Browser โดยตรง — ไม่ผ่าน
+get_current_user ที่นี่เลย (ไม่ Enforce Login ระดับ Route) เพราะ Auth ทำฝั่ง Client:
+เรียก GET /auth/me ตอนโหลดหน้า ถ้า 401 จะเด้งไป /app/login เอง (ดู static/app.js)
+เหตุผล: ทำให้ Page Route ง่ายมาก ไม่ต้อง Duplicate Logic ตรวจสิทธิ์ระหว่าง Server/Client
+
+Namespace อยู่ใต้ /app ทั้งหมดเพื่อไม่ให้ชนกับ JSON API เดิม (เช่น /prs/{id} ของ API
+กับ /app/prs/{id} ของหน้าเว็บ เป็นคนละ Path กันชัดเจน)
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+from fastapi import APIRouter, Request
+from fastapi.templating import Jinja2Templates
+
+_TEMPLATE_DIR = Path(__file__).resolve().parents[2] / "templates"
+
+router = APIRouter(prefix="/app", tags=["pages"])
+templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
+
+
+@router.get("/login")
+def page_login(request: Request):
+    return templates.TemplateResponse(request=request, name="login.html", context={})
+
+
+@router.get("/")
+def page_dashboard(request: Request):
+    return templates.TemplateResponse(request=request, name="dashboard.html", context={})
+
+
+@router.get("/prs/new")
+def page_pr_new(request: Request):
+    return templates.TemplateResponse(
+        request=request, name="pr_edit.html", context={"pr_id": None}
+    )
+
+
+@router.get("/prs/{pr_id}/edit")
+def page_pr_edit(request: Request, pr_id: int):
+    return templates.TemplateResponse(
+        request=request, name="pr_edit.html", context={"pr_id": pr_id}
+    )
+
+
+@router.get("/prs/{pr_id}")
+def page_pr_detail(request: Request, pr_id: int):
+    return templates.TemplateResponse(
+        request=request, name="pr_detail.html", context={"pr_id": pr_id}
+    )
+
+
+@router.get("/documents/upload")
+def page_upload(request: Request):
+    return templates.TemplateResponse(request=request, name="upload.html", context={})
