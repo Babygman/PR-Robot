@@ -71,8 +71,7 @@ function escapeHtml(value) {
 }
 
 // แสดงวันที่แบบ dd/mm/yyyy เสมอ (Feedback จริงจากผู้ใช้ 2026-09-03) — รับ Input เป็น
-// "yyyy-mm-dd" (จาก <input type=date> / API) หรือ ISO Datetime เต็มก็ได้ ใช้แค่แสดงผล
-// เท่านั้น ค่าที่ผูกกับ <input type=date> ยังคงเป็น yyyy-mm-dd ตาม HTML Spec เหมือนเดิม
+// "yyyy-mm-dd" (จาก API) หรือ ISO Datetime เต็มก็ได้ ใช้แค่แสดงผลเท่านั้น
 function formatDateDMY(value) {
   if (!value) return "";
   const datePart = String(value).slice(0, 10);
@@ -88,6 +87,138 @@ function formatDateTimeDMY(value) {
   if (Number.isNaN(d.getTime())) return escapeHtml(value);
   const pad = (n) => String(n).padStart(2, "0");
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Custom Date Field แบบ dd/mm/yyyy (Feedback จริงจากผู้ใช้ 2026-09-03) — Native
+// <input type=date> แสดงผล/ปฏิทินตาม Locale ของเบราว์เซอร์/OS ผู้ใช้เอง บังคับให้เป็น
+// dd/mm/yyyy ข้าม Browser ไม่ได้จริงๆ ทำ Widget เองแบบ Vanilla JS แทน (ไม่พึ่ง Library
+// ภายนอกตามหลักการเดิมของโปรเจกต์) — ช่อง Input เป็น Readonly กดแล้วเปิดปฏิทินให้เลือก
+// เท่านั้น (กันพิมพ์ผิดรูปแบบ/วันที่ไม่มีจริง) ค่าจริงเก็บเป็น yyyy-mm-dd ใน data-iso
+// เสมอ ใช้ getDateFieldIso()/setDateFieldIso() อ่าน-เขียนแทนการยุ่งกับ .value ตรงๆ
+
+function dateFieldHtml(extraClass, isoValue) {
+  const display = formatDateDMY(isoValue) || "";
+  return `<input type="text" class="date-field ${extraClass || ""}" data-iso="${isoValue || ""}" value="${display}" placeholder="dd/mm/yyyy" readonly autocomplete="off">`;
+}
+
+function getDateFieldIso(el) {
+  return el ? el.dataset.iso || "" : "";
+}
+
+function setDateFieldIso(el, iso) {
+  if (!el) return;
+  el.dataset.iso = iso || "";
+  el.value = formatDateDMY(iso) || "";
+}
+
+let _activeDatePopup = null;
+
+function closeDatePopup() {
+  if (_activeDatePopup) {
+    _activeDatePopup.el.remove();
+    document.removeEventListener("click", _activeDatePopup.onDocClick, true);
+    _activeDatePopup = null;
+  }
+}
+
+function openDatePopup(inputEl) {
+  if (_activeDatePopup && _activeDatePopup.inputEl === inputEl) {
+    closeDatePopup();
+    return;
+  }
+  closeDatePopup();
+
+  const iso = inputEl.dataset.iso;
+  let view = iso ? new Date(`${iso}T00:00:00`) : new Date();
+  if (Number.isNaN(view.getTime())) view = new Date();
+  let viewYear = view.getFullYear();
+  let viewMonth = view.getMonth(); // 0-11
+
+  const popup = document.createElement("div");
+  popup.className = "date-popup";
+
+  function render() {
+    const monthNames = [
+      "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+      "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+    ];
+    const first = new Date(viewYear, viewMonth, 1);
+    const startDow = first.getDay(); // 0=Sun
+    const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+    const todayIso = new Date().toISOString().slice(0, 10);
+    let cells = "";
+    for (let i = 0; i < startDow; i++) cells += `<span class="date-popup-cell date-popup-empty"></span>`;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const cellIso = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      const cls = ["date-popup-cell"];
+      if (cellIso === iso) cls.push("date-popup-selected");
+      if (cellIso === todayIso) cls.push("date-popup-today");
+      cells += `<button type="button" class="${cls.join(" ")}" data-iso="${cellIso}">${d}</button>`;
+    }
+    popup.innerHTML = `
+      <div class="date-popup-header">
+        <button type="button" class="date-popup-nav" data-nav="-1">‹</button>
+        <span>${monthNames[viewMonth]} ${viewYear}</span>
+        <button type="button" class="date-popup-nav" data-nav="1">›</button>
+      </div>
+      <div class="date-popup-grid date-popup-dow">
+        <span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span>
+      </div>
+      <div class="date-popup-grid">${cells}</div>
+      <div class="date-popup-footer">
+        <button type="button" class="date-popup-clear">ล้างวันที่</button>
+      </div>
+    `;
+    popup.querySelectorAll(".date-popup-nav").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        viewMonth += Number(btn.dataset.nav);
+        if (viewMonth < 0) {
+          viewMonth = 11;
+          viewYear -= 1;
+        }
+        if (viewMonth > 11) {
+          viewMonth = 0;
+          viewYear += 1;
+        }
+        render();
+      });
+    });
+    popup.querySelectorAll(".date-popup-cell:not(.date-popup-empty)").forEach((cell) => {
+      cell.addEventListener("click", () => {
+        setDateFieldIso(inputEl, cell.dataset.iso);
+        inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+        closeDatePopup();
+      });
+    });
+    popup.querySelector(".date-popup-clear").addEventListener("click", () => {
+      setDateFieldIso(inputEl, "");
+      inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+      closeDatePopup();
+    });
+  }
+  render();
+
+  document.body.appendChild(popup);
+  const rect = inputEl.getBoundingClientRect();
+  popup.style.position = "absolute";
+  popup.style.top = `${window.scrollY + rect.bottom + 4}px`;
+  popup.style.left = `${window.scrollX + rect.left}px`;
+
+  // ปิด Popup เมื่อคลิกนอกกล่อง (Capture Phase กันชนกับ Event Delegation อื่นบนหน้า)
+  const onDocClick = (e) => {
+    if (!popup.contains(e.target) && e.target !== inputEl) closeDatePopup();
+  };
+  setTimeout(() => document.addEventListener("click", onDocClick, true), 0);
+
+  _activeDatePopup = { el: popup, inputEl, onDocClick };
+}
+
+function bindDateFieldsIn(root) {
+  (root || document).querySelectorAll(".date-field").forEach((el) => {
+    if (el.dataset.dateBound) return;
+    el.dataset.dateBound = "1";
+    el.addEventListener("click", () => openDatePopup(el));
+  });
 }
 
 document.addEventListener("DOMContentLoaded", setupLogout);

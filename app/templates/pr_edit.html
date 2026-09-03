@@ -10,7 +10,7 @@
     <div class="row">
       <div class="field"><label for="f-section">Section</label><input type="text" id="f-section" required></div>
       <div class="field"><label for="f-division">Division</label><input type="text" id="f-division" required></div>
-      <div class="field"><label for="f-docdate">วันที่เอกสาร</label><input type="date" id="f-docdate" required></div>
+      <div class="field"><label for="f-docdate">วันที่เอกสาร</label><input type="text" id="f-docdate" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off"></div>
     </div>
     <div class="field"><label for="f-remark">Remark</label><textarea id="f-remark"></textarea></div>
   </div>
@@ -78,7 +78,7 @@ function itemRowHtml(item) {
       <div class="field"><label>Quantity</label><input type="text" class="it-qty" value="${escapeHtml(item.quantity)}"></div>
     </div>
     <div class="row">
-      <div class="field"><label>Required Date</label><input type="date" class="it-reqdate" value="${escapeHtml(item.required_date)}"></div>
+      <div class="field"><label>Required Date</label>${dateFieldHtml("it-reqdate", item.required_date)}</div>
       <div class="field" style="flex:2;"><label>Reason</label><input type="text" class="it-reason" value="${escapeHtml(item.reason)}"></div>
       <div class="field"><label>Ref. PO</label><input type="text" class="it-refpo" value="${escapeHtml(item.ref_po)}"></div>
     </div>
@@ -91,6 +91,7 @@ function addItemRow(item) {
   const row = wrap.firstElementChild;
   row.querySelector(".remove-item").addEventListener("click", () => row.remove());
   document.getElementById("items-container").appendChild(row);
+  bindDateFieldsIn(row);
 }
 
 document.getElementById("add-item-btn").addEventListener("click", () => addItemRow());
@@ -219,7 +220,7 @@ async function loadForEdit() {
   }
   document.getElementById("f-section").value = pr.section;
   document.getElementById("f-division").value = pr.division;
-  document.getElementById("f-docdate").value = pr.doc_date;
+  setDateFieldIso(document.getElementById("f-docdate"), pr.doc_date);
   document.getElementById("f-remark").value = pr.remark || "";
   document.getElementById("items-container").innerHTML = "";
   pr.items.forEach(addItemRow);
@@ -242,11 +243,19 @@ document.getElementById("pr-form").addEventListener("submit", async (e) => {
   const errEl = document.getElementById("submit-error");
   errEl.classList.add("hidden");
 
+  // f-docdate เป็น Readonly (กดเปิดปฏิทินเลือกเท่านั้น) — Attribute required ของ HTML5
+  // ใช้ไม่ได้กับ Field ที่ Readonly (ถูกยกเว้นจาก Constraint Validation) ต้องเช็คเองตรงนี้
+  if (!getDateFieldIso(document.getElementById("f-docdate"))) {
+    errEl.textContent = "กรุณาเลือกวันที่เอกสาร";
+    errEl.classList.remove("hidden");
+    return;
+  }
+
   const items = Array.from(document.querySelectorAll("#items-container .item-row")).map((row) => ({
     account_code: row.querySelector(".it-account").value || null,
     description: row.querySelector(".it-desc").value,
     quantity: row.querySelector(".it-qty").value || null,
-    required_date: row.querySelector(".it-reqdate").value || null,
+    required_date: getDateFieldIso(row.querySelector(".it-reqdate")) || null,
     reason: row.querySelector(".it-reason").value || null,
     ref_po: row.querySelector(".it-refpo").value || null,
   }));
@@ -266,7 +275,7 @@ document.getElementById("pr-form").addEventListener("submit", async (e) => {
   const payload = {
     section: document.getElementById("f-section").value,
     division: document.getElementById("f-division").value,
-    doc_date: document.getElementById("f-docdate").value,
+    doc_date: getDateFieldIso(document.getElementById("f-docdate")),
     items,
     budget_control: budgetControl,
     remark: document.getElementById("f-remark").value || null,
@@ -291,6 +300,8 @@ document.getElementById("pr-form").addEventListener("submit", async (e) => {
   const pr = await res.json();
   window.location.href = `/app/prs/${pr.id}`;
 });
+
+bindDateFieldsIn(document);
 
 (async () => {
   const me = await requireLogin();

@@ -16,9 +16,16 @@
       <input type="file" id="doc-files" accept="application/pdf,image/png,image/jpeg,image/webp" multiple>
     </div>
     <div id="drop-zone" class="drop-zone">
-      หรือลากไฟล์มาวางตรงนี้ (หลายไฟล์พร้อมกันได้) — หรือ Capture/Copy ภาพมาแล้วกด
-      <strong>Ctrl+V</strong> วางตรงนี้ได้เลย ไม่ต้อง Save เป็นไฟล์ก่อน (แนะนำ Capture
-      เฉพาะส่วนที่ต้องการ ช่วยให้ AI อ่านข้อมูลได้แม่นยำขึ้น)
+      <div>
+        ลากไฟล์มาวางตรงนี้ (หลายไฟล์พร้อมกันได้)<br>
+        หรือ Capture/Copy ภาพมาแล้วกด <strong>Ctrl+V</strong> (Windows) / <strong>Cmd+V</strong> (Mac) วางตรงนี้ได้เลย
+        ไม่ต้อง Save เป็นไฟล์ก่อน<br>
+        <span class="muted">แนะนำ Capture เฉพาะส่วนที่ต้องการ ช่วยให้ AI อ่านข้อมูลได้แม่นยำขึ้น</span>
+      </div>
+    </div>
+    <div class="hidden" id="pending-list-wrap">
+      <p class="muted">ไฟล์ที่เตรียมอัปโหลด — ลากวาง/Paste เพิ่มได้อีก หรือกดลบทีละรายการ แล้วค่อยกด "อัปโหลด" ด้านล่างเมื่อพร้อม</p>
+      <div id="pending-list" class="pending-list"></div>
     </div>
     <button type="submit" id="upload-btn">อัปโหลดและให้ AI อ่านข้อมูล</button>
   </form>
@@ -95,10 +102,8 @@ async function uploadOneFile(file) {
   }
 }
 
-// ใช้ร่วมกันทั้ง 3 ทาง: เลือกไฟล์ปกติ (Submit ปุ่ม), ลากไฟล์มาวาง (Drag & Drop),
-// และ Paste ภาพจาก Clipboard (Ctrl+V) — Upload ทีละไฟล์ วนซ้ำ แล้วต่อผลลัพธ์เป็นแถวใหม่
-async function processFiles(fileList) {
-  const files = Array.from(fileList || []);
+// Upload ทีละไฟล์ วนซ้ำ แล้วต่อผลลัพธ์เป็นแถวใหม่ — เรียกตอนกดปุ่ม "อัปโหลด" เท่านั้น
+async function processFiles(files) {
   if (!files.length) return;
 
   document.getElementById("upload-loading").classList.remove("hidden");
@@ -125,14 +130,72 @@ async function processFiles(fileList) {
   }
 }
 
-document.getElementById("upload-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const fileInput = document.getElementById("doc-files");
-  await processFiles(fileInput.files);
-  fileInput.value = "";
+// รายการไฟล์ที่ "เตรียมไว้" ก่อน Upload จริง (Feedback จริงจากผู้ใช้ 2026-09-03 — ลากวาง/
+// Paste ไม่ควร Upload ทันที ต้องเห็น Thumbnail ก่อน วางได้หลายครั้งสะสมไว้ แล้วผู้ใช้กด
+// ปุ่ม "อัปโหลด" เองเมื่อพร้อม) — เก็บเป็น {uid, file} เพื่อลบทีละรายการได้
+let pendingFiles = [];
+let _pendingUidCounter = 0;
+
+function addPendingFiles(fileList) {
+  const files = Array.from(fileList || []);
+  for (const file of files) {
+    _pendingUidCounter += 1;
+    pendingFiles.push({ uid: _pendingUidCounter, file });
+  }
+  renderPendingList();
+}
+
+function pendingItemHtml(item) {
+  const isImage = item.file.type.startsWith("image/");
+  const thumb = isImage
+    ? `<img src="${URL.createObjectURL(item.file)}" alt="${escapeHtml(item.file.name)}">`
+    : `<div class="pending-file-icon">PDF</div>`;
+  return `<div class="pending-item" data-uid="${item.uid}">
+    <button type="button" class="pending-remove" data-uid="${item.uid}" title="ลบ">×</button>
+    ${thumb}
+    <div class="pending-file-name">${escapeHtml(item.file.name)}</div>
+  </div>`;
+}
+
+function renderPendingList() {
+  const wrapEl = document.getElementById("pending-list-wrap");
+  const listEl = document.getElementById("pending-list");
+  if (pendingFiles.length === 0) {
+    wrapEl.classList.add("hidden");
+    listEl.innerHTML = "";
+    return;
+  }
+  wrapEl.classList.remove("hidden");
+  listEl.innerHTML = pendingFiles.map(pendingItemHtml).join("");
+}
+
+document.getElementById("pending-list").addEventListener("click", (e) => {
+  if (!e.target.classList.contains("pending-remove")) return;
+  const uid = Number(e.target.dataset.uid);
+  pendingFiles = pendingFiles.filter((f) => f.uid !== uid);
+  renderPendingList();
 });
 
-// ลากไฟล์มาวางบน Drop Zone ได้ทีละหลายไฟล์ — Upload ทันทีไม่ต้องกดปุ่ม Submit
+// เลือกไฟล์ผ่านปุ่ม Choose Files ก็เข้าคิว "เตรียมไว้" เหมือนกับลากวาง/Paste — ไม่ Upload
+// ทันที ให้สอดคล้องกันทั้ง 3 ทาง เลือกซ้ำได้เรื่อยๆ (Reset ค่า Input ทุกครั้งหลังเพิ่มคิว)
+document.getElementById("doc-files").addEventListener("change", (e) => {
+  addPendingFiles(e.target.files);
+  e.target.value = "";
+});
+
+document.getElementById("upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!pendingFiles.length) {
+    alert("กรุณาเลือก/ลากวาง/Paste ไฟล์ก่อนอย่างน้อย 1 รายการ");
+    return;
+  }
+  const filesToUpload = pendingFiles.map((item) => item.file);
+  pendingFiles = [];
+  renderPendingList();
+  await processFiles(filesToUpload);
+});
+
+// ลากไฟล์มาวางบน Drop Zone ได้ทีละหลายไฟล์ — เข้าคิว "เตรียมไว้" เท่านั้น ไม่ Upload ทันที
 const dropZone = document.getElementById("drop-zone");
 ["dragenter", "dragover"].forEach((evtName) => {
   dropZone.addEventListener(evtName, (e) => {
@@ -148,24 +211,26 @@ const dropZone = document.getElementById("drop-zone");
     dropZone.classList.remove("drop-zone-active");
   });
 });
-dropZone.addEventListener("drop", async (e) => {
+dropZone.addEventListener("drop", (e) => {
   e.preventDefault();
   e.stopPropagation();
   dropZone.classList.remove("drop-zone-active");
-  await processFiles(e.dataTransfer.files);
+  addPendingFiles(e.dataTransfer.files);
 });
 
-// Paste ภาพจาก Clipboard ได้ทั้งหน้า (Ctrl+V) — รองรับกรณี Capture หน้าจอมาแล้ว Copy
-// (ยังไม่ได้ Save เป็นไฟล์) เพื่อให้ Capture เฉพาะส่วนที่ต้องการ AI จะอ่านข้อมูลได้แม่นยำ
-// ขึ้น (Feedback จริงจากผู้ใช้ 2026-09-03)
-document.addEventListener("paste", async (e) => {
+// Paste ภาพจาก Clipboard ได้ทั้งหน้า (Ctrl+V / Cmd+V) — รองรับกรณี Capture หน้าจอมาแล้ว
+// Copy (ยังไม่ได้ Save เป็นไฟล์) เพื่อให้ Capture เฉพาะส่วนที่ต้องการ AI จะอ่านข้อมูลได้
+// แม่นยำขึ้น — เข้าคิว "เตรียมไว้" เช่นกัน ไม่ Upload ทันที (Feedback จริงจากผู้ใช้
+// 2026-09-03: Paste แล้ว Upload เลยทำให้แก้ไข/วางหลายรอบก่อนไม่ได้)
+document.addEventListener("paste", (e) => {
   const items = Array.from(e.clipboardData?.items || []);
   const imageFiles = items
     .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
     .map((item) => item.getAsFile())
     .filter(Boolean);
   if (!imageFiles.length) return;
-  await processFiles(imageFiles);
+  e.preventDefault();
+  addPendingFiles(imageFiles);
 });
 
 // แก้ประเภทเอกสารที่ AI เดาผิดได้ทันทีผ่าน /review (Event Delegation เพราะ Element สร้างทีหลัง)
