@@ -89,7 +89,7 @@ async function loadPrs() {
     .map(
       (pr) => `
     <tr>
-      <td>${pr.pr_no}</td>
+      <td>${pr.revision ? `${pr.pr_no} Rev.${pr.revision}` : pr.pr_no}</td>
       <td>${escapeHtml(pr.section)}</td>
       <td>${escapeHtml(pr.division)}</td>
       <td>${formatDateDMY(pr.doc_date)}</td>

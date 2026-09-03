@@ -23,9 +23,16 @@
     <p class="muted hidden" id="finalized-note">
       PR นี้สรุปแล้ว (Finalized) — พิมพ์เอกสารนี้เพื่อขอลายเซ็นสด (Reviewed by / Approved by / Received by) นอกระบบ
     </p>
+    <p class="muted hidden" id="revised-from-note">
+      แก้ไขมาจาก <a id="revised-from-link" href="#">PR ฉบับก่อนหน้า</a>
+    </p>
+    <p class="error hidden" id="superseded-note">
+      PR ฉบับนี้ถูก Revise ไปแล้วเป็น <a id="superseded-link" href="#"></a> — ใช้ฉบับล่าสุดแทน
+    </p>
     <div class="actions">
       <a class="btn secondary" id="pdf-link" href="#" target="_blank">พิมพ์ / ดาวน์โหลด PDF</a>
       <a class="btn secondary hidden" id="edit-link" href="#">แก้ไข PR</a>
+      <button type="button" class="secondary hidden" id="revise-btn">สร้าง Revision</button>
     </div>
   </div>
 
@@ -81,7 +88,7 @@ async function loadDetail(me) {
   }
   const pr = await res.json();
 
-  document.getElementById("pr-no").textContent = pr.pr_no;
+  document.getElementById("pr-no").textContent = pr.revision ? `${pr.pr_no} Rev.${pr.revision}` : pr.pr_no;
   document.getElementById("pr-status-badge").innerHTML = statusBadge(pr.status);
   document.getElementById("pr-section").textContent = pr.section;
   document.getElementById("pr-division").textContent = pr.division;
@@ -120,6 +127,23 @@ async function loadDetail(me) {
     document.getElementById("edit-link").classList.remove("hidden");
   } else {
     document.getElementById("finalized-note").classList.remove("hidden");
+    // Revise (2026-09-03): PR ที่ Finalized แล้วแก้ไขต่อไม่ได้ แต่ Revise เป็น PR
+    // ใหม่สถานะ Draft ได้ — เว้นแต่ฉบับนี้ถูก Revise ไปแล้ว (ให้ไป Revise จากฉบับ
+    // ล่าสุดแทน กันแตกสาขาหลายทาง)
+    if (pr.superseded_by_id) {
+      const link = document.getElementById("superseded-link");
+      link.href = `/app/prs/${pr.superseded_by_id}`;
+      link.textContent = `PR #${pr.superseded_by_id}`;
+      document.getElementById("superseded-note").classList.remove("hidden");
+    } else {
+      document.getElementById("revise-btn").classList.remove("hidden");
+    }
+  }
+
+  if (pr.revised_from_id) {
+    const link = document.getElementById("revised-from-link");
+    link.href = `/app/prs/${pr.revised_from_id}`;
+    document.getElementById("revised-from-note").classList.remove("hidden");
   }
 
   document.getElementById("loading").classList.add("hidden");
@@ -145,6 +169,22 @@ async function loadHistory() {
 // รีโหลดหน้านี้หลังกดสักครู่ เพื่อให้เห็นสถานะล่าสุด (ลิงก์เปิดแท็บใหม่ ไม่รีเฟรชเอง)
 document.getElementById("pdf-link").addEventListener("click", () => {
   setTimeout(() => window.location.reload(), 1500);
+});
+
+// สร้าง Revision จาก PR ที่ Finalized แล้ว — คัดลอกข้อมูลเป็น PR ใหม่สถานะ Draft
+// (เลขเดิม + Rev ต่อท้าย) แล้วพาไปหน้าแก้ไขทันที (Feedback จริงจากผู้ใช้ 2026-09-03)
+document.getElementById("revise-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("revise-btn");
+  btn.disabled = true;
+  const res = await apiFetch(`/prs/${PR_ID}/revise`, { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    alert(body.detail || "สร้าง Revision ไม่สำเร็จ");
+    btn.disabled = false;
+    return;
+  }
+  const revised = await res.json();
+  window.location.href = `/app/prs/${revised.id}/edit`;
 });
 
 (async () => {

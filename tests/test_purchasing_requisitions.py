@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.models import PRStatus, PurchasingRequisition, SourceDocType, SourceDocument, User
+from app.services.pr_pdf import render_pr_html
 
 
 def _login(client: TestClient) -> None:
@@ -201,3 +202,109 @@ def test_finalized_pr_rejects_edit(client: TestClient, plain_user: User, db_sess
 
     res = client.patch(f"/prs/{created['id']}", json=_sample_pr_body(remark="แก้ไม่ได้แล้ว"))
     assert res.status_code == 409
+
+
+# ── Revise (Feedback จริงจากผู้ใช้ 2026-09-03): PR ที่ Finalized แล้วต้อง Revise
+# ต่อได้เมื่อพบข้อผิดพลาดทีหลัง โดยไม่ไปรื้อของเดิมที่เซ็นกระดาษไปแล้ว — เลข PR ใช้เลข
+# เดิม + Rev ต่อท้าย (อนุมัติจากผู้ใช้) ──────────────────────────────────────────────
+
+
+def test_revise_draft_pr_rejected(client: TestClient, plain_user: User):
+    _login(client)
+    created = client.post("/prs", json=_sample_pr_body()).json()
+
+    res = client.post(f"/prs/{created['id']}/revise")
+    assert res.status_code == 409
+
+
+def test_revise_finalized_pr_creates_draft_copy(client: TestClient, plain_user: User):
+    _login(client)
+    original = client.post("/prs", json=_sample_pr_body()).json()
+    client.get(f"/prs/{original['id']}/pdf")
+
+    res = client.post(f"/prs/{original['id']}/revise")
+    assert res.status_code == 201
+    revised = res.json()
+
+    assert revised["id"] != original["id"]
+    assert revised["pr_no"] == original["pr_no"]
+    assert revised["revision"] == 1
+    assert revised["revised_from_id"] == original["id"]
+    assert revised["status"] == "draft"
+    assert revised["requested_by_id"] == original["requested_by_id"]
+    assert revised["section"] == original["section"]
+    assert revised["items"][0]["description"] == original["items"][0]["description"]
+    assert revised["budget_control"]["budget"] == original["budget_control"]["budget"]
+
+    # ต้นฉบับต้องไม่ถูกแตะต้อง แต่รู้ตัวว่าถูก Revise ไปแล้วเป็นฉบับไหน
+    orig_after = client.get(f"/prs/{original['id']}").json()
+    assert orig_after["status"] == "finalized"
+    assert orig_after["superseded_by_id"] == revised["id"]
+
+
+def test_revise_can_be_edited_and_finalized_independently(
+    client: TestClient, plain_user: User
+):
+    _login(client)
+    original = client.post("/prs", json=_sample_pr_body()).json()
+    client.get(f"/prs/{original['id']}/pdf")
+    revised = client.post(f"/prs/{original['id']}/revise").json()
+
+    patch_res = client.patch(
+        f"/prs/{revised['id']}", json=_sample_pr_body(remark="แก้ไขหลัง Revise")
+    )
+    assert patch_res.status_code == 200
+    assert patch_res.json()["remark"] == "แก้ไขหลัง Revise"
+
+
+def test_revise_already_superseded_pr_rejected(client: TestClient, plain_user: User):
+    _login(client)
+    original = client.post("/prs", json=_sample_pr_body()).json()
+    client.get(f"/prs/{original['id']}/pdf")
+    client.post(f"/prs/{original['id']}/revise")
+
+    # Revise ซ้ำจากต้นฉบับเดิมอีกรอบ (ไม่ใช่จากฉบับ Rev.1 ล่าสุด) ต้องถูกปฏิเสธ
+    res = client.post(f"/prs/{original['id']}/revise")
+    assert res.status_code == 409
+
+
+def test_revise_second_time_increments_revision(client: TestClient, plain_user: User):
+    _login(client)
+    original = client.post("/prs", json=_sample_pr_body()).json()
+    client.get(f"/prs/{original['id']}/pdf")
+    rev1 = client.post(f"/prs/{original['id']}/revise").json()
+    client.get(f"/prs/{rev1['id']}/pdf")
+
+    res = client.post(f"/prs/{rev1['id']}/revise")
+    assert res.status_code == 201
+    rev2 = res.json()
+    assert rev2["pr_no"] == original["pr_no"]
+    assert rev2["revision"] == 2
+    assert rev2["revised_from_id"] == rev1["id"]
+
+
+def test_revise_not_found(client: TestClient, plain_user: User):
+    _login(client)
+    res = client.post("/prs/9999/revise")
+    assert res.status_code == 404
+
+
+def test_revise_requires_login(client: TestClient):
+    res = client.post("/prs/1/revise")
+    assert res.status_code == 401
+
+
+def test_revised_pr_pdf_shows_rev_suffix(client: TestClient, plain_user: User, db_session: Session):
+    _login(client)
+    original = client.post("/prs", json=_sample_pr_body()).json()
+    client.get(f"/prs/{original['id']}/pdf")
+    revised = client.post(f"/prs/{original['id']}/revise").json()
+
+    orig_pr = db_session.get(PurchasingRequisition, original["id"])
+    revised_pr = db_session.get(PurchasingRequisition, revised["id"])
+
+    orig_html = render_pr_html(db_session, orig_pr)
+    revised_html = render_pr_html(db_session, revised_pr)
+
+    assert "Rev." not in orig_html
+    assert f"{original['pr_no']} Rev.1" in revised_html

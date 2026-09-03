@@ -84,6 +84,11 @@ class PRBudgetControlRead(BaseModel):
 class PRRead(BaseModel):
     id: int
     pr_no: int
+    revision: int
+    revised_from_id: int | None = None
+    # ไม่ใช่คอลัมน์จริงใน DB — คำนวณใน Route ตอน Query ว่ามี PR ไหน Revise ต่อจากฉบับ
+    # นี้แล้วหรือยัง (Null = ยังไม่มี/เป็นฉบับล่าสุด) ใช้เตือนไม่ให้หยิบฉบับเก่าไปใช้ผิด
+    superseded_by_id: int | None = None
     section: str
     division: str
     doc_date: date
@@ -113,6 +118,7 @@ class AuditLogRead(BaseModel):
 class PRListItem(BaseModel):
     id: int
     pr_no: int
+    revision: int
     section: str
     division: str
     doc_date: date

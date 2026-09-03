@@ -546,6 +546,55 @@ SCTUBUNTU01 สำเร็จ (Migration ขึ้น `a1c3e9f0b2d4` Container 
 **Verification รอบ 2 (2026-09-03, หลังแก้ Retry):** `ruff check .` สะอาด, `pytest`
 ผ่านทั้งหมด 58/58 (เพิ่ม 7 Test ของ `test_gemini_extraction.py`)
 
+**Follow-up UI Fix รอบ 3 (2026-09-03, จาก UAT Walkthrough ต่อเนื่อง):** Feedback จริง
+เพิ่มเติมหลังลองใช้งานจริง — (1) รายการเอกสารที่หน้าสร้าง PR สะสมยาวขึ้นเรื่อยๆ รวม
+เอกสารที่ใช้สร้าง PR ไปแล้ว → เพิ่ม `GET /documents?unlinked_only=true` กรองออก +
+`DELETE /documents/{id}` ลบเอกสารที่ยังไม่ได้ใช้ (409 ถ้าถูกใช้ไปแล้ว กัน Audit Trail
+ขาด) (2) วันที่แสดงผลไม่ใช่ dd/mm/yyyy ตาม Locale เบราว์เซอร์ → เขียน Date Picker เอง
+แบบ Vanilla JS (ไม่พึ่ง Library ภายนอก) บังคับ dd/mm/yyyy ทุกจุด (3) หน้า Upload รองรับ
+ลากไฟล์วาง/Paste จาก Clipboard ได้ — เข้าคิว "เตรียมไว้" เห็น Thumbnail ก่อน ไม่ Upload
+ทันที ผู้ใช้กดปุ่มเองเมื่อพร้อม (กันเสีย AI Call โดยไม่ตั้งใจ) — Bug เล็กที่พบระหว่างทาง:
+ปุ่มปฏิทินตัวเลขมองไม่เห็นเพราะ CSS `button` Global ตั้ง `color:#fff` ไว้ Default แก้แล้ว
+
+## 4h. Revise PR ที่ Finalized แล้ว — Implemented (2026-09-03)
+
+**สาเหตุ:** Feedback จริงจากผู้ใช้ตอน UAT — PR ที่ Finalized (พิมพ์ไปแล้ว) ทุกใบต้องมี
+ทางแก้ไขต่อได้เมื่อพบข้อผิดพลาดทีหลัง (เช่น จำนวนผิด) โดยไม่ไปรื้อของเดิมที่เซ็น
+กระดาษไปแล้ว ("PR ทุกใบที่เคยปริ้นสามารถนำมา revise เป็น version ใหม่")
+
+**เลขที่ PR (อนุมัติจากผู้ใช้ระหว่าง 2 ตัวเลือก):** ใช้เลข PR เดิม + Rev ต่อท้าย เช่น
+PR 3 (ต้นฉบับ, `revision=0`) → Revise ครั้งแรกเป็น "PR 3 Rev.1" → Revise ซ้ำอีกเป็น
+"Rev.2" ไปเรื่อยๆ — ไม่ใช้เลข PR ใหม่ทั้งหมด
+
+**กลไก:** กดปุ่ม "สร้าง Revision" ที่หน้ารายละเอียด PR ที่ Finalized แล้ว (เฉพาะฉบับ
+ล่าสุดที่ยังไม่เคยถูก Revise มาก่อน — กันแตกสาขาหลายทาง) → `POST /prs/{id}/revise`
+คัดลอก Section/Division/วันที่/Remark/รายการสินค้า/Budget Control ทั้งหมดเป็น PR
+แถวใหม่สถานะ `draft` พร้อมแก้ไขต่อ (`requested_by` คงเป็นคนเดิม เพราะเป็น PR เดียวกัน
+ที่แก้ไข ไม่ใช่คำขอใหม่ — ส่วนใครกด Revise จริงบันทึกแยกไว้ใน Audit Log) PR ต้นฉบับที่
+Finalized ไว้ไม่ถูกแตะต้อง ยังพิมพ์/ดูย้อนหลังได้เหมือนเดิม (Audit Trail ไม่ขาด)
+
+**กันสับสนของเก่า-ใหม่:** หน้ารายละเอียด PR ต้นฉบับที่ถูก Revise ไปแล้วจะมีข้อความ/
+ลิงก์เตือนไปยังฉบับล่าสุด (`superseded_by_id`, คำนวณจาก Query ย้อนกลับ ไม่ใช่ Column
+จริง) — ฝั่ง PR ที่ Revise มาก็มีลิงก์ย้อนกลับไปฉบับต้นทาง (`revised_from_id`) — Revise
+จากฉบับที่ถูก Revise ไปแล้ว (ไม่ใช่ฉบับล่าสุด) หรือจากฉบับที่ยังเป็น `draft` ถูกปฏิเสธ
+ด้วย 409 ทั้งคู่
+
+**Schema:** เพิ่ม `purchasing_requisitions.revision` (Integer, Default 0) และ
+`revised_from_id` (FK ชี้ตัวเอง, Nullable) — Unique Constraint เปลี่ยนจาก `pr_no` เดี่ยว
+เป็นคู่ `(pr_no, revision)` เพราะ `pr_no` ใช้ซ้ำกันได้ระหว่างต้นฉบับกับฉบับ Revise ของ
+มันแล้ว (`ix_purchasing_requisitions_pr_no` เปลี่ยนจาก Unique Index เป็น Plain Index
+คงไว้เพื่อ Performance การค้นหาเหมือนเดิม) — Migration
+(`b3e7a1c9d5f2_pr_revise.py`) ทดสอบเต็มรูปแบบบน PostgreSQL 16 จริง (Upgrade →
+Downgrade → Upgrade, ยืนยัน Unique Constraint คู่ทำงานถูกต้องด้วย Insert จริง — Downgrade
+เป็น Best-Effort เหมือน Migration ก่อนหน้า จะ Fail ถ้ามีข้อมูล Revise จริงอยู่แล้ว เพราะ
+`pr_no` ซ้ำกันจะสร้าง Unique Index เดี่ยวแบบเดิมไม่ได้ — ยอมรับได้ตาม Pattern เดิม)
+
+**Verification:** `ruff check .` สะอาด, `pytest` ผ่านทั้งหมด 71/71 (เพิ่ม 8 Test ใน
+`test_purchasing_requisitions.py` ครอบคลุม: Revise จาก Draft ถูกปฏิเสธ, Revise สำเร็จ
+คัดลอกข้อมูลถูกต้อง+ต้นฉบับไม่ถูกแตะ+รู้ตัวว่าถูก Revise แล้ว, แก้ไข/Finalize ฉบับ Revise
+ต่อได้อิสระ, Revise ซ้ำจากฉบับที่ถูก Revise ไปแล้วถูกปฏิเสธ, Revise ซ้ำหลายรอบเพิ่ม
+`revision` ถูกต้อง, 404/401, PDF แสดง "Rev.N" ถูกต้อง)
+
 ## 5. Roadmap (แบ่ง Phase ตามมาตรฐาน — รออนุมัติก่อนเริ่มแต่ละ Phase)
 
 | Phase | เนื้อหา | Output |

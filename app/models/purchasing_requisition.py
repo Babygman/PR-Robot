@@ -16,7 +16,17 @@ import enum
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import (
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -33,10 +43,25 @@ class PRStatus(str, enum.Enum):
 
 
 class PurchasingRequisition(Base):
+    """Revise (2026-09-03): PR ที่ Finalized แล้วแก้ไขไม่ได้อีก แต่ "Revise" ได้ —
+    สร้างแถวใหม่สถานะ Draft คัดลอกข้อมูลจากต้นฉบับมาเป็นจุดเริ่มต้นให้แก้ไขต่อ
+    ต้นฉบับเดิมไม่ถูกแตะ ยังพิมพ์/ดูย้อนหลังได้เหมือนเดิม เพื่อไม่ทำลาย Audit Trail —
+
+    เลข pr_no ใช้ซ้ำกันได้ระหว่าง PR ต้นฉบับกับฉบับ Revise ของมัน (ต่างกันที่ revision:
+    0 = ต้นฉบับ, 1/2/3/... = Revise ครั้งที่เท่าไร แสดงเป็น "Rev.N" ต่อท้ายเลข PR)
+    ดังนั้น Unique Constraint จึงต้องเป็นคู่ (pr_no, revision) แทนที่จะเป็น pr_no เดี่ยว
+    เหมือนก่อนหน้านี้ — ดู Migration ...revise_pr_add_revision.py
+    """
+
     __tablename__ = "purchasing_requisitions"
+    __table_args__ = (UniqueConstraint("pr_no", "revision", name="uq_pr_no_revision"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    pr_no: Mapped[int] = mapped_column(Integer, unique=True, nullable=False, index=True)
+    pr_no: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    revised_from_id: Mapped[int | None] = mapped_column(
+        ForeignKey("purchasing_requisitions.id"), nullable=True
+    )
 
     section: Mapped[str] = mapped_column(String(255), nullable=False)
     division: Mapped[str] = mapped_column(String(255), nullable=False)

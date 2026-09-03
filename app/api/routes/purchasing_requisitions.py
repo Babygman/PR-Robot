@@ -23,7 +23,7 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.deps import get_current_user
@@ -106,8 +106,21 @@ def _get_pr_or_404(db: Session, pr_id: int) -> PurchasingRequisition:
 
 def _to_pr_read(db: Session, pr: PurchasingRequisition) -> PRRead:
     names = resolve_user_names(db, {pr.requested_by_id})
+    # หา PR ที่ Revise ต่อจากฉบับนี้แล้ว (ถ้ามี) — ไม่ใช่คอลัมน์จริง ต้อง Query ย้อนกลับ
+    # จาก revised_from_id ของฉบับอื่น เพื่อเตือนไม่ให้หยิบฉบับเก่าไปใช้ผิด
+    superseded_by = (
+        db.query(PurchasingRequisition.id)
+        .filter(PurchasingRequisition.revised_from_id == pr.id)
+        .order_by(PurchasingRequisition.revision.desc())
+        .first()
+    )
     data = PRRead.model_validate(pr, from_attributes=True)
-    return data.model_copy(update={"requested_by_name": names.get(pr.requested_by_id)})
+    return data.model_copy(
+        update={
+            "requested_by_name": names.get(pr.requested_by_id),
+            "superseded_by_id": superseded_by[0] if superseded_by else None,
+        }
+    )
 
 
 @router.post("", response_model=PRRead, status_code=status.HTTP_201_CREATED)
@@ -191,7 +204,12 @@ def list_prs(
         query = query.filter(PurchasingRequisition.requested_by_id == current_user.id)
 
     return (
-        query.order_by(PurchasingRequisition.pr_no.desc()).offset(offset).limit(limit).all()
+        query.order_by(
+            PurchasingRequisition.pr_no.desc(), PurchasingRequisition.revision.desc()
+        )
+        .offset(offset)
+        .limit(limit)
+        .all()
     )
 
 
@@ -223,6 +241,105 @@ def update_pr(
     return _to_pr_read(db, pr)
 
 
+@router.post("/{pr_id}/revise", response_model=PRRead, status_code=status.HTTP_201_CREATED)
+def revise_pr(
+    pr_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PRRead:
+    """สร้าง PR ใหม่สถานะ Draft คัดลอกข้อมูลจาก PR ต้นฉบับที่ Finalized แล้ว เพื่อแก้ไข
+    ต่อโดยไม่ไปรื้อของเดิมที่พิมพ์/เซ็นกระดาษไปแล้ว (Feedback จริงจากผู้ใช้ 2026-09-03)
+
+    เลข PR ใช้เลขเดิม + Rev ต่อท้าย (revision +1 จากฉบับล่าสุดของ pr_no นี้ — เผื่อกรณี
+    Revise ซ้ำหลายรอบ) — requested_by คงเป็นคนเดิม (เป็น PR เดียวกันที่แก้ไข ไม่ใช่คำขอ
+    ใหม่) ส่วนคนที่กด Revise จริงบันทึกแยกไว้ใน Audit Log (actor_id)
+    """
+    original = _get_pr_or_404(db, pr_id)
+    if original.status != PRStatus.FINALIZED:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Revise ได้เฉพาะ PR ที่ Finalized แล้วเท่านั้น"
+        )
+
+    already_superseded = (
+        db.query(PurchasingRequisition.id)
+        .filter(PurchasingRequisition.revised_from_id == original.id)
+        .first()
+    )
+    if already_superseded:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "PR นี้ถูก Revise ไปแล้ว กรุณา Revise จากฉบับล่าสุดแทน",
+        )
+
+    max_revision = (
+        db.query(func.max(PurchasingRequisition.revision))
+        .filter(PurchasingRequisition.pr_no == original.pr_no)
+        .scalar()
+        or 0
+    )
+
+    new_pr = PurchasingRequisition(
+        pr_no=original.pr_no,
+        revision=max_revision + 1,
+        revised_from_id=original.id,
+        status=PRStatus.DRAFT,
+        requested_by_id=original.requested_by_id,
+        section=original.section,
+        division=original.division,
+        doc_date=original.doc_date,
+        remark=original.remark,
+    )
+    new_pr.items = [
+        PRItem(
+            item_no=item.item_no,
+            account_code=item.account_code,
+            description=item.description,
+            quantity=item.quantity,
+            required_date=item.required_date,
+            reason=item.reason,
+            ref_po=item.ref_po,
+        )
+        for item in original.items
+    ]
+    if original.budget_control is not None:
+        bc = original.budget_control
+        new_pr.budget_control = PRBudgetControl(
+            account_code_1=bc.account_code_1,
+            account_code_2=bc.account_code_2,
+            budget=bc.budget,
+            used_before_amount=bc.used_before_amount,
+            this_application=bc.this_application,
+            balance=bc.balance,
+        )
+
+    db.add(new_pr)
+    db.flush()  # ให้ new_pr.id พร้อมใช้ก่อน Commit
+
+    db.add(
+        AuditLog(
+            pr_id=new_pr.id,
+            action="pr.revised",
+            actor_id=current_user.id,
+            detail={
+                "revised_from_id": original.id,
+                "pr_no": new_pr.pr_no,
+                "revision": new_pr.revision,
+            },
+        )
+    )
+    db.add(
+        AuditLog(
+            pr_id=original.id,
+            action="pr.revision_created",
+            actor_id=current_user.id,
+            detail={"new_pr_id": new_pr.id, "revision": new_pr.revision},
+        )
+    )
+    db.commit()
+    db.refresh(new_pr)
+    return _to_pr_read(db, new_pr)
+
+
 @router.get("/{pr_id}/pdf")
 def get_pr_pdf(
     pr_id: int,
@@ -247,10 +364,11 @@ def get_pr_pdf(
         )
         db.commit()
 
+    rev_suffix = f"-Rev{pr.revision}" if pr.revision else ""
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="PR-{pr.pr_no}.pdf"'},
+        headers={"Content-Disposition": f'inline; filename="PR-{pr.pr_no}{rev_suffix}.pdf"'},
     )
 
 

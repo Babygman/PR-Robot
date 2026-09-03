@@ -218,6 +218,9 @@ async function loadForEdit() {
     document.getElementById("load-error").classList.remove("hidden");
     return false;
   }
+  if (pr.revision) {
+    document.getElementById("page-title").textContent = `แก้ไข PR ${pr.pr_no} Rev.${pr.revision}`;
+  }
   document.getElementById("f-section").value = pr.section;
   document.getElementById("f-division").value = pr.division;
   setDateFieldIso(document.getElementById("f-docdate"), pr.doc_date);

@@ -93,7 +93,9 @@ def render_pr_html(db: Session, pr: PurchasingRequisition) -> str:
     pr_view = _PrView()
     pr_view.section = pr.section
     pr_view.division = pr.division
-    pr_view.pr_no = pr.pr_no
+    # Revise (2026-09-03): PR ที่ Revise มาจากฉบับ Finalized เดิม ใช้เลข PR เดิม + Rev
+    # ต่อท้าย (เช่น "3 Rev.1") — revision=0 คือต้นฉบับ แสดงเลขเปล่าๆ เหมือนเดิม
+    pr_view.pr_no = f"{pr.pr_no} Rev.{pr.revision}" if pr.revision else str(pr.pr_no)
     pr_view.doc_date = _fmt_date(pr.doc_date)
     pr_view.remark = pr.remark
     pr_view.requested_by_name = names["requested_by_name"]
