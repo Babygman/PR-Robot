@@ -70,4 +70,24 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+// แสดงวันที่แบบ dd/mm/yyyy เสมอ (Feedback จริงจากผู้ใช้ 2026-09-03) — รับ Input เป็น
+// "yyyy-mm-dd" (จาก <input type=date> / API) หรือ ISO Datetime เต็มก็ได้ ใช้แค่แสดงผล
+// เท่านั้น ค่าที่ผูกกับ <input type=date> ยังคงเป็น yyyy-mm-dd ตาม HTML Spec เหมือนเดิม
+function formatDateDMY(value) {
+  if (!value) return "";
+  const datePart = String(value).slice(0, 10);
+  const m = datePart.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return escapeHtml(value);
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+// แสดงวันที่+เวลาแบบ dd/mm/yyyy HH:MM (สำหรับ Timestamp เต็ม เช่น ประวัติ/Audit Log)
+function formatDateTimeDMY(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return escapeHtml(value);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 document.addEventListener("DOMContentLoaded", setupLogout);

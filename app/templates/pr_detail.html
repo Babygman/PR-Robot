@@ -85,7 +85,7 @@ async function loadDetail(me) {
   document.getElementById("pr-status-badge").innerHTML = statusBadge(pr.status);
   document.getElementById("pr-section").textContent = pr.section;
   document.getElementById("pr-division").textContent = pr.division;
-  document.getElementById("pr-date").textContent = pr.doc_date;
+  document.getElementById("pr-date").textContent = formatDateDMY(pr.doc_date);
   document.getElementById("pr-remark").textContent = pr.remark || "-";
   document.getElementById("pr-requested").textContent = pr.requested_by_name || "-";
   document.getElementById("pdf-link").href = `/prs/${PR_ID}/pdf`;
@@ -95,7 +95,7 @@ async function loadDetail(me) {
       (it) => `<tr>
       <td>${it.item_no}</td><td>${escapeHtml(it.account_code)}</td>
       <td>${escapeHtml(it.description)}</td><td>${escapeHtml(it.quantity)}</td>
-      <td>${escapeHtml(it.required_date)}</td><td>${escapeHtml(it.reason)}</td>
+      <td>${formatDateDMY(it.required_date)}</td><td>${escapeHtml(it.reason)}</td>
       <td>${escapeHtml(it.ref_po)}</td>
     </tr>`
     )
@@ -134,7 +134,7 @@ async function loadHistory() {
     .map(
       (log) =>
         `<li><strong>${escapeHtml(log.action)}</strong> — ${escapeHtml(log.actor_name || "ระบบ")} — ` +
-        `<span class="muted">${escapeHtml(log.timestamp)}</span>` +
+        `<span class="muted">${formatDateTimeDMY(log.timestamp)}</span>` +
         (log.detail && log.detail.note ? `<br><span class="muted">หมายเหตุ: ${escapeHtml(log.detail.note)}</span>` : "") +
         `</li>`
     )

@@ -13,7 +13,12 @@
   <form id="upload-form">
     <div class="field">
       <label for="doc-files">ไฟล์เอกสาร (เลือกได้หลายไฟล์)</label>
-      <input type="file" id="doc-files" accept="application/pdf,image/png,image/jpeg,image/webp" multiple required>
+      <input type="file" id="doc-files" accept="application/pdf,image/png,image/jpeg,image/webp" multiple>
+    </div>
+    <div id="drop-zone" class="drop-zone">
+      หรือลากไฟล์มาวางตรงนี้ (หลายไฟล์พร้อมกันได้) — หรือ Capture/Copy ภาพมาแล้วกด
+      <strong>Ctrl+V</strong> วางตรงนี้ได้เลย ไม่ต้อง Save เป็นไฟล์ก่อน (แนะนำ Capture
+      เฉพาะส่วนที่ต้องการ ช่วยให้ AI อ่านข้อมูลได้แม่นยำขึ้น)
     </div>
     <button type="submit" id="upload-btn">อัปโหลดและให้ AI อ่านข้อมูล</button>
   </form>
@@ -90,17 +95,18 @@ async function uploadOneFile(file) {
   }
 }
 
-document.getElementById("upload-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const fileInput = document.getElementById("doc-files");
-  if (!fileInput.files.length) return;
+// ใช้ร่วมกันทั้ง 3 ทาง: เลือกไฟล์ปกติ (Submit ปุ่ม), ลากไฟล์มาวาง (Drag & Drop),
+// และ Paste ภาพจาก Clipboard (Ctrl+V) — Upload ทีละไฟล์ วนซ้ำ แล้วต่อผลลัพธ์เป็นแถวใหม่
+async function processFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
 
   document.getElementById("upload-loading").classList.remove("hidden");
   document.getElementById("upload-btn").disabled = true;
   const resultsEl = document.getElementById("doc-results");
 
   try {
-    for (const file of Array.from(fileInput.files)) {
+    for (const file of files) {
       const result = await uploadOneFile(file);
       const wrap = document.createElement("div");
       if (result.ok) {
@@ -113,11 +119,53 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
       resultsEl.appendChild(wrap.firstElementChild);
       document.getElementById("results-card").classList.remove("hidden");
     }
-    fileInput.value = "";
   } finally {
     document.getElementById("upload-loading").classList.add("hidden");
     document.getElementById("upload-btn").disabled = false;
   }
+}
+
+document.getElementById("upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fileInput = document.getElementById("doc-files");
+  await processFiles(fileInput.files);
+  fileInput.value = "";
+});
+
+// ลากไฟล์มาวางบน Drop Zone ได้ทีละหลายไฟล์ — Upload ทันทีไม่ต้องกดปุ่ม Submit
+const dropZone = document.getElementById("drop-zone");
+["dragenter", "dragover"].forEach((evtName) => {
+  dropZone.addEventListener(evtName, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.add("drop-zone-active");
+  });
+});
+["dragleave", "dragend"].forEach((evtName) => {
+  dropZone.addEventListener(evtName, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.remove("drop-zone-active");
+  });
+});
+dropZone.addEventListener("drop", async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  dropZone.classList.remove("drop-zone-active");
+  await processFiles(e.dataTransfer.files);
+});
+
+// Paste ภาพจาก Clipboard ได้ทั้งหน้า (Ctrl+V) — รองรับกรณี Capture หน้าจอมาแล้ว Copy
+// (ยังไม่ได้ Save เป็นไฟล์) เพื่อให้ Capture เฉพาะส่วนที่ต้องการ AI จะอ่านข้อมูลได้แม่นยำ
+// ขึ้น (Feedback จริงจากผู้ใช้ 2026-09-03)
+document.addEventListener("paste", async (e) => {
+  const items = Array.from(e.clipboardData?.items || []);
+  const imageFiles = items
+    .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+    .map((item) => item.getAsFile())
+    .filter(Boolean);
+  if (!imageFiles.length) return;
+  await processFiles(imageFiles);
 });
 
 // แก้ประเภทเอกสารที่ AI เดาผิดได้ทันทีผ่าน /review (Event Delegation เพราะ Element สร้างทีหลัง)

@@ -92,7 +92,7 @@ async function loadPrs() {
       <td>${pr.pr_no}</td>
       <td>${escapeHtml(pr.section)}</td>
       <td>${escapeHtml(pr.division)}</td>
-      <td>${escapeHtml(pr.doc_date)}</td>
+      <td>${formatDateDMY(pr.doc_date)}</td>
       <td>${statusBadge(pr.status)}</td>
       <td><a href="/app/prs/${pr.id}">ดูรายละเอียด</a></td>
     </tr>`
