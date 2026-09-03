@@ -520,8 +520,31 @@ Downgrade → Upgrade ผ่านและ Remap ข้อมูลถูกต
 ใหม่/ปรับปรุง `test_pr_workflow.py`, `test_purchasing_requisitions.py`,
 `test_auth.py`, `test_documents.py` ให้ตรงกับ Scope ใหม่ — ตัด Test Workflow เดิมออก
 ทั้งหมด เพิ่ม Test สถานะ Finalize อัตโนมัติตอนดาวน์โหลด PDF, Test AI เดาประเภทเอกสาร
-เอง), Alembic Migration ทดสอบจริงกับ PostgreSQL 16 ตามข้างต้น — ยังไม่ได้ Deploy จริง
-บน SCTUBUNTU01 (รอ Push ขึ้น Git แล้ว Pull/Rebuild ตามขั้นตอน SSH ปกติ)
+เอง), Alembic Migration ทดสอบจริงกับ PostgreSQL 16 ตามข้างต้น — Deploy จริงบน
+SCTUBUNTU01 สำเร็จ (Migration ขึ้น `a1c3e9f0b2d4` Container Healthy `/health` และ
+`/health/db` ตอบ 200 ปกติ)
+
+**Bug จริง 2 รายการที่เจอตอน UAT Walkthrough แรกหลัง Deploy (2026-09-03, แก้แล้ว):**
+
+1. **`GEMINI_MODEL` เดิม (`gemini-2.5-flash`) เลิกให้บริการกับ API Key ใหม่แล้ว**
+   (Gemini ตอบ `404 NOT_FOUND` พร้อมแนะนำ `gemini-3.6-flash` แทน) — ไม่ใช่ Bug โค้ด
+   เพราะออกแบบให้ปรับ Model ผ่าน `.env` (`GEMINI_MODEL`) โดยไม่ Hardcode ไว้แล้วตั้งแต่
+   Phase 4 (ดู 4b.) แก้แค่แก้ค่าใน `.env.uat` บน Server เป็น `gemini-3.6-flash`
+   (ตรวจสอบแล้วว่าเป็น Model จริงที่ใช้งานได้ปัจจุบันผ่าน `ai.google.dev/gemini-api/
+   docs/models`) แล้ว Restart Container — ไม่ต้อง Build Image ใหม่
+2. **`503 UNAVAILABLE` (Gemini "currently experiencing high demand") เป็นระยะ** —
+   Error ชั่วคราวฝั่ง Google เอง ก่อนหน้านี้ระบบไม่ Retry ให้อัตโนมัติ ผู้ใช้ต้อง Upload
+   ซ้ำเอง — **แก้แล้ว:** เพิ่ม Auto-Retry แบบ Exponential Backoff ใน
+   `GeminiExtractionService.extract()` (สูงสุด 3 ครั้ง รอ 2 วิ แล้ว 4 วิ ระหว่างครั้ง)
+   เฉพาะ Error ที่เป็น Rate Limit (429) หรือ Server Error ฝั่ง Google (5xx) หรือ Network
+   Timeout/Connection Error เท่านั้น — Error ถาวร (เช่น 404 ข้างบน, 400, 401/403) ไม่
+   Retry เพราะ Retry ไปก็ได้ผลเดิมทุกครั้ง เสียเวลาผู้ใช้รอเปล่าๆ — Unit Test ใหม่ครบใน
+   `tests/test_gemini_extraction.py` (7 Test — สำเร็จตั้งแต่ครั้งแรก, Retry แล้วสำเร็จ
+   ทั้ง 503/429, ไม่ Retry ตอน 404, หมดโควต้า Retry แล้ว Fail จริง, Response ว่าง/
+   JSON ผิด Format ไม่ Retry) — Sleep Function Inject ได้เพื่อ Test ไม่ต้องรอจริง
+
+**Verification รอบ 2 (2026-09-03, หลังแก้ Retry):** `ruff check .` สะอาด, `pytest`
+ผ่านทั้งหมด 58/58 (เพิ่ม 7 Test ของ `test_gemini_extraction.py`)
 
 ## 5. Roadmap (แบ่ง Phase ตามมาตรฐาน — รออนุมัติก่อนเริ่มแต่ละ Phase)
 

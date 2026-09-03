@@ -8,7 +8,12 @@ Client ถูกออกแบบให้ Inject แทนที่ได้ (
 """
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
+
+import httpx
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from app.core.config import settings
@@ -43,34 +48,86 @@ _EXTRACTION_PROMPT = """\
 """
 
 
+# Auto-Retry (เพิ่ม 2026-09-03 หลังเจอจริงตอน UAT Walkthrough): Gemini ตอบ
+# "503 UNAVAILABLE... currently experiencing high demand" เป็นระยะ — เป็น Error ชั่วคราว
+# ฝั่ง Google เอง ไม่ใช่ปัญหาโค้ดเรา จึง Retry อัตโนมัติแบบ Exponential Backoff ให้ก่อน
+# ค่อย Fail จริง (ลดการรบกวนผู้ใช้ให้กด Upload ซ้ำเอง)
+_RETRYABLE_HTTP_STATUS_CODES = {429, 500, 502, 503, 504}
+_MAX_ATTEMPTS = 3
+_BACKOFF_BASE_SECONDS = 2.0  # Exponential: รอ 2 วิ แล้ว 4 วิ ระหว่างครั้งที่ Retry
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """แยก Error ชั่วคราว (ควร Retry) ออกจาก Error ถาวร (Retry ไปก็ได้ผลเดิม เสียเวลา
+    ผู้ใช้รอเปล่าๆ) — Retryable: Rate Limit (429), Server Error ฝั่ง Google (5xx เช่น
+    503 High Demand ที่เจอจริง), Network Timeout/Connection Error — ไม่ Retryable:
+    Client Error อื่น เช่น 404 (พิมพ์ชื่อ Model ผิด/Model เลิกให้บริการแล้ว — ดู
+    Bug จริงที่เจอวันเดียวกัน 2026-09-03), 400 (Request ผิด), 401/403 (Auth ผิด)
+    """
+    if isinstance(exc, genai_errors.APIError):
+        return exc.code in _RETRYABLE_HTTP_STATUS_CODES
+    _retryable_network_errors = (
+        httpx.TimeoutException
+        | httpx.ConnectError
+        | httpx.ReadError
+        | ConnectionError
+        | TimeoutError
+    )
+    if isinstance(exc, _retryable_network_errors):
+        return True
+    return False
+
+
 class GeminiExtractionError(Exception):
     """เกิดข้อผิดพลาดระหว่างเรียก Gemini API หรือแปลงผลลัพธ์เป็น JSON ตาม Schema"""
 
 
 class GeminiExtractionService:
-    def __init__(self, client: genai.Client | None = None, model: str | None = None) -> None:
+    def __init__(
+        self,
+        client: genai.Client | None = None,
+        model: str | None = None,
+        max_attempts: int = _MAX_ATTEMPTS,
+        backoff_base_seconds: float = _BACKOFF_BASE_SECONDS,
+        sleep_fn: Callable[[float], None] = time.sleep,
+    ) -> None:
         if client is None:
             if not settings.gemini_api_key:
                 raise GeminiExtractionError("ยังไม่ได้ตั้งค่า GEMINI_API_KEY ใน .env")
             client = genai.Client(api_key=settings.gemini_api_key)
         self._client = client
         self._model = model or settings.gemini_model
+        self._max_attempts = max_attempts
+        self._backoff_base_seconds = backoff_base_seconds
+        # sleep_fn Inject ได้เพื่อให้ Unit Test ไม่ต้องรอจริงตอน Retry (ดู
+        # tests/test_gemini_extraction.py)
+        self._sleep = sleep_fn
 
     def extract(self, file_path: str) -> ExtractionResult:
-        try:
-            uploaded_file = self._client.files.upload(file=file_path)
-            response = self._client.models.generate_content(
-                model=self._model,
-                contents=[_EXTRACTION_PROMPT, uploaded_file],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_json_schema=ExtractionResult.model_json_schema(),
-                ),
-            )
-        except GeminiExtractionError:
-            raise
-        except Exception as exc:  # noqa: BLE001 - ห่อ Exception ทุกชนิดจาก SDK ภายนอกเป็น Error ของเราเอง
-            raise GeminiExtractionError(f"เรียก Gemini API ไม่สำเร็จ: {exc}") from exc
+        response = None
+        last_exc: Exception | None = None
+
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                uploaded_file = self._client.files.upload(file=file_path)
+                response = self._client.models.generate_content(
+                    model=self._model,
+                    contents=[_EXTRACTION_PROMPT, uploaded_file],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_json_schema=ExtractionResult.model_json_schema(),
+                    ),
+                )
+                break
+            except Exception as exc:  # noqa: BLE001 - ห่อ Exception ทุกชนิดจาก SDK ภายนอกเป็น Error ของเราเอง
+                last_exc = exc
+                if _is_retryable(exc) and attempt < self._max_attempts:
+                    self._sleep(self._backoff_base_seconds * (2 ** (attempt - 1)))
+                    continue
+                raise GeminiExtractionError(f"เรียก Gemini API ไม่สำเร็จ: {exc}") from exc
+
+        if response is None:  # กันไว้เผื่อ Logic พลาด (ไม่ควรเกิดขึ้นจริง)
+            raise GeminiExtractionError(f"เรียก Gemini API ไม่สำเร็จ: {last_exc}")
 
         if not response.text:
             raise GeminiExtractionError("Gemini ไม่ส่งข้อมูลกลับมา (Response ว่างเปล่า)")
