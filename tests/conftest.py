@@ -55,9 +55,6 @@ def admin_user(db_session: Session) -> User:
         email="admin@example.com",
         password_hash=hash_password("adminpass123"),
         is_admin=True,
-        can_review=True,
-        can_approve=True,
-        can_receive=True,
     )
     db_session.add(user)
     db_session.commit()

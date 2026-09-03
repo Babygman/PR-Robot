@@ -60,13 +60,11 @@ def test_admin_can_create_user(client: TestClient, admin_user: User):
             "name": "Reviewer One",
             "email": "reviewer1@example.com",
             "password": "reviewer123",
-            "can_review": True,
         },
     )
     assert res.status_code == 201
     body = res.json()
     assert body["email"] == "reviewer1@example.com"
-    assert body["can_review"] is True
     assert "password" not in body
     assert "password_hash" not in body
 

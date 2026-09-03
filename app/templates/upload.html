@@ -2,166 +2,145 @@
 {% block title %}อัปโหลดเอกสาร — PR-Robot{% endblock %}
 {% block content %}
 <h1>อัปโหลดเอกสารต้นทาง</h1>
-<p class="muted">อัปโหลดใบเสนอราคาหรือใบรับของ (PDF/PNG/JPEG/WEBP) ให้ AI อ่านข้อมูลให้อัตโนมัติ ตรวจทาน/แก้ไขก่อนนำไปสร้าง PR</p>
+<p class="muted">
+  อัปโหลดเอกสารได้พร้อมกันหลายไฟล์ (ใบเสนอราคา / ใบยืมสินค้า / ใบส่งสินค้า / ใบรับของ —
+  PDF/PNG/JPEG/WEBP) AI จะอ่านข้อมูลและเดาประเภทเอกสารให้อัตโนมัติ แก้ไขประเภทได้ถ้า AI เดาผิด
+  จากนั้นเลือกเอกสารที่ต้องการแล้วไปสร้าง PR — ระบบจะรวมรายการสินค้าจากทุกเอกสารที่เลือกให้
+  ตรวจทาน/แก้ไขอีกครั้งในขั้นตอนเดียวตอนสร้าง PR
+</p>
 
 <div class="card">
   <form id="upload-form">
-    <div class="row">
-      <div class="field">
-        <label for="doc-file">ไฟล์เอกสาร</label>
-        <input type="file" id="doc-file" accept="application/pdf,image/png,image/jpeg,image/webp" required>
-      </div>
-      <div class="field">
-        <label for="doc-type">ประเภทเอกสาร</label>
-        <select id="doc-type">
-          <option value="quotation">ใบเสนอราคา</option>
-          <option value="receiving_note">ใบรับของ</option>
-          <option value="other">อื่นๆ</option>
-        </select>
-      </div>
+    <div class="field">
+      <label for="doc-files">ไฟล์เอกสาร (เลือกได้หลายไฟล์)</label>
+      <input type="file" id="doc-files" accept="application/pdf,image/png,image/jpeg,image/webp" multiple required>
     </div>
     <button type="submit" id="upload-btn">อัปโหลดและให้ AI อ่านข้อมูล</button>
   </form>
-  <div class="muted hidden" id="upload-loading">กำลังให้ AI อ่านข้อมูล... อาจใช้เวลาสักครู่</div>
-  <div class="error hidden" id="upload-error"></div>
+  <div class="muted hidden" id="upload-loading">กำลังให้ AI อ่านข้อมูล... อาจใช้เวลาสักครู่ต่อไฟล์</div>
 </div>
 
-<div class="card hidden" id="review-card">
-  <h2>ข้อมูลที่ AI สกัดได้ (ตรวจทาน/แก้ไขก่อนบันทึก)</h2>
-  <div class="error hidden" id="extraction-error-box"></div>
-  <div class="muted" id="confidence-note"></div>
-  <div class="row">
-    <div class="field"><label for="rv-vendor">ชื่อผู้ขาย/ร้านค้า</label><input type="text" id="rv-vendor"></div>
-    <div class="field"><label for="rv-docno">เลขที่เอกสาร</label><input type="text" id="rv-docno"></div>
-    <div class="field"><label for="rv-docdate">วันที่เอกสาร</label><input type="date" id="rv-docdate"></div>
-  </div>
-  <div class="field"><label for="rv-notes">หมายเหตุ</label><textarea id="rv-notes"></textarea></div>
-
-  <h2>รายการสินค้า</h2>
-  <div id="rv-items"></div>
-  <button type="button" class="secondary" id="rv-add-item">+ เพิ่มรายการ</button>
-
+<div class="card hidden" id="results-card">
+  <h2>เอกสารที่อัปโหลดแล้ว</h2>
+  <p class="muted">เลือกเอกสารที่ต้องการนำไปสร้าง PR (เลือกได้หลายรายการ) แก้ไข "ประเภทเอกสาร" ได้ถ้า AI เดาผิด</p>
+  <div id="doc-results"></div>
   <div class="actions">
-    <button type="button" id="rv-save-btn">บันทึกข้อมูลที่ตรวจแล้ว</button>
-  </div>
-  <div class="success hidden" id="rv-saved-msg">
-    บันทึกแล้ว — <a id="rv-create-pr-link" href="#">ไปสร้าง PR จากเอกสารนี้ →</a>
+    <button type="button" id="create-pr-btn">สร้าง PR จากเอกสารที่เลือก →</button>
   </div>
 </div>
 {% endblock %}
 {% block scripts %}
 <script>
-let currentDocId = null;
+const uploadedDocIds = [];
+const docDataById = {}; // เก็บผลดิบจาก AI ไว้ใช้ตอนแก้ doc_type (กันไม่ให้ /review ทับ reviewed_data เป็นค่าว่าง)
 
-function itemRowHtml(item) {
-  item = item || {};
+function docResultRowHtml(doc, errorMsg) {
+  const vendor = doc?.ai_extraction_raw_json?.vendor_name || "";
+  const itemCount = doc?.ai_extraction_raw_json?.items?.length || 0;
+  const typeOptions = Object.keys(DOC_TYPE_LABEL)
+    .map((key) => `<option value="${key}" ${doc?.doc_type === key ? "selected" : ""}>${DOC_TYPE_LABEL[key]}</option>`)
+    .join("");
+
+  if (errorMsg) {
+    return `<div class="item-row">
+      <label style="display:flex; align-items:center; gap:6px;">
+        <input type="checkbox" class="doc-checkbox" disabled style="width:auto;">
+        <strong>${escapeHtml(doc?.file_path?.split("/").pop() || "ไฟล์")}</strong>
+      </label>
+      <div class="error">อัปโหลดไม่สำเร็จ: ${escapeHtml(errorMsg)}</div>
+    </div>`;
+  }
+
+  const statusNote = doc.extraction_error
+    ? `<span class="error">AI อ่านข้อมูลไม่สำเร็จ: ${escapeHtml(doc.extraction_error)} — แก้ไขข้อมูลด้วยตนเองตอนสร้าง PR ได้</span>`
+    : `<span class="muted">AI อ่านได้ ${itemCount} รายการ${vendor ? " จาก " + escapeHtml(vendor) : ""}${
+        doc.ai_confidence !== null && doc.ai_confidence !== undefined
+          ? ` (ความมั่นใจ ${(doc.ai_confidence * 100).toFixed(0)}%)`
+          : ""
+      }</span>`;
+
   return `<div class="item-row">
-    <button type="button" class="remove-item">ลบ</button>
     <div class="row">
-      <div class="field"><label>รายละเอียด</label><input type="text" class="rv-item-desc" value="${escapeHtml(item.description)}"></div>
-      <div class="field"><label>จำนวน</label><input type="text" class="rv-item-qty" value="${escapeHtml(item.quantity)}"></div>
-      <div class="field"><label>หน่วย</label><input type="text" class="rv-item-unit" value="${escapeHtml(item.unit)}"></div>
-      <div class="field"><label>ราคาต่อหน่วย</label><input type="text" class="rv-item-unitprice" value="${escapeHtml(item.unit_price)}"></div>
-      <div class="field"><label>ราคารวม</label><input type="text" class="rv-item-amount" value="${escapeHtml(item.amount)}"></div>
+      <label style="display:flex; align-items:center; gap:6px; flex: 2;">
+        <input type="checkbox" class="doc-checkbox" value="${doc.id}" checked style="width:auto;">
+        <strong>#${doc.id} — ${escapeHtml(doc.file_path.split("/").pop())}</strong>
+      </label>
+      <div class="field">
+        <label>ประเภทเอกสาร</label>
+        <select class="doc-type-select" data-doc-id="${doc.id}">${typeOptions}</select>
+      </div>
     </div>
+    <div>${statusNote}</div>
   </div>`;
 }
 
-function addItemRow(item) {
-  const wrap = document.createElement("div");
-  wrap.innerHTML = itemRowHtml(item);
-  const row = wrap.firstElementChild;
-  row.querySelector(".remove-item").addEventListener("click", () => row.remove());
-  document.getElementById("rv-items").appendChild(row);
-}
-
-document.getElementById("rv-add-item").addEventListener("click", () => addItemRow());
-
-function populateReviewForm(data) {
-  data = data || {};
-  document.getElementById("rv-vendor").value = data.vendor_name || "";
-  document.getElementById("rv-docno").value = data.document_no || "";
-  document.getElementById("rv-docdate").value = data.document_date || "";
-  document.getElementById("rv-notes").value = data.notes || "";
-  document.getElementById("rv-items").innerHTML = "";
-  const items = data.items && data.items.length ? data.items : [{}];
-  items.forEach(addItemRow);
-  const conf = document.getElementById("confidence-note");
-  if (data.ai_confidence !== undefined && data.ai_confidence !== null) {
-    conf.textContent = `ความมั่นใจของ AI (ประเมินเอง): ${(data.ai_confidence * 100).toFixed(0)}%`;
-  } else {
-    conf.textContent = "";
+async function uploadOneFile(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  try {
+    const res = await apiFetch("/documents/upload", { method: "POST", body: formData });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { ok: false, fileName: file.name, error: body.detail || "อัปโหลดไม่สำเร็จ" };
+    }
+    return { ok: true, doc: await res.json() };
+  } catch (err) {
+    return { ok: false, fileName: file.name, error: String(err) };
   }
 }
 
 document.getElementById("upload-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const fileInput = document.getElementById("doc-file");
+  const fileInput = document.getElementById("doc-files");
   if (!fileInput.files.length) return;
 
-  const errEl = document.getElementById("upload-error");
-  errEl.classList.add("hidden");
   document.getElementById("upload-loading").classList.remove("hidden");
   document.getElementById("upload-btn").disabled = true;
-
-  const formData = new FormData();
-  formData.append("file", fileInput.files[0]);
-  formData.append("doc_type", document.getElementById("doc-type").value);
+  const resultsEl = document.getElementById("doc-results");
 
   try {
-    const res = await apiFetch("/documents/upload", { method: "POST", body: formData });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      errEl.textContent = body.detail || "อัปโหลดไม่สำเร็จ";
-      errEl.classList.remove("hidden");
-      return;
+    for (const file of Array.from(fileInput.files)) {
+      const result = await uploadOneFile(file);
+      const wrap = document.createElement("div");
+      if (result.ok) {
+        uploadedDocIds.push(result.doc.id);
+        docDataById[result.doc.id] = result.doc;
+        wrap.innerHTML = docResultRowHtml(result.doc, null);
+      } else {
+        wrap.innerHTML = docResultRowHtml({ file_path: result.fileName }, result.error);
+      }
+      resultsEl.appendChild(wrap.firstElementChild);
+      document.getElementById("results-card").classList.remove("hidden");
     }
-    const doc = await res.json();
-    currentDocId = doc.id;
-
-    const extractionErrorBox = document.getElementById("extraction-error-box");
-    if (doc.extraction_error) {
-      extractionErrorBox.textContent = "AI สกัดข้อมูลไม่สำเร็จ: " + doc.extraction_error + " — กรอกข้อมูลด้วยตนเองด้านล่างได้";
-      extractionErrorBox.classList.remove("hidden");
-      populateReviewForm(null);
-    } else {
-      extractionErrorBox.classList.add("hidden");
-      populateReviewForm(doc.ai_extraction_raw_json);
-    }
-    document.getElementById("review-card").classList.remove("hidden");
-    document.getElementById("rv-saved-msg").classList.add("hidden");
+    fileInput.value = "";
   } finally {
     document.getElementById("upload-loading").classList.add("hidden");
     document.getElementById("upload-btn").disabled = false;
   }
 });
 
-document.getElementById("rv-save-btn").addEventListener("click", async () => {
-  const items = Array.from(document.querySelectorAll("#rv-items .item-row")).map((row) => ({
-    description: row.querySelector(".rv-item-desc").value,
-    quantity: row.querySelector(".rv-item-qty").value || null,
-    unit: row.querySelector(".rv-item-unit").value || null,
-    unit_price: row.querySelector(".rv-item-unitprice").value || null,
-    amount: row.querySelector(".rv-item-amount").value || null,
-  }));
-  const reviewedData = {
-    vendor_name: document.getElementById("rv-vendor").value || null,
-    document_no: document.getElementById("rv-docno").value || null,
-    document_date: document.getElementById("rv-docdate").value || null,
-    items,
-    notes: document.getElementById("rv-notes").value || null,
-  };
-
-  const res = await apiFetch(`/documents/${currentDocId}/review`, {
+// แก้ประเภทเอกสารที่ AI เดาผิดได้ทันทีผ่าน /review (Event Delegation เพราะ Element สร้างทีหลัง)
+document.getElementById("doc-results").addEventListener("change", async (e) => {
+  if (!e.target.classList.contains("doc-type-select")) return;
+  const docId = e.target.dataset.docId;
+  const doc = docDataById[docId];
+  // ส่งผลดิบจาก AI กลับไปเป็น reviewed_data เพื่อกันไม่ให้ทับรายการสินค้าที่ AI อ่านได้
+  // เป็นค่าว่าง (ผู้ใช้ยังไม่ได้ตรวจทานจริงตอนนี้ แค่แก้ประเภทเอกสารที่ AI เดาผิด)
+  const reviewedData = doc?.ai_extraction_raw_json || {};
+  await apiFetch(`/documents/${docId}/review`, {
     method: "PATCH",
-    body: JSON.stringify({ reviewed_data: reviewedData }),
+    body: JSON.stringify({ reviewed_data: reviewedData, doc_type: e.target.value }),
   });
-  if (!res.ok) {
-    alert("บันทึกไม่สำเร็จ");
+  if (doc) doc.doc_type = e.target.value;
+});
+
+document.getElementById("create-pr-btn").addEventListener("click", () => {
+  const selected = Array.from(document.querySelectorAll(".doc-checkbox:checked")).map((cb) => cb.value);
+  if (selected.length === 0) {
+    alert("กรุณาเลือกเอกสารอย่างน้อย 1 รายการ");
     return;
   }
-  document.getElementById("rv-create-pr-link").href = `/app/prs/new?source_document_id=${currentDocId}`;
-  document.getElementById("rv-saved-msg").classList.remove("hidden");
+  window.location.href = `/app/prs/new?source_document_ids=${selected.join(",")}`;
 });
 
 requireLogin();

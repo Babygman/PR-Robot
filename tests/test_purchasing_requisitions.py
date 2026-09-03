@@ -52,7 +52,6 @@ def test_create_pr_success(client: TestClient, plain_user: User):
     body = res.json()
     assert body["status"] == "draft"
     assert body["requested_by_id"] == plain_user.id
-    assert body["reviewed_by_id"] is None
     assert len(body["items"]) == 1
     assert body["items"][0]["item_no"] == 1
     assert body["budget_control"]["budget"] == "150000.00"
@@ -157,7 +156,7 @@ def test_update_non_draft_pr_rejected(
     created = client.post("/prs", json=_sample_pr_body()).json()
 
     pr = db_session.get(PurchasingRequisition, created["id"])
-    pr.status = PRStatus.REVIEWED
+    pr.status = PRStatus.FINALIZED
     db_session.commit()
 
     res = client.patch(f"/prs/{created['id']}", json=_sample_pr_body())
@@ -173,3 +172,32 @@ def test_get_pr_pdf_returns_valid_pdf(client: TestClient, plain_user: User):
     assert res.headers["content-type"] == "application/pdf"
     assert res.content[:5] == b"%PDF-"
     assert len(res.content) > 1000
+
+
+def test_get_pr_pdf_auto_finalizes_on_first_download(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    _login(client)
+    created = client.post("/prs", json=_sample_pr_body()).json()
+
+    pr = db_session.get(PurchasingRequisition, created["id"])
+    assert pr.status == PRStatus.DRAFT
+
+    res = client.get(f"/prs/{created['id']}/pdf")
+    assert res.status_code == 200
+
+    db_session.refresh(pr)
+    assert pr.status == PRStatus.FINALIZED
+
+    # ครั้งที่สองยังดาวน์โหลดได้ปกติ (ไม่ error แม้ Finalized แล้ว)
+    res2 = client.get(f"/prs/{created['id']}/pdf")
+    assert res2.status_code == 200
+
+
+def test_finalized_pr_rejects_edit(client: TestClient, plain_user: User, db_session: Session):
+    _login(client)
+    created = client.post("/prs", json=_sample_pr_body()).json()
+    client.get(f"/prs/{created['id']}/pdf")
+
+    res = client.patch(f"/prs/{created['id']}", json=_sample_pr_body(remark="แก้ไม่ได้แล้ว"))
+    assert res.status_code == 409

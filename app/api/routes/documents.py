@@ -1,13 +1,21 @@
-"""Upload เอกสารต้นทาง (ใบเสนอราคา/ใบรับของ) + เรียก AI สกัดข้อมูล (Phase 4)
+"""Upload เอกสารต้นทาง (ใบเสนอราคา/ใบยืมสินค้า/ใบส่งสินค้า/ใบรับของ) + เรียก AI
+สกัดข้อมูล (Phase 4)
+
+Scope Revision (Phase 9, 2026-09-03): ไม่บังคับเลือกประเภทเอกสารตอน Upload แล้ว —
+AI เดาประเภทเองจากเนื้อหา (detected_doc_type) แล้วเก็บเป็นค่าเริ่มต้นให้ ผู้ใช้แก้ไข
+ทีหลังผ่าน /review ได้ถ้า AI เดาผิด — รองรับ Upload หลายไฟล์พร้อมกัน (ฝั่งหน้าเว็บ
+เรียก Endpoint นี้วนซ้ำทีละไฟล์ แล้วรวมผลเป็นตารางเดียวตอนสร้าง PR)
 
 Flow:
-1. POST /documents/upload -> บันทึกไฟล์ + เรียก Gemini สกัดข้อมูลทันที (Sync) -> คืนผลลัพธ์
-   ถ้า Gemini เรียกไม่สำเร็จ (Network/Quota/Key ผิด) จะไม่ทำให้ Request ล้มเหลว —
-   บันทึกไฟล์ไว้และเก็บ extraction_error ไว้ ผู้ใช้ Key ข้อมูลเองได้ผ่าน /review
+1. POST /documents/upload -> บันทึกไฟล์ + เรียก Gemini สกัดข้อมูลทันที (Sync) รวมถึง
+   เดาประเภทเอกสาร -> คืนผลลัพธ์ ถ้า Gemini เรียกไม่สำเร็จ (Network/Quota/Key ผิด)
+   จะไม่ทำให้ Request ล้มเหลว — บันทึกไฟล์ไว้และเก็บ extraction_error ไว้ ผู้ใช้ Key
+   ข้อมูลเองได้ผ่าน /review
 2. GET /documents/{id} -> ดูข้อมูลเอกสาร + ผลสกัดจาก AI
 3. GET /documents -> ประวัติเอกสารที่เคยอัปโหลดทั้งหมด
-4. PATCH /documents/{id}/review -> บันทึกข้อมูลที่ผู้ใช้ตรวจทาน/แก้ไขแล้ว
-   (แยกจาก ai_extraction_raw_json เพื่อรักษาผลดิบจาก AI ไว้เป็น Audit Trail เสมอ)
+4. PATCH /documents/{id}/review -> บันทึกข้อมูลที่ผู้ใช้ตรวจทาน/แก้ไขแล้ว (รวมถึงแก้
+   doc_type ถ้า AI เดาผิด) แยกจาก ai_extraction_raw_json เพื่อรักษาผลดิบจาก AI ไว้เป็น
+   Audit Trail เสมอ
 """
 from __future__ import annotations
 
@@ -43,7 +51,7 @@ def get_extraction_service() -> GeminiExtractionService:
 @router.post("/upload", response_model=SourceDocumentRead, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     file: UploadFile = File(...),
-    doc_type: SourceDocType = Form(...),
+    doc_type: SourceDocType | None = Form(default=None, description="ไม่ระบุก็ได้ — ให้ AI เดาเอง"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     extraction_service: GeminiExtractionService = Depends(get_extraction_service),
@@ -80,7 +88,7 @@ async def upload_document(
         AuditLog(
             action="document.uploaded",
             actor_id=current_user.id,
-            detail={"document_id": document.id, "doc_type": doc_type.value},
+            detail={"document_id": document.id, "doc_type": doc_type.value if doc_type else None},
         )
     )
     db.commit()
@@ -97,6 +105,10 @@ async def upload_document(
     document.ai_confidence = (
         Decimal(str(result.ai_confidence)) if result.ai_confidence is not None else None
     )
+    # ถ้าไม่ได้ระบุ doc_type มาตอน Upload ใช้ค่าที่ AI เดาแทน (ยังแก้ทีหลังผ่าน
+    # /review ได้เสมอถ้าเดาผิด) — Scope Revision Phase 9, 2026-09-03
+    if document.doc_type is None and result.detected_doc_type is not None:
+        document.doc_type = result.detected_doc_type
     db.commit()
     db.refresh(document)
     return document
@@ -135,6 +147,8 @@ def review_document(
     document.reviewed_data = body.reviewed_data.model_dump(mode="json")
     document.reviewed_by_id = current_user.id
     document.reviewed_at = datetime.now(timezone.utc)
+    if body.doc_type is not None:
+        document.doc_type = body.doc_type
     db.commit()
     db.refresh(document)
 

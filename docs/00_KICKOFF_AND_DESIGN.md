@@ -431,6 +431,98 @@ Runtime Library ครบตามที่ WeasyPrint ต้องการจ�
 ทดสอบ PDF ภาษาไทยจริงเป็นขั้นตอนแรกบน SCTUBUNTU01 ก่อนเข้าสู่ UAT Walkthrough**
 ไม่ปิดบังว่าเป็นข้อจำกัดจริง ไม่ใช่ "ตรวจแล้วผ่าน" เหมือน Dependency อื่น
 
+## 4g. Scope Revision — ตัด Workflow อนุมัติออก + Multi-document Upload — Implemented Phase 9 (2026-09-03)
+
+**สาเหตุ:** หลัง Deploy UAT สำเร็จครบ Phase 8 (Container Healthy, Migration สะอาด,
+Login ใช้งานได้จริง) Product Owner ทดลองใช้งานจริงแล้วให้ Feedback ตรงไปตรงมาว่า
+โปรแกรม "ไม่ได้ตามที่อยากได้เลย ห่างไกลจากที่คิดไว้มาก" และเมื่อถามต่อว่าจุดไหน
+คำตอบคือ **"ออกแบบผิดตั้งแต่แรก"** — ไม่ใช่ Bug หรือรายละเอียดเล็กน้อย แต่เป็น Concept
+พื้นฐานของ Workflow อนุมัติทั้งระบบ (Phase 3 RBAC + Phase 6 Workflow) ที่วางไว้ผิดตั้งแต่
+Phase 0/2 แม้จะผ่านการอนุมัติจาก Product Owner ทุก Gate มาแล้วก็ตาม
+
+**วิธียืนยัน Requirement ใหม่:** ไม่รีบแก้โค้ดทันทีจาก Feedback ที่ยังกว้างเกินไป — ถาม
+คำถามปลายปิดหลายรอบ + ขอตัวอย่างเอกสารจริง 2 ไฟล์ (ใบเสนอราคาจาก Supplier จริง +
+PR ที่กรอกมือจริงจากเอกสารนั้น) มาวิเคราะห์เทียบกันโดยตรง ก่อนสรุป Scope ใหม่และเริ่ม
+เขียนโค้ด — ตัวอย่างจริงยืนยันว่า Description ในฟอร์ม PR ที่กรอกมือ ผู้ใช้ Copy
+`PRODUCT NAME` + `PRODUCT DESCRIPTION` + `COLOR` (คนละคอลัมน์ในใบเสนอราคา) มารวมกัน
+เป็นบรรทัดเดียว เช่น `"SILICONE PAPER / BS-W 1000MM.XL300M. / (Color: Blonde)"` และ
+Quantity รวม `quantity` + `unit` เช่น `"2 Roll"`
+
+**สรุป Requirement ที่ถูกต้อง (ยืนยันจากผู้ใช้ทุกข้อ):**
+
+1. **ไม่มี Workflow อนุมัติในระบบอีกต่อไป** — Reviewed by / Approved by / Received by
+   เป็นลายเซ็นสดบนกระดาษที่พิมพ์ออกจากระบบไปใช้งานนอกระบบทั้งหมด ไม่มี Action ใดใน
+   ระบบที่ผลิตข้อมูล 3 ช่องนี้ได้อีกต่อไป — ผู้ใช้พิมพ์ PR แล้วเอาไปขอลายเซ็นเอง
+2. **PR เหลือ 2 สถานะ:** `draft` (แก้ไขได้ปกติ) และ `finalized` (ล็อกแก้ไขไม่ได้) —
+   เปลี่ยนสถานะอัตโนมัติตอนกดพิมพ์/ดาวน์โหลด PDF ครั้งแรก ไม่ต้องมีปุ่ม "เสร็จสิ้น" แยก
+3. **AI อ่านเอกสารต้นทางได้หลายไฟล์พร้อมกัน** (อัปโหลดพร้อมกันหลายไฟล์) แล้วรวมรายการ
+   สินค้าจากทุกไฟล์เป็น Item List เดียวของ PR — ไม่ใช่ทีละไฟล์แบบเดิม
+4. **ยังต้องการให้ผู้ใช้ตรวจทาน/แก้ไขข้อมูลที่ AI อ่านมา** แต่ตรวจทานครั้งเดียวที่หน้า
+   สร้าง PR (หลังรวมข้อมูลจากทุกเอกสารแล้ว) ไม่ใช่ตรวจทานทีละเอกสารก่อนแบบเดิม
+5. **AI แยกฟิลด์ `product_name` / `description` / `color`** ให้ตรงกับคอลัมน์จริงในใบ
+   เสนอราคาส่วนใหญ่ แล้วฝั่ง Frontend รวมเป็น Description บรรทัดเดียวตาม Format ที่
+   ผู้ใช้เขียนมือจริง (ดูตัวอย่างด้านบน) — Budget Control ยังคงกรอกมือทั้งหมดเหมือนเดิม
+   ไม่ใช้ AI สกัด (ยืนยันไม่เปลี่ยนจาก Phase 5)
+6. **รองรับเอกสารต้นทาง 4 ประเภท:** ใบเสนอราคา (Quotation), ใบยืมสินค้า (Borrow
+   Note — ใหม่), ใบส่งสินค้า (Delivery Note — ใหม่), ใบรับของ (Receiving Note — เดิม) —
+   ต้องรองรับ Supplier หลายรายที่ Layout ตารางไม่เหมือนกันเลย (Prompt ต้องอ่านตาม
+   ความหมาย ไม่ใช่ตำแหน่งคอลัมน์ตายตัว)
+7. **ไม่บังคับเลือกประเภทเอกสารก่อน Upload อีกต่อไป** — AI เดาประเภทเอกสารเองจาก
+   เนื้อหา (`detected_doc_type`) ใส่ให้เป็นค่าเริ่มต้น ผู้ใช้แก้ไขทีหลังได้เสมอถ้า AI เดาผิด
+   ("ให้ AI copy มาใส่ โดยที่ใส่มาแล้ว user review จะเพิ่มจะลบเอง" — คำตอบผู้ใช้ตรงๆ)
+8. **ยังต้อง Login** — เพื่อ Track ว่าใครสร้าง PR ไหน (`requested_by`) และใช้กรอง
+   History/ค้นหา แต่ตัด RBAC Flag `can_review`/`can_approve`/`can_receive` ออกทั้งหมด
+   เหลือแค่ `is_admin` สำหรับจัดการ User
+
+**สิ่งที่ตัดออกจากระบบจริง (Implemented):**
+- `users`: Drop `can_review`, `can_approve`, `can_receive` (เหลือ `is_admin`)
+- `purchasing_requisitions`: Drop `reviewed_by_id/at`, `approved_by_id/at`,
+  `received_by_id/at` — เหลือ `requested_by_id` อย่างเดียว
+- `PRStatus`: 4 ค่า (`draft`/`reviewed`/`approved`/`received`) → 2 ค่า
+  (`draft`/`finalized`) — Migrate ข้อมูลเดิมจริง ไม่ทิ้ง (ค่าที่ไม่ใช่ `draft` ทั้งหมด
+  Map เป็น `finalized`)
+- Endpoint `POST /prs/{id}/review`, `/approve`, `/receive` ถูกลบทั้งหมด — แทนที่ด้วย
+  Logic ใน `GET /prs/{id}/pdf`: เปลี่ยนสถานะเป็น `finalized` อัตโนมัติถ้ายังเป็น `draft`
+  (Generate PDF สำเร็จก่อนค่อย Finalize กันไม่ให้ Render พังแล้ว PR ถูกล็อกไปด้วย)
+- หน้าเว็บ `pr_detail.html` ตัดปุ่ม Review/Approve/Receive และช่องแสดง Reviewed/
+  Approved/Received by ออกทั้งหมด — `pr_form.html` (Template PDF) ยังคงช่องเซ็นชื่อ
+  4 ช่องไว้ตามฟอร์ม FM-PU-02 เดิม แต่ 3 ช่องหลัง (Reviewed/Approved/Received by)
+  Render เป็นช่องว่างเสมอ ไม่ผูกกับข้อมูลในระบบอีกต่อไป — เหลือแค่ "Requested by" ที่
+  แสดงชื่อจริง
+
+**สิ่งที่เพิ่มเข้าไปใหม่ (Implemented):**
+- `SourceDocType` เพิ่ม `borrow_note`, `delivery_note`; `source_documents.doc_type`
+  เปลี่ยนเป็น Nullable (ไม่บังคับตอน Upload) — AI เดาแล้วเติมให้อัตโนมัติหลัง Extract
+  สำเร็จ ผู้ใช้แก้ไขทีหลังผ่าน `PATCH /documents/{id}/review` (เพิ่ม Field `doc_type`
+  ให้แก้พร้อมกันได้ในคำขอเดียว)
+- `ExtractedItem` เพิ่ม `product_name`, `color`; `ExtractionResult` เพิ่ม
+  `detected_doc_type` — Prompt Gemini เขียนใหม่ทั้งหมดให้รองรับ Supplier หลายรูปแบบ
+  อ่านตามความหมายของแต่ละส่วน ไม่ใช่ตำแหน่งตายตัว
+- หน้า Upload (`upload.html`) รองรับเลือกไฟล์พร้อมกันหลายไฟล์ (`<input multiple>`)
+  Loop อัปโหลดทีละไฟล์ แสดงผลสรุปสั้นๆ ต่อไฟล์ (ชื่อไฟล์ + ประเภทเอกสารที่ AI เดา
+  แก้ไขได้ + จำนวนรายการที่อ่านได้) แล้วเลือกเอกสารที่ต้องการไปสร้าง PR ต่อ
+  (`/app/prs/new?source_document_ids=1,2,3` — รองรับหลาย ID คั่นด้วย `,`)
+- หน้าสร้าง PR (`pr_edit.html`) รวมรายการสินค้าจากทุกเอกสารที่ติ๊กเลือกไว้แบบ Live
+  (เปลี่ยน Checkbox ปุ๊บ คำนวณรายการใหม่ทันที) พร้อมรวม `product_name` + `description`
+  + `color` → Description บรรทัดเดียว และ `quantity` + `unit` → Quantity บรรทัดเดียว
+  ตาม Format ที่ผู้ใช้เขียนมือจริง — ผู้ใช้แก้ไข/เพิ่ม/ลบรายการเองต่อได้เสมอก่อนบันทึก
+
+**Migration (`a1c3e9f0b2d4_scope_revision_drop_workflow.py`):** ต้อง Drop Default เดิม
+ของ Column `status` ก่อน `ALTER COLUMN ... TYPE` เสมอ (Default ผูกกับ OID ของ Enum
+Type เดิมอยู่ Cast ไปหา Type ใหม่อัตโนมัติไม่ได้แม้ Value เป็น String เดียวกัน — เจอ
+`DatatypeMismatch` จริงตอนทดสอบ แก้แล้วด้วย `ALTER TABLE ... ALTER COLUMN status DROP
+DEFAULT` ก่อนสร้าง Type ใหม่ ทั้งใน `upgrade()`/`downgrade()`) — ทดสอบเต็มรูปแบบด้วย
+ข้อมูลจำลองครบทั้ง 4 สถานะเดิมบน PostgreSQL 16 จริง (ไม่ใช้ SQLite) ยืนยัน Upgrade →
+Downgrade → Upgrade ผ่านและ Remap ข้อมูลถูกต้องทุกครั้ง (`draft`→`draft`,
+`reviewed`/`approved`/`received`→`finalized`)
+
+**Verification (2026-09-03):** `ruff check .` สะอาด, `pytest` ผ่านทั้งหมด 51/51 (เขียน
+ใหม่/ปรับปรุง `test_pr_workflow.py`, `test_purchasing_requisitions.py`,
+`test_auth.py`, `test_documents.py` ให้ตรงกับ Scope ใหม่ — ตัด Test Workflow เดิมออก
+ทั้งหมด เพิ่ม Test สถานะ Finalize อัตโนมัติตอนดาวน์โหลด PDF, Test AI เดาประเภทเอกสาร
+เอง), Alembic Migration ทดสอบจริงกับ PostgreSQL 16 ตามข้างต้น — ยังไม่ได้ Deploy จริง
+บน SCTUBUNTU01 (รอ Push ขึ้น Git แล้ว Pull/Rebuild ตามขั้นตอน SSH ปกติ)
+
 ## 5. Roadmap (แบ่ง Phase ตามมาตรฐาน — รออนุมัติก่อนเริ่มแต่ละ Phase)
 
 | Phase | เนื้อหา | Output |
@@ -443,8 +535,9 @@ Runtime Library ครบตามที่ WeasyPrint ต้องการจ�
 | 5 | บันทึก PR + Generate PDF ตาม Template จริง | **เสร็จแล้ว (2026-09-02)** — POST/GET/PATCH /prs + GET /prs/{id}/pdf ตรงตามฟอร์ม FM-PU-02 (ดู 4c.) |
 | 6 | Workflow อนุมัติ (Reviewed/Approved/Received) + ประวัติ/ค้นหา PR | **เสร็จแล้ว (2026-09-02)** — POST /prs/{id}/review,approve,receive + GET /prs/{id}/history + GET /prs Filter ครบ (ดู 4d.) |
 | 7 | Web Frontend ขั้นต่ำ (Login, Upload+ตรวจทาน, สร้าง/ดู/แก้ไข PR, ปุ่ม Workflow, ดาวน์โหลด PDF) | **เสร็จแล้ว (2026-09-02)** — Server-rendered Jinja2 Shell + Vanilla JS ทับ JSON API เดิม (ไม่มี Framework/Build Step) ครบทุกหน้า — Login, Dashboard+ค้นหา/กรอง, สร้าง/แก้ไข PR, ดู PR+ปุ่ม Workflow+ประวัติ+ดาวน์โหลด PDF, Upload+ตรวจทานเอกสาร (ดู 4e.) |
-| 8 | UAT รวม + Security Review + Deploy จริงบน SCTUBUNTU01 | ระบบใช้งานจริงบน UAT/PROD |
-| 9 | Documentation (README/RELEASE) + Lessons Learned | เอกสารครบตามมาตรฐานข้อ 10 และ 13 |
+| 8 | UAT รวม + Security Review + Deploy จริงบน SCTUBUNTU01 | **เสร็จแล้ว (2026-09-02)** — Deploy UAT สำเร็จ, Container Healthy, Migration สะอาด, Login ใช้งานได้จริง — ตามด้วย Product Owner Feedback ว่า Design ผิดตั้งแต่แรก นำไปสู่ Phase 9 |
+| 9 | Scope Revision: ตัด Workflow อนุมัติออก + Multi-document Upload | **เสร็จแล้ว (2026-09-03, กำลังรอ Deploy ซ้ำบน UAT)** — ตาม Feedback จริงจาก Product Owner (ดู 4g.) |
+| 10 | Documentation (README/RELEASE) + Lessons Learned | เอกสารครบตามมาตรฐานข้อ 10 และ 13 |
 
 ---
 
@@ -464,11 +557,14 @@ Runtime Library ครบตามที่ WeasyPrint ต้องการจ�
   Dockerfile จริง — จำเป็นตอน Phase 8 ไม่เช่นนั้น PDF จะ Fallback ไป Font ที่ไม่รองรับ
   ภาษาไทยดีพอ (ดู 4c.)
 
-- [ ] Reject/ตีกลับ PR: Schema `PRStatus` ปัจจุบันเดินหน้าทางเดียวเท่านั้น (draft ->
-  reviewed -> approved -> received) ยังไม่รองรับการตีกลับ/ปฏิเสธ — ถ้าต้องการต้องเพิ่ม
-  Status ใหม่ + Migration (ดู 4d.)
+- [x] Reject/ตีกลับ PR: **ไม่เกี่ยวข้องอีกต่อไป** — Phase 9 ตัด Workflow อนุมัติในระบบ
+  ออกทั้งหมดแล้ว (ดู 4g.) Reviewed/Approved/Received by เป็นลายเซ็นสดบนกระดาษนอกระบบ
+  ล้วนๆ ไม่มีสถานะ "ตีกลับ" ให้ต้องออกแบบอีก
 
 **ยังรออยู่:**
-- [ ] รายชื่อ User เริ่มต้นและบทบาทจริง (ใครมีสิทธิ์ can_review / can_approve / can_receive / is_admin) — กลไก Bootstrap Admin คนแรกทำเสร็จแล้วใน Phase 3 (`app/scripts/create_admin.py`) แต่ยังไม่ได้รับรายชื่อ User จริงจาก Product Owner เพื่อสร้างในระบบ
+- [ ] รายชื่อ User เริ่มต้นจริง (ใครสร้าง PR ได้บ้าง / ใครเป็น `is_admin`) — Phase 9
+  ตัด `can_review`/`can_approve`/`can_receive` ออกแล้ว (ไม่มี Role ให้กำหนดอีก) กลไก
+  Bootstrap Admin คนแรกทำเสร็จแล้วใน Phase 3 (`app/scripts/create_admin.py`) แต่ยังไม่
+  ได้รับรายชื่อ User จริงทั้งหมดจาก Product Owner เพื่อสร้างในระบบ
 - [ ] Sub-domain สำหรับ UAT/PROD ที่จะตั้งใน Nginx Proxy Manager — จำเป็นตอน Phase 8
 

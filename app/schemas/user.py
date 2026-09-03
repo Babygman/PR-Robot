@@ -13,9 +13,6 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     department: str | None = None
-    can_review: bool = False
-    can_approve: bool = False
-    can_receive: bool = False
     is_admin: bool = False
 
 
@@ -25,9 +22,6 @@ class UserRead(BaseModel):
     email: EmailStr
     department: str | None
     is_active: bool
-    can_review: bool
-    can_approve: bool
-    can_receive: bool
     is_admin: bool
     created_at: datetime
 

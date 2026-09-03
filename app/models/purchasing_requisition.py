@@ -1,8 +1,11 @@
 """Purchasing Requisition — เฉพาะฟิลด์หน้า 1/3 ของฟอร์ม Sunstar FM-PU-02
 (หน้า 2-3 ไม่มี ใช้หน้า 1 ไปก่อนตาม Business Decision 2026-09-01 — อาจ Redesign ทีหลัง)
 
-Requested/Reviewed/Approved/Received by = ผู้ใช้ที่ Login ตอนทำ Action นั้น
-(ไม่ใช่ช่องกรอกข้อมูล) เก็บเป็น FK ไปยัง users เท่านั้น ใช้แสดงชื่อตอนพิมพ์ฟอร์มให้เซ็นจริง
+Scope Revision (Phase 9, 2026-09-03): ตัด Workflow อนุมัติในระบบออกทั้งหมดตาม
+Feedback จริงจาก Product Owner (Design เดิมผิดตั้งแต่แรก — Reviewed/Approved/
+Received by เป็นลายเซ็นสดบนกระดาษที่พิมพ์ออกไปใช้งานนอกระบบ ไม่มีการอนุมัติ
+ในระบบเลย) เหลือ Requested by (ผู้สร้าง PR) อย่างเดียวที่ Track ในระบบจริง —
+ดูตัวอย่าง PR จริงที่ Product Owner ส่งมาใน docs/00_KICKOFF_AND_DESIGN.md
 
 pr_no = Running Number ต่อเนื่องตลอด ไม่รีเซ็ตรายปี/แผนก (Business Decision 2026-09-01)
 วิธี Generate เลขถัดไปเป็นเรื่อง Business Logic ของ Phase 4-5 ไม่ใช่ระดับ Schema
@@ -21,10 +24,12 @@ from app.db.base import Base
 
 
 class PRStatus(str, enum.Enum):
+    """Scope Revision (Phase 9, 2026-09-03): เหลือ 2 สถานะง่ายๆ ตัด Workflow ทิ้ง —
+    DRAFT = แก้ไขได้ปกติ, FINALIZED = ล็อกแก้ไขไม่ได้แล้ว (Trigger อัตโนมัติตอนกด
+    พิมพ์/ดาวน์โหลด PDF ครั้งแรก ดู GET /prs/{id}/pdf)"""
+
     DRAFT = "draft"
-    REVIEWED = "reviewed"
-    APPROVED = "approved"
-    RECEIVED = "received"
+    FINALIZED = "finalized"
 
 
 class PurchasingRequisition(Base):
@@ -56,12 +61,6 @@ class PurchasingRequisition(Base):
     )
 
     requested_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    reviewed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
-    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    approved_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
-    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    received_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
-    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     remark: Mapped[str | None] = mapped_column(Text)
 

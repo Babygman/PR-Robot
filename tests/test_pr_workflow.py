@@ -1,4 +1,11 @@
-"""Test Workflow อนุมัติ (Reviewed/Approved/Received) + ประวัติ/ค้นหา (Phase 6)"""
+"""Test สถานะ PR (Draft/Finalized) + ประวัติ/ค้นหา (Phase 6, ปรับปรุงตาม Scope
+Revision Phase 9, 2026-09-03)
+
+Scope Revision: ไม่มี Workflow อนุมัติในระบบอีกต่อไป (Reviewed/Approved/Received
+เป็นการเซ็นชื่อสดบนกระดาษที่พิมพ์ออกไปทั้งหมด) เหลือแค่ 2 สถานะ: draft (แก้ไขได้)
+และ finalized (ล็อกอัตโนมัติเมื่อกด Print/Download PDF ครั้งแรก — ดู
+test_purchasing_requisitions.py::test_get_pr_pdf_auto_finalizes_on_first_download)
+"""
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
@@ -27,7 +34,7 @@ def _sample_pr_body(**overrides) -> dict:
             }
         ],
         "budget_control": None,
-        "remark": "ทดสอบ Workflow",
+        "remark": "ทดสอบ",
     }
     body.update(overrides)
     return body
@@ -40,89 +47,24 @@ def _create_pr_as_plain(client: TestClient) -> dict:
     return res.json()
 
 
-def test_full_workflow_happy_path(client: TestClient, plain_user: User, admin_user: User):
+def test_pr_created_as_draft_with_only_requested_by(client: TestClient, plain_user: User):
     created = _create_pr_as_plain(client)
     assert created["status"] == "draft"
     assert created["requested_by_name"] == "Plain User"
+    # ไม่มี Field ของ Workflow เดิมอีกแล้ว
+    assert "reviewed_by_id" not in created
+    assert "approved_by_id" not in created
+    assert "received_by_id" not in created
 
-    _login_as(client, "admin@example.com", "adminpass123")
 
-    res = client.post(f"/prs/{created['id']}/review", json={"note": "ตรวจแล้วโอเค"})
-    assert res.status_code == 200
-    body = res.json()
-    assert body["status"] == "reviewed"
-    assert body["reviewed_by_name"] == "Admin"
-    assert body["reviewed_at"] is not None
-
-    res = client.post(f"/prs/{created['id']}/approve")
-    assert res.status_code == 200
-    body = res.json()
-    assert body["status"] == "approved"
-    assert body["approved_by_name"] == "Admin"
-
-    res = client.post(f"/prs/{created['id']}/receive")
-    assert res.status_code == 200
-    body = res.json()
-    assert body["status"] == "received"
-    assert body["received_by_name"] == "Admin"
+def test_pr_history_records_creation_and_finalize(client: TestClient, plain_user: User):
+    created = _create_pr_as_plain(client)
+    client.get(f"/prs/{created['id']}/pdf")
 
     history = client.get(f"/prs/{created['id']}/history")
     assert history.status_code == 200
     actions = [h["action"] for h in history.json()]
-    assert actions == ["pr.created", "pr.reviewed", "pr.approved", "pr.received"]
-    assert history.json()[1]["detail"] == {"note": "ตรวจแล้วโอเค"}
-
-
-def test_cannot_approve_before_review(client: TestClient, plain_user: User, admin_user: User):
-    created = _create_pr_as_plain(client)
-    _login_as(client, "admin@example.com", "adminpass123")
-    res = client.post(f"/prs/{created['id']}/approve")
-    assert res.status_code == 409
-
-
-def test_cannot_receive_before_approve(client: TestClient, plain_user: User, admin_user: User):
-    created = _create_pr_as_plain(client)
-    _login_as(client, "admin@example.com", "adminpass123")
-    client.post(f"/prs/{created['id']}/review")
-    res = client.post(f"/prs/{created['id']}/receive")
-    assert res.status_code == 409
-
-
-def test_cannot_review_twice(client: TestClient, plain_user: User, admin_user: User):
-    created = _create_pr_as_plain(client)
-    _login_as(client, "admin@example.com", "adminpass123")
-    client.post(f"/prs/{created['id']}/review")
-    res = client.post(f"/prs/{created['id']}/review")
-    assert res.status_code == 409
-
-
-def test_plain_user_without_flags_cannot_review(client: TestClient, plain_user: User):
-    created = _create_pr_as_plain(client)
-    res = client.post(f"/prs/{created['id']}/review")
-    assert res.status_code == 403
-
-
-def test_plain_user_without_flags_cannot_approve(client: TestClient, plain_user: User):
-    created = _create_pr_as_plain(client)
-    res = client.post(f"/prs/{created['id']}/approve")
-    assert res.status_code == 403
-
-
-def test_plain_user_without_flags_cannot_receive(client: TestClient, plain_user: User):
-    created = _create_pr_as_plain(client)
-    res = client.post(f"/prs/{created['id']}/receive")
-    assert res.status_code == 403
-
-
-def test_reviewed_pr_can_no_longer_be_edited(
-    client: TestClient, plain_user: User, admin_user: User
-):
-    created = _create_pr_as_plain(client)
-    _login_as(client, "admin@example.com", "adminpass123")
-    client.post(f"/prs/{created['id']}/review")
-
-    res = client.patch(f"/prs/{created['id']}", json=_sample_pr_body())
-    assert res.status_code == 409
+    assert actions == ["pr.created", "pr.finalized"]
 
 
 def test_list_prs_search_by_q(client: TestClient, plain_user: User):
@@ -146,6 +88,20 @@ def test_list_prs_filter_by_pr_no(client: TestClient, plain_user: User):
     results = res.json()
     assert len(results) == 1
     assert results[0]["id"] == created["id"]
+
+
+def test_list_prs_filter_by_status(client: TestClient, plain_user: User):
+    _login_as(client, "plain@example.com", "plainpass123")
+    draft = client.post("/prs", json=_sample_pr_body()).json()
+    finalized = client.post("/prs", json=_sample_pr_body()).json()
+    client.get(f"/prs/{finalized['id']}/pdf")
+
+    res = client.get("/prs", params={"status_filter": "finalized"})
+    assert res.status_code == 200
+    results = res.json()
+    ids = {r["id"] for r in results}
+    assert finalized["id"] in ids
+    assert draft["id"] not in ids
 
 
 def test_list_prs_filter_requested_by_me(client: TestClient, plain_user: User, admin_user: User):

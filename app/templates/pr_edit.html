@@ -17,7 +17,11 @@
 
   <div class="card" id="source-doc-card">
     <h2>แนบเอกสารต้นทาง (ถ้ามี)</h2>
-    <p class="muted">เลือกเอกสารที่อัปโหลดและตรวจทานไว้แล้วเพื่อผูกกับ PR นี้ (ไม่บังคับ)</p>
+    <p class="muted">
+      เลือกเอกสารที่อัปโหลดไว้เพื่อผูกกับ PR นี้ — เลือกได้หลายรายการ AI จะรวมรายการสินค้าจาก
+      ทุกเอกสารที่เลือกไว้ในตารางด้านล่างให้อัตโนมัติ (เปลี่ยนตัวเลือกแล้วรายการจะปรับใหม่ทันที
+      แก้ไข/เพิ่ม/ลบรายการเองได้เสมอก่อนบันทึก)
+    </p>
     <div id="source-doc-list" class="muted">กำลังโหลดรายการเอกสาร...</div>
   </div>
 
@@ -55,8 +59,14 @@
 <script>
 const PR_ID = {{ pr_id if pr_id is not none else "null" }};
 const params = new URLSearchParams(window.location.search);
-const SOURCE_DOC_ID = params.get("source_document_id") ? Number(params.get("source_document_id")) : null;
-const selectedDocIds = new Set(SOURCE_DOC_ID ? [SOURCE_DOC_ID] : []);
+// รองรับทั้งแบบเดิม (source_document_id เดี่ยว) และแบบใหม่ (source_document_ids
+// คั่นด้วย , หลายรายการ — มาจากหน้า Upload ที่อัปโหลดได้หลายไฟล์พร้อมกัน)
+const initialDocIds = (params.get("source_document_ids") || params.get("source_document_id") || "")
+  .split(",")
+  .map((s) => Number(s.trim()))
+  .filter((n) => Number.isFinite(n) && n > 0);
+const selectedDocIds = new Set(initialDocIds);
+let allDocs = [];
 
 function itemRowHtml(item) {
   item = item || {};
@@ -89,6 +99,40 @@ document.getElementById("has-budget").addEventListener("change", (e) => {
   document.getElementById("budget-fields").classList.toggle("hidden", !e.target.checked);
 });
 
+// รวม product_name / description / color เป็น Description บรรทัดเดียว ตรงตาม
+// วิธีที่ผู้ใช้เขียนมือจริง เช่น "SILICONE PAPER / BS-W 1000MM.XL300M. / (Color: Blonde)"
+function combineDescription(item) {
+  const parts = [item.product_name, item.description];
+  if (item.color) parts.push(`(Color: ${item.color})`);
+  return parts.filter(Boolean).join(" / ");
+}
+
+// รวม quantity + unit เป็น Quantity บรรทัดเดียว เช่น "2 Roll"
+function combineQuantity(item) {
+  return [item.quantity, item.unit].filter(Boolean).join(" ");
+}
+
+// สร้างรายการสินค้าใหม่จากทุกเอกสารต้นทางที่ติ๊กเลือกไว้ ณ ขณะนี้ (Live Recompute)
+// เขียนทับรายการเดิมในตาราง — เป็นขั้นตอนตรวจทานเดียวก่อนบันทึก ผู้ใช้แก้ไข/ลบ/เพิ่มเองได้เสมอ
+function recomputeItemsFromSelectedDocs() {
+  const items = [];
+  for (const doc of allDocs) {
+    if (!selectedDocIds.has(doc.id)) continue;
+    const data = doc.reviewed_data || doc.ai_extraction_raw_json;
+    if (data && data.items && data.items.length) {
+      data.items.forEach((it) => {
+        items.push({ description: combineDescription(it), quantity: combineQuantity(it) });
+      });
+    }
+  }
+  document.getElementById("items-container").innerHTML = "";
+  if (items.length) {
+    items.forEach(addItemRow);
+  } else {
+    addItemRow();
+  }
+}
+
 async function loadSourceDocuments() {
   const res = await apiFetch("/documents");
   const listEl = document.getElementById("source-doc-list");
@@ -97,35 +141,36 @@ async function loadSourceDocuments() {
     return;
   }
   const docs = await res.json();
+  allDocs = docs;
   if (docs.length === 0) {
     listEl.textContent = "ยังไม่มีเอกสารที่อัปโหลดไว้";
     return;
   }
   listEl.innerHTML = docs
-    .slice(0, 20)
+    .slice(0, 30)
     .map((doc) => {
       const label = doc.reviewed_data?.vendor_name || doc.ai_extraction_raw_json?.vendor_name || `เอกสาร #${doc.id}`;
       const checked = selectedDocIds.has(doc.id) ? "checked" : "";
       return `<label style="display:block; margin-bottom:4px; font-size:13.5px;">
         <input type="checkbox" class="source-doc-checkbox" value="${doc.id}" style="width:auto;" ${checked}>
-        #${doc.id} — ${escapeHtml(doc.doc_type)} — ${escapeHtml(label)}
+        #${doc.id} — ${escapeHtml(DOC_TYPE_LABEL[doc.doc_type] || doc.doc_type || "ไม่ระบุประเภท")} — ${escapeHtml(label)}
       </label>`;
     })
     .join("");
 
-  // ถ้ามาจากลิงก์ "ไปสร้าง PR จากเอกสารนี้" ให้ดึงข้อมูลมา Prefill รายการสินค้าอัตโนมัติ
-  if (SOURCE_DOC_ID && !PR_ID) {
-    const doc = docs.find((d) => d.id === SOURCE_DOC_ID);
-    const data = doc?.reviewed_data || doc?.ai_extraction_raw_json;
-    if (data && data.items && data.items.length) {
-      document.getElementById("items-container").innerHTML = "";
-      data.items.forEach((it) =>
-        addItemRow({
-          description: it.description,
-          quantity: [it.quantity, it.unit].filter(Boolean).join(" "),
-        })
-      );
-    }
+  listEl.querySelectorAll(".source-doc-checkbox").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const id = Number(cb.value);
+      if (cb.checked) selectedDocIds.add(id);
+      else selectedDocIds.delete(id);
+      recomputeItemsFromSelectedDocs();
+    });
+  });
+
+  // ถ้ามาจากลิงก์ "ไปสร้าง PR จากเอกสารนี้" (Upload หนึ่งไฟล์ขึ้นไป) ให้ดึงข้อมูลมา
+  // Prefill รายการสินค้าอัตโนมัติจากทุกเอกสารที่เลือกไว้
+  if (selectedDocIds.size > 0 && !PR_ID) {
+    recomputeItemsFromSelectedDocs();
   }
 }
 
@@ -139,7 +184,7 @@ async function loadForEdit() {
   const pr = await res.json();
   if (pr.status !== "draft") {
     document.getElementById("load-error").textContent =
-      "แก้ไขไม่ได้ — PR นี้ผ่านขั้นตอน Review ไปแล้ว (สถานะปัจจุบัน: " + pr.status + ")";
+      "แก้ไขไม่ได้ — PR นี้ถูกสรุป (Finalized) ไปแล้วตอนพิมพ์/ดาวน์โหลด PDF";
     document.getElementById("load-error").classList.remove("hidden");
     return false;
   }

@@ -1,7 +1,10 @@
 """FastAPI Dependencies สำหรับ Authentication / Role-based Access Control
 
 ทุก Endpoint ที่ต้อง Login ใช้ Depends(get_current_user)
-ทุก Endpoint ที่ต้องสิทธิ์เฉพาะ ใช้ Depends(require_admin) หรือ require_can_review ฯลฯ
+Endpoint ที่ต้องสิทธิ์ Admin ใช้ Depends(require_admin)
+
+Scope Revision (Phase 9, 2026-09-03): ตัด require_can_review/approve/receive ออก —
+ไม่มี Workflow อนุมัติในระบบแล้ว
 """
 from __future__ import annotations
 
@@ -32,22 +35,4 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
 def require_admin(user: User = Depends(get_current_user)) -> User:
     if not user.is_admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "ต้องเป็น Admin เท่านั้น")
-    return user
-
-
-def require_can_review(user: User = Depends(get_current_user)) -> User:
-    if not (user.can_review or user.is_admin):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "ไม่มีสิทธิ์ Review")
-    return user
-
-
-def require_can_approve(user: User = Depends(get_current_user)) -> User:
-    if not (user.can_approve or user.is_admin):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "ไม่มีสิทธิ์ Approve")
-    return user
-
-
-def require_can_receive(user: User = Depends(get_current_user)) -> User:
-    if not (user.can_receive or user.is_admin):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "ไม่มีสิทธิ์ Receive")
     return user

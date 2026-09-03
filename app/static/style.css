@@ -105,9 +105,7 @@ td a { color: var(--color-primary); }
   color: #fff;
 }
 .badge-draft { background: #8a8a8a; }
-.badge-reviewed { background: #b8860b; }
-.badge-approved { background: #1f6fb2; }
-.badge-received { background: var(--color-success); }
+.badge-finalized { background: var(--color-success); }
 
 .error { color: var(--color-danger); font-size: 13.5px; margin: 8px 0; }
 .success { color: var(--color-success); font-size: 13.5px; margin: 8px 0; }

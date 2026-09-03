@@ -13,8 +13,14 @@ from app.db.base import Base
 
 
 class SourceDocType(str, enum.Enum):
+    """Scope Revision (Phase 9, 2026-09-03): เพิ่ม BORROW_NOTE (ใบยืมสินค้า) และ
+    DELIVERY_NOTE (ใบส่งสินค้า) ตาม Feedback จริงจาก Product Owner — AI เป็นคนเดา
+    ประเภทเอกสารเองจากเนื้อหา (ไม่บังคับเลือกตอน Upload แล้ว) ผู้ใช้แก้ไขทีหลังได้"""
+
     QUOTATION = "quotation"
     RECEIVING_NOTE = "receiving_note"
+    BORROW_NOTE = "borrow_note"
+    DELIVERY_NOTE = "delivery_note"
     OTHER = "other"
 
 
@@ -26,17 +32,20 @@ class SourceDocument(Base):
         ForeignKey("purchasing_requisitions.id", ondelete="SET NULL")
     )
     file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
-    doc_type: Mapped[SourceDocType] = mapped_column(
+    doc_type: Mapped[SourceDocType | None] = mapped_column(
         # values_callable: เหตุผลเดียวกับ PRStatus ใน purchasing_requisition.py —
         # บังคับเก็บ .value ("quotation") ไม่ใช่ .name ("QUOTATION") ให้ตรงกับ Native
         # Enum Type ที่ Alembic Migration สร้างไว้จริงบน PostgreSQL
+        # Nullable (Phase 9, 2026-09-03): ไม่บังคับเลือกตอน Upload แล้ว — AI เดาเอง
+        # หลัง Extract เสร็จ (เก็บใน ai_extraction_raw_json.detected_doc_type ก่อน
+        # แล้วค่อย Apply ทับที่นี่) ผู้ใช้แก้ไขทีหลังผ่าน /review ได้เสมอ
         SAEnum(
             SourceDocType,
             name="source_doc_type",
             native_enum=True,
             values_callable=lambda enum_cls: [e.value for e in enum_cls],
         ),
-        nullable=False,
+        nullable=True,
     )
     uploaded_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     uploaded_at: Mapped[datetime] = mapped_column(

@@ -1,11 +1,20 @@
 // PR-Robot — Shared Frontend Helper (Phase 7)
 // ไม่ใช้ Framework ภายนอก — Vanilla JS ล้วนตามหลักการ "Web Frontend ขั้นต่ำ"
 
+// Scope Revision (Phase 9, 2026-09-03): เหลือ 2 สถานะ — draft (แก้ไขได้) และ
+// finalized (ล็อกแล้ว เปลี่ยนอัตโนมัติตอนกดพิมพ์/ดาวน์โหลด PDF ครั้งแรก)
 const PR_STATUS_LABEL = {
-  draft: "Draft",
-  reviewed: "Reviewed",
-  approved: "Approved",
-  received: "Received",
+  draft: "Draft (แก้ไขได้)",
+  finalized: "Finalized (สรุปแล้ว)",
+};
+
+// ประเภทเอกสารต้นทาง (Phase 9, 2026-09-03): AI เดาเองจากเนื้อหา ผู้ใช้แก้ไขทีหลังได้
+const DOC_TYPE_LABEL = {
+  quotation: "ใบเสนอราคา",
+  receiving_note: "ใบรับของ",
+  borrow_note: "ใบยืมสินค้า",
+  delivery_note: "ใบส่งสินค้า",
+  other: "อื่นๆ",
 };
 
 /**

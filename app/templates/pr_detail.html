@@ -19,18 +19,14 @@
     <div class="field"><label>Remark</label><div id="pr-remark" class="muted"></div></div>
     <div class="row">
       <div class="field"><label>Requested by</label><div id="pr-requested"></div></div>
-      <div class="field"><label>Reviewed by</label><div id="pr-reviewed"></div></div>
-      <div class="field"><label>Approved by</label><div id="pr-approved"></div></div>
-      <div class="field"><label>Received by</label><div id="pr-received"></div></div>
     </div>
+    <p class="muted hidden" id="finalized-note">
+      PR นี้สรุปแล้ว (Finalized) — พิมพ์เอกสารนี้เพื่อขอลายเซ็นสด (Reviewed by / Approved by / Received by) นอกระบบ
+    </p>
     <div class="actions">
-      <a class="btn secondary" id="pdf-link" href="#" target="_blank">ดาวน์โหลด PDF</a>
+      <a class="btn secondary" id="pdf-link" href="#" target="_blank">พิมพ์ / ดาวน์โหลด PDF</a>
       <a class="btn secondary hidden" id="edit-link" href="#">แก้ไข PR</a>
-      <button class="hidden" id="review-btn">Review</button>
-      <button class="hidden" id="approve-btn">Approve</button>
-      <button class="hidden" id="receive-btn">Receive</button>
     </div>
-    <div class="error hidden" id="action-error"></div>
   </div>
 
   <div class="card">
@@ -92,9 +88,6 @@ async function loadDetail(me) {
   document.getElementById("pr-date").textContent = pr.doc_date;
   document.getElementById("pr-remark").textContent = pr.remark || "-";
   document.getElementById("pr-requested").textContent = pr.requested_by_name || "-";
-  document.getElementById("pr-reviewed").textContent = pr.reviewed_by_name || "-";
-  document.getElementById("pr-approved").textContent = pr.approved_by_name || "-";
-  document.getElementById("pr-received").textContent = pr.received_by_name || "-";
   document.getElementById("pdf-link").href = `/prs/${PR_ID}/pdf`;
 
   document.getElementById("items-body").innerHTML = pr.items
@@ -119,19 +112,14 @@ async function loadDetail(me) {
     document.getElementById("bc-balance").textContent = fmtMoney(bc.balance);
   }
 
-  // ปุ่ม Action แสดงตามสถานะปัจจุบัน + สิทธิ์ของผู้ใช้ที่ Login (จาก GET /auth/me)
+  // Scope Revision (Phase 9, 2026-09-03): เหลือแค่ 2 สถานะ ไม่มี Workflow อนุมัติใน
+  // ระบบแล้ว — draft แก้ไขได้/finalized ล็อกแล้ว (เปลี่ยนอัตโนมัติตอนพิมพ์/ดาวน์โหลด
+  // PDF ครั้งแรก ไม่ต้องกดปุ่มแยก)
   if (pr.status === "draft") {
     document.getElementById("edit-link").href = `/app/prs/${PR_ID}/edit`;
     document.getElementById("edit-link").classList.remove("hidden");
-  }
-  if (pr.status === "draft" && (me.can_review || me.is_admin)) {
-    document.getElementById("review-btn").classList.remove("hidden");
-  }
-  if (pr.status === "reviewed" && (me.can_approve || me.is_admin)) {
-    document.getElementById("approve-btn").classList.remove("hidden");
-  }
-  if (pr.status === "approved" && (me.can_receive || me.is_admin)) {
-    document.getElementById("receive-btn").classList.remove("hidden");
+  } else {
+    document.getElementById("finalized-note").classList.remove("hidden");
   }
 
   document.getElementById("loading").classList.add("hidden");
@@ -153,22 +141,11 @@ async function loadHistory() {
     .join("");
 }
 
-async function doAction(action) {
-  const errEl = document.getElementById("action-error");
-  errEl.classList.add("hidden");
-  const res = await apiFetch(`/prs/${PR_ID}/${action}`, { method: "POST", body: JSON.stringify({}) });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    errEl.textContent = body.detail || "ทำรายการไม่สำเร็จ";
-    errEl.classList.remove("hidden");
-    return;
-  }
-  window.location.reload();
-}
-
-document.getElementById("review-btn").addEventListener("click", () => doAction("review"));
-document.getElementById("approve-btn").addEventListener("click", () => doAction("approve"));
-document.getElementById("receive-btn").addEventListener("click", () => doAction("receive"));
+// กดพิมพ์/ดาวน์โหลด PDF อาจทำให้ PR เปลี่ยนเป็น Finalized (ถ้ายังเป็น Draft อยู่) —
+// รีโหลดหน้านี้หลังกดสักครู่ เพื่อให้เห็นสถานะล่าสุด (ลิงก์เปิดแท็บใหม่ ไม่รีเฟรชเอง)
+document.getElementById("pdf-link").addEventListener("click", () => {
+  setTimeout(() => window.location.reload(), 1500);
+});
 
 (async () => {
   const me = await requireLogin();

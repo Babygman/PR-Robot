@@ -40,9 +40,6 @@ def main() -> None:
             email=args.email,
             password_hash=hash_password(args.password),
             is_admin=True,
-            can_review=True,
-            can_approve=True,
-            can_receive=True,
         )
         db.add(user)
         db.commit()

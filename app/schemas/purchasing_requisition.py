@@ -1,7 +1,10 @@
 """Schema สำหรับบันทึก PR (Phase 5)
 
-Requested/Reviewed/Approved/Received by ไม่มีในนี้โดยเจตนา — เป็นผู้ใช้ที่ Login ตอนทำ
-Action นั้นเสมอ (Business Decision 2026-09-01) ไม่ใช่ข้อมูลที่รับจาก Client
+Requested by ไม่มีในนี้โดยเจตนา — เป็นผู้ใช้ที่ Login ตอนสร้าง PR เสมอ (Business
+Decision 2026-09-01) ไม่ใช่ข้อมูลที่รับจาก Client
+
+Scope Revision (Phase 9, 2026-09-03): ตัด Reviewed/Approved/Received by ออกทั้งหมด
+— ไม่มี Workflow อนุมัติในระบบแล้ว (ลายเซ็นสดบนกระดาษล้วนๆ)
 """
 from __future__ import annotations
 
@@ -87,15 +90,6 @@ class PRRead(BaseModel):
     status: PRStatus
     requested_by_id: int
     requested_by_name: str | None = None
-    reviewed_by_id: int | None
-    reviewed_by_name: str | None = None
-    reviewed_at: datetime | None
-    approved_by_id: int | None
-    approved_by_name: str | None = None
-    approved_at: datetime | None
-    received_by_id: int | None
-    received_by_name: str | None = None
-    received_at: datetime | None
     remark: str | None
     items: list[PRItemRead]
     budget_control: PRBudgetControlRead | None
@@ -103,13 +97,6 @@ class PRRead(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
-
-
-class PRWorkflowAction(BaseModel):
-    """Body ของ POST /prs/{id}/review, /approve, /receive — Actor มาจาก Login เสมอ
-    (ไม่รับจาก Client) ไม่บังคับส่ง note มาก็ได้"""
-
-    note: str | None = None
 
 
 class AuditLogRead(BaseModel):

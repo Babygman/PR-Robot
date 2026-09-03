@@ -1,37 +1,32 @@
-"""บันทึก PR + Generate PDF (Phase 5) + Workflow อนุมัติ + ประวัติ/ค้นหา (Phase 6)
+"""บันทึก PR + Generate PDF (Phase 5) + ประวัติ/ค้นหา (Phase 6)
 
 Requested by = ผู้ใช้ที่ Login ตอนสร้าง PR เสมอ (Business Decision 2026-09-01)
-Reviewed/Approved/Received by = ผู้ใช้ที่ Login ตอนกดปุ่มแต่ละ Action เสมอ (ไม่รับจาก
-Client) ตาม Business Decision เดียวกัน
 
-Workflow เดินหน้าทางเดียวตามลำดับ (ตรงตาม PRStatus ที่ออกแบบไว้ตั้งแต่ Phase 2):
-draft --review--> reviewed --approve--> approved --receive--> received
-ยังไม่มี Endpoint ตีกลับ/ปฏิเสธ (Reject) เพราะไม่มี Status รองรับใน Schema ปัจจุบัน —
-ถ้าต้องการ ต้องคุยเรื่อง Schema เพิ่มก่อน (ดู Open Items)
+Scope Revision (Phase 9, 2026-09-03): ตัด Workflow อนุมัติในระบบออกทั้งหมด (เดิม
+draft->reviewed->approved->received) ตาม Feedback จริงจาก Product Owner ว่า Design
+เดิมผิดตั้งแต่แรก — ดูตัวอย่าง PR จริงที่ส่งมาใน docs/00_KICKOFF_AND_DESIGN.md แล้ว
+พบว่า Reviewed/Approved/Received by เป็นลายเซ็นสดบนกระดาษที่พิมพ์ออกไปใช้งานนอกระบบ
+ล้วนๆ ไม่มีการอนุมัติในระบบเลย เหลือ 2 สถานะ: draft (แก้ไขได้) / finalized (ล็อกแล้ว)
+เปลี่ยนอัตโนมัติตอนกดพิมพ์/ดาวน์โหลด PDF ครั้งแรก ไม่ต้องกดปุ่มแยก
 
 Flow:
-1. POST /prs -> สร้าง PR ใหม่ (Status = draft)
+1. POST /prs -> สร้าง PR ใหม่ (Status = draft) รับ source_document_ids ได้หลายรายการ
+   (AI สกัดจากหลายเอกสารมารวมเป็น Item เดียวกันได้ — Scope Revision Phase 9)
 2. GET /prs (รองรับค้นหา/กรอง), GET /prs/{id} -> ดูรายการ/รายละเอียด PR
 3. PATCH /prs/{id} -> แก้ไขได้เฉพาะตอน Status = draft เท่านั้น
-4. GET /prs/{id}/pdf -> Generate PDF ตาม Template จริงของฟอร์ม FM-PU-02
-5. POST /prs/{id}/review, /approve, /receive -> เปลี่ยน Status ตามลำดับ ต้องมีสิทธิ์ตรง
-   (can_review/can_approve/can_receive หรือ is_admin)
-6. GET /prs/{id}/history -> ประวัติการกระทำทั้งหมดของ PR นี้จาก audit_log
+4. GET /prs/{id}/pdf -> Generate PDF ตาม Template จริงของฟอร์ม FM-PU-02 — เปลี่ยน
+   Status เป็น finalized อัตโนมัติถ้ายังเป็น draft (ล็อกแก้ไขไม่ได้อีกหลังจากนี้)
+5. GET /prs/{id}/history -> ประวัติการกระทำทั้งหมดของ PR นี้จาก audit_log
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.deps import (
-    get_current_user,
-    require_can_approve,
-    require_can_receive,
-    require_can_review,
-)
+from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models import (
     AuditLog,
@@ -48,7 +43,6 @@ from app.schemas.purchasing_requisition import (
     PRListItem,
     PRRead,
     PRUpdate,
-    PRWorkflowAction,
 )
 from app.services.pr_numbering import allocate_pr_no
 from app.services.pr_pdf import render_pr_pdf
@@ -111,52 +105,9 @@ def _get_pr_or_404(db: Session, pr_id: int) -> PurchasingRequisition:
 
 
 def _to_pr_read(db: Session, pr: PurchasingRequisition) -> PRRead:
-    names = resolve_user_names(
-        db, {pr.requested_by_id, pr.reviewed_by_id, pr.approved_by_id, pr.received_by_id}
-    )
+    names = resolve_user_names(db, {pr.requested_by_id})
     data = PRRead.model_validate(pr, from_attributes=True)
-    return data.model_copy(
-        update={
-            "requested_by_name": names.get(pr.requested_by_id),
-            "reviewed_by_name": names.get(pr.reviewed_by_id) if pr.reviewed_by_id else None,
-            "approved_by_name": names.get(pr.approved_by_id) if pr.approved_by_id else None,
-            "received_by_name": names.get(pr.received_by_id) if pr.received_by_id else None,
-        }
-    )
-
-
-def _transition(
-    db: Session,
-    pr: PurchasingRequisition,
-    *,
-    required_status: PRStatus,
-    next_status: PRStatus,
-    by_field: str,
-    at_field: str,
-    action: str,
-    current_user: User,
-    note: str | None,
-) -> PurchasingRequisition:
-    if pr.status != required_status:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            f"ทำรายการนี้ได้เฉพาะ PR ที่สถานะเป็น {required_status.value} เท่านั้น "
-            f"(สถานะปัจจุบัน: {pr.status.value})",
-        )
-    setattr(pr, by_field, current_user.id)
-    setattr(pr, at_field, datetime.now(timezone.utc))
-    pr.status = next_status
-    db.add(
-        AuditLog(
-            pr_id=pr.id,
-            action=action,
-            actor_id=current_user.id,
-            detail={"note": note} if note else None,
-        )
-    )
-    db.commit()
-    db.refresh(pr)
-    return pr
+    return data.model_copy(update={"requested_by_name": names.get(pr.requested_by_id)})
 
 
 @router.post("", response_model=PRRead, status_code=status.HTTP_201_CREATED)
@@ -197,7 +148,7 @@ def create_pr(
             pr_id=pr.id,
             action="pr.created",
             actor_id=current_user.id,
-            detail={"pr_no": pr.pr_no},
+            detail={"pr_no": pr.pr_no, "source_document_ids": body.source_document_ids or None},
         )
     )
     db.commit()
@@ -262,7 +213,7 @@ def update_pr(
     pr = _get_pr_or_404(db, pr_id)
     if pr.status != PRStatus.DRAFT:
         raise HTTPException(
-            status.HTTP_409_CONFLICT, "แก้ไขได้เฉพาะ PR ที่ยังเป็นสถานะ Draft เท่านั้น"
+            status.HTTP_409_CONFLICT, "แก้ไขได้เฉพาะ PR ที่ยังเป็นสถานะ Draft เท่านั้น (Finalized แล้วแก้ไม่ได้)"
         )
 
     _apply_items_and_budget(pr, body)
@@ -274,81 +225,33 @@ def update_pr(
 
 @router.get("/{pr_id}/pdf")
 def get_pr_pdf(
-    pr_id: int, db: Session = Depends(get_db), _current_user: User = Depends(get_current_user)
+    pr_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Response:
     pr = _get_pr_or_404(db, pr_id)
     pdf_bytes = render_pr_pdf(db, pr)
+
+    # Scope Revision (Phase 9, 2026-09-03): กดพิมพ์/ดาวน์โหลด PDF ครั้งแรกคือจุดที่
+    # ล็อก PR ไม่ให้แก้ไขได้อีก (แทน Workflow Review/Approve/Receive เดิม) — Generate
+    # สำเร็จก่อนค่อย Finalize เพื่อไม่ให้ PR ถูกล็อกถ้า Render PDF พังกลางทาง
+    if pr.status == PRStatus.DRAFT:
+        pr.status = PRStatus.FINALIZED
+        db.add(
+            AuditLog(
+                pr_id=pr.id,
+                action="pr.finalized",
+                actor_id=current_user.id,
+                detail={"trigger": "pdf_download"},
+            )
+        )
+        db.commit()
+
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="PR-{pr.pr_no}.pdf"'},
     )
-
-
-@router.post("/{pr_id}/review", response_model=PRRead)
-def review_pr(
-    pr_id: int,
-    body: PRWorkflowAction | None = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_can_review),
-) -> PRRead:
-    pr = _get_pr_or_404(db, pr_id)
-    pr = _transition(
-        db,
-        pr,
-        required_status=PRStatus.DRAFT,
-        next_status=PRStatus.REVIEWED,
-        by_field="reviewed_by_id",
-        at_field="reviewed_at",
-        action="pr.reviewed",
-        current_user=current_user,
-        note=body.note if body else None,
-    )
-    return _to_pr_read(db, pr)
-
-
-@router.post("/{pr_id}/approve", response_model=PRRead)
-def approve_pr(
-    pr_id: int,
-    body: PRWorkflowAction | None = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_can_approve),
-) -> PRRead:
-    pr = _get_pr_or_404(db, pr_id)
-    pr = _transition(
-        db,
-        pr,
-        required_status=PRStatus.REVIEWED,
-        next_status=PRStatus.APPROVED,
-        by_field="approved_by_id",
-        at_field="approved_at",
-        action="pr.approved",
-        current_user=current_user,
-        note=body.note if body else None,
-    )
-    return _to_pr_read(db, pr)
-
-
-@router.post("/{pr_id}/receive", response_model=PRRead)
-def receive_pr(
-    pr_id: int,
-    body: PRWorkflowAction | None = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_can_receive),
-) -> PRRead:
-    pr = _get_pr_or_404(db, pr_id)
-    pr = _transition(
-        db,
-        pr,
-        required_status=PRStatus.APPROVED,
-        next_status=PRStatus.RECEIVED,
-        by_field="received_by_id",
-        at_field="received_at",
-        action="pr.received",
-        current_user=current_user,
-        note=body.note if body else None,
-    )
-    return _to_pr_read(db, pr)
 
 
 @router.get("/{pr_id}/history", response_model=list[AuditLogRead])

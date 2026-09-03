@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.api.routes.documents import get_extraction_service
 from app.main import app
-from app.models import User
+from app.models import SourceDocType, User
 from app.schemas.source_document import ExtractedItem, ExtractionResult
 from app.services.gemini_extraction import GeminiExtractionError
 
@@ -21,10 +21,18 @@ _FAKE_PDF_BYTES = b"%PDF-1.4 fake content for testing\n"
 class _FakeExtractionServiceSuccess:
     def extract(self, file_path: str) -> ExtractionResult:
         return ExtractionResult(
+            detected_doc_type=SourceDocType.QUOTATION,
             vendor_name="บริษัท ทดสอบ จำกัด",
             document_no="QT-2026-001",
             items=[
-                ExtractedItem(description="กระดาษ A4", quantity="10", unit="รีม", amount="1500")
+                ExtractedItem(
+                    product_name="SILICONE PAPER",
+                    description="BS-W 1000MM.XL300M.",
+                    color="Blonde",
+                    quantity="2",
+                    unit="Roll",
+                    amount="1500",
+                )
             ],
             ai_confidence=0.92,
         )
@@ -72,8 +80,27 @@ def test_upload_success_stores_extraction(client: TestClient, plain_user: User, 
         assert body["doc_type"] == "quotation"
         assert body["extraction_error"] is None
         assert body["ai_extraction_raw_json"]["vendor_name"] == "บริษัท ทดสอบ จำกัด"
-        assert body["ai_extraction_raw_json"]["items"][0]["description"] == "กระดาษ A4"
+        assert body["ai_extraction_raw_json"]["items"][0]["product_name"] == "SILICONE PAPER"
+        assert body["ai_extraction_raw_json"]["items"][0]["color"] == "Blonde"
         assert float(body["ai_confidence"]) == 0.92
+    finally:
+        del app.dependency_overrides[get_extraction_service]
+
+
+def test_upload_without_doc_type_uses_ai_detected_type(
+    client: TestClient, plain_user: User, tmp_path
+):
+    """Scope Revision (Phase 9): ไม่ระบุ doc_type ตอน Upload ได้ — ใช้ค่าที่ AI เดาแทน"""
+    app.dependency_overrides[get_extraction_service] = lambda: _FakeExtractionServiceSuccess()
+    try:
+        _login(client)
+        res = client.post(
+            "/documents/upload",
+            files={"file": ("q.pdf", io.BytesIO(_FAKE_PDF_BYTES), "application/pdf")},
+        )
+        assert res.status_code == 201
+        body = res.json()
+        assert body["doc_type"] == "quotation"
     finally:
         del app.dependency_overrides[get_extraction_service]
 

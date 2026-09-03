@@ -30,9 +30,6 @@ def create_user(
         email=body.email,
         password_hash=hash_password(body.password),
         department=body.department,
-        can_review=body.can_review,
-        can_approve=body.can_approve,
-        can_receive=body.can_receive,
         is_admin=body.is_admin,
     )
     db.add(user)

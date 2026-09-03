@@ -61,15 +61,11 @@ def _fmt_date(value) -> str:
 
 
 def _resolve_names(db: Session, pr: PurchasingRequisition) -> dict[str, str | None]:
-    names = resolve_user_names(
-        db, {pr.requested_by_id, pr.reviewed_by_id, pr.approved_by_id, pr.received_by_id}
-    )
-    return {
-        "requested_by_name": names.get(pr.requested_by_id),
-        "reviewed_by_name": names.get(pr.reviewed_by_id) if pr.reviewed_by_id else None,
-        "approved_by_name": names.get(pr.approved_by_id) if pr.approved_by_id else None,
-        "received_by_name": names.get(pr.received_by_id) if pr.received_by_id else None,
-    }
+    # Scope Revision (Phase 9, 2026-09-03): เหลือแค่ Requested by — Reviewed/Approved/
+    # Received by ตัดออกจากระบบแล้ว (ลายเซ็นสดบนกระดาษ ดู pr_form.html ช่อง sign-box
+    # ที่เหลือ 3 ช่องนั้นเป็นช่องว่างเสมอ ไม่ผูกกับข้อมูลในระบบอีกต่อไป)
+    names = resolve_user_names(db, {pr.requested_by_id})
+    return {"requested_by_name": names.get(pr.requested_by_id)}
 
 
 def render_pr_html(db: Session, pr: PurchasingRequisition) -> str:
@@ -101,9 +97,6 @@ def render_pr_html(db: Session, pr: PurchasingRequisition) -> str:
     pr_view.doc_date = _fmt_date(pr.doc_date)
     pr_view.remark = pr.remark
     pr_view.requested_by_name = names["requested_by_name"]
-    pr_view.reviewed_by_name = names["reviewed_by_name"]
-    pr_view.approved_by_name = names["approved_by_name"]
-    pr_view.received_by_name = names["received_by_name"]
 
     display_items = [
         _DisplayItem(
