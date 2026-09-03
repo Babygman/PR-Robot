@@ -59,7 +59,7 @@ function docResultRowHtml(doc, errorMsg) {
           : ""
       }</span>`;
 
-  return `<div class="item-row">
+  return `<div class="item-row" data-doc-row-id="${doc.id}">
     <div class="row">
       <label style="display:flex; align-items:center; gap:6px; flex: 2;">
         <input type="checkbox" class="doc-checkbox" value="${doc.id}" checked style="width:auto;">
@@ -69,6 +69,7 @@ function docResultRowHtml(doc, errorMsg) {
         <label>ประเภทเอกสาร</label>
         <select class="doc-type-select" data-doc-id="${doc.id}">${typeOptions}</select>
       </div>
+      <a href="#" class="doc-delete-link" data-doc-id="${doc.id}" style="color:#b3261e; white-space:nowrap; align-self:center;">ลบ</a>
     </div>
     <div>${statusNote}</div>
   </div>`;
@@ -132,6 +133,24 @@ document.getElementById("doc-results").addEventListener("change", async (e) => {
     body: JSON.stringify({ reviewed_data: reviewedData, doc_type: e.target.value }),
   });
   if (doc) doc.doc_type = e.target.value;
+});
+
+// ลบเอกสารที่อัปโหลดผิด/ไม่ต้องการทันที (Event Delegation เพราะ Element สร้างทีหลัง) —
+// ลบได้เฉพาะเอกสารที่ยังไม่ถูกใช้สร้าง PR (เพิ่งอัปโหลดในหน้านี้ ยังไม่มีทางถูกใช้แน่ๆ)
+document.getElementById("doc-results").addEventListener("click", async (e) => {
+  if (!e.target.classList.contains("doc-delete-link")) return;
+  e.preventDefault();
+  const docId = e.target.dataset.docId;
+  if (!confirm(`ลบเอกสาร #${docId} ทิ้งถาวร?`)) return;
+  const res = await apiFetch(`/documents/${docId}`, { method: "DELETE" });
+  if (!res.ok) {
+    alert("ลบไม่สำเร็จ");
+    return;
+  }
+  delete docDataById[docId];
+  const idx = uploadedDocIds.indexOf(Number(docId));
+  if (idx !== -1) uploadedDocIds.splice(idx, 1);
+  document.querySelector(`[data-doc-row-id="${docId}"]`)?.remove();
 });
 
 document.getElementById("create-pr-btn").addEventListener("click", () => {

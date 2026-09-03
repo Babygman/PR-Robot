@@ -24,7 +24,17 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -116,9 +126,21 @@ async def upload_document(
 
 @router.get("", response_model=list[SourceDocumentRead])
 def list_documents(
-    db: Session = Depends(get_db), _current_user: User = Depends(get_current_user)
+    unlinked_only: bool = Query(
+        default=False,
+        description=(
+            "true = คืนเฉพาะเอกสารที่ยังไม่ถูกใช้สร้าง PR ไหนเลย (pr_id เป็น Null) — "
+            "ใช้ตอนแสดงรายการให้เลือกที่หน้าสร้าง PR ใหม่ เพื่อไม่ให้เอกสารที่ถูกใช้ไป"
+            "แล้วโผล่ให้เลือกซ้ำ (Feedback จริงจากผู้ใช้ 2026-09-03)"
+        ),
+    ),
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
 ) -> list[SourceDocument]:
-    return db.query(SourceDocument).order_by(SourceDocument.id.desc()).all()
+    query = db.query(SourceDocument)
+    if unlinked_only:
+        query = query.filter(SourceDocument.pr_id.is_(None))
+    return query.order_by(SourceDocument.id.desc()).all()
 
 
 @router.get("/{document_id}", response_model=SourceDocumentRead)
@@ -131,6 +153,47 @@ def get_document(
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "ไม่พบเอกสาร")
     return document
+
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """ลบเอกสารต้นทางที่อัปโหลดผิด/ไม่ต้องการแล้ว (Feedback จริงจากผู้ใช้ 2026-09-03 —
+    รายการเอกสารที่หน้าสร้าง PR สะสมยาวขึ้นเรื่อยๆ ไม่มีทางลบทิ้งได้)
+
+    ลบไม่ได้ถ้าเอกสารถูกใช้สร้าง PR ไปแล้ว (pr_id ไม่ใช่ Null) — กัน Audit Trail ของ PR
+    นั้นขาดหาย ต้องลบ/แก้ไข PR นั้นก่อนถ้าต้องการลบเอกสารจริงๆ
+    """
+    document = db.get(SourceDocument, document_id)
+    if document is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "ไม่พบเอกสาร")
+    if document.pr_id is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "ลบไม่ได้ — เอกสารนี้ถูกใช้สร้าง PR ไปแล้ว"
+        )
+
+    file_path = Path(document.file_path)
+    db.delete(document)
+    db.add(
+        AuditLog(
+            action="document.deleted",
+            actor_id=current_user.id,
+            detail={"document_id": document_id, "file_path": document.file_path},
+        )
+    )
+    db.commit()
+
+    # ลบไฟล์จริงบน Disk แบบ Best-Effort — ถ้าไฟล์หายไปแล้ว/ลบไม่ได้ ไม่ทำให้ Request
+    # ทั้งหมดล้มเหลว (แถวใน Database ลบสำเร็จแล้วซึ่งสำคัญกว่า)
+    try:
+        file_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.patch("/{document_id}/review", response_model=SourceDocumentRead)

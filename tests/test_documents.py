@@ -6,12 +6,15 @@
 from __future__ import annotations
 
 import io
+from datetime import date
+from pathlib import Path
 
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from app.api.routes.documents import get_extraction_service
 from app.main import app
-from app.models import SourceDocType, User
+from app.models import PRStatus, PurchasingRequisition, SourceDocType, SourceDocument, User
 from app.schemas.source_document import ExtractedItem, ExtractionResult
 from app.services.gemini_extraction import GeminiExtractionError
 
@@ -165,3 +168,107 @@ def test_review_document_saves_corrected_data(client: TestClient, plain_user: Us
         assert body["ai_extraction_raw_json"]["vendor_name"] == "บริษัท ทดสอบ จำกัด"
     finally:
         del app.dependency_overrides[get_extraction_service]
+
+
+def test_list_documents_unlinked_only_excludes_docs_used_in_a_pr(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    """Feedback จริงจากผู้ใช้ 2026-09-03: หน้าสร้าง PR ใหม่ไม่ควรให้เลือกเอกสารที่ถูก
+    ใช้สร้าง PR ไปแล้วซ้ำอีก — รายการยาวขึ้นเรื่อยๆ ไม่มีประโยชน์"""
+    used_doc = SourceDocument(
+        file_path="storage/uploads/used.pdf",
+        doc_type=SourceDocType.QUOTATION,
+        uploaded_by_id=plain_user.id,
+    )
+    unused_doc = SourceDocument(
+        file_path="storage/uploads/unused.pdf",
+        doc_type=SourceDocType.QUOTATION,
+        uploaded_by_id=plain_user.id,
+    )
+    db_session.add_all([used_doc, unused_doc])
+    db_session.commit()
+
+    pr = PurchasingRequisition(
+        pr_no=1,
+        section="A",
+        division="B",
+        doc_date=date(2026, 9, 3),
+        status=PRStatus.DRAFT,
+        requested_by_id=plain_user.id,
+    )
+    db_session.add(pr)
+    db_session.flush()
+    used_doc.pr_id = pr.id
+    db_session.commit()
+
+    _login(client)
+    res = client.get("/documents", params={"unlinked_only": True})
+    assert res.status_code == 200
+    ids = {d["id"] for d in res.json()}
+    assert unused_doc.id in ids
+    assert used_doc.id not in ids
+
+    # ไม่ใส่ unlinked_only ต้องเห็นครบทั้งคู่เหมือนเดิม (ไม่กระทบ Endpoint เดิม)
+    res_all = client.get("/documents")
+    ids_all = {d["id"] for d in res_all.json()}
+    assert {used_doc.id, unused_doc.id} <= ids_all
+
+
+def test_delete_document_success_removes_row_and_file(
+    client: TestClient, plain_user: User, db_session: Session, tmp_path
+):
+    file_path = tmp_path / "to_delete.pdf"
+    file_path.write_bytes(b"%PDF-1.4 dummy")
+    doc = SourceDocument(
+        file_path=str(file_path), doc_type=SourceDocType.QUOTATION, uploaded_by_id=plain_user.id
+    )
+    db_session.add(doc)
+    db_session.commit()
+    db_session.refresh(doc)
+
+    _login(client)
+    res = client.delete(f"/documents/{doc.id}")
+    assert res.status_code == 204
+    assert db_session.get(SourceDocument, doc.id) is None
+    assert not Path(file_path).exists()
+
+
+def test_delete_document_not_found(client: TestClient, plain_user: User):
+    _login(client)
+    res = client.delete("/documents/9999")
+    assert res.status_code == 404
+
+
+def test_delete_document_rejected_if_linked_to_pr(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    doc = SourceDocument(
+        file_path="storage/uploads/linked.pdf",
+        doc_type=SourceDocType.QUOTATION,
+        uploaded_by_id=plain_user.id,
+    )
+    db_session.add(doc)
+    db_session.commit()
+
+    pr = PurchasingRequisition(
+        pr_no=1,
+        section="A",
+        division="B",
+        doc_date=date(2026, 9, 3),
+        status=PRStatus.DRAFT,
+        requested_by_id=plain_user.id,
+    )
+    db_session.add(pr)
+    db_session.flush()
+    doc.pr_id = pr.id
+    db_session.commit()
+
+    _login(client)
+    res = client.delete(f"/documents/{doc.id}")
+    assert res.status_code == 409
+    assert db_session.get(SourceDocument, doc.id) is not None
+
+
+def test_delete_document_requires_login(client: TestClient):
+    res = client.delete("/documents/1")
+    assert res.status_code == 401

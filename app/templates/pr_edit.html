@@ -133,28 +133,24 @@ function recomputeItemsFromSelectedDocs() {
   }
 }
 
-async function loadSourceDocuments() {
-  const res = await apiFetch("/documents");
+function renderSourceDocList() {
   const listEl = document.getElementById("source-doc-list");
-  if (!res.ok) {
-    listEl.textContent = "โหลดรายการเอกสารไม่สำเร็จ";
+  if (allDocs.length === 0) {
+    listEl.textContent = "ไม่มีเอกสารที่ยังไม่ได้ใช้สร้าง PR — อัปโหลดใหม่ได้ที่หน้าอัปโหลดเอกสาร";
     return;
   }
-  const docs = await res.json();
-  allDocs = docs;
-  if (docs.length === 0) {
-    listEl.textContent = "ยังไม่มีเอกสารที่อัปโหลดไว้";
-    return;
-  }
-  listEl.innerHTML = docs
+  listEl.innerHTML = allDocs
     .slice(0, 30)
     .map((doc) => {
       const label = doc.reviewed_data?.vendor_name || doc.ai_extraction_raw_json?.vendor_name || `เอกสาร #${doc.id}`;
       const checked = selectedDocIds.has(doc.id) ? "checked" : "";
-      return `<label style="display:block; margin-bottom:4px; font-size:13.5px;">
-        <input type="checkbox" class="source-doc-checkbox" value="${doc.id}" style="width:auto;" ${checked}>
-        #${doc.id} — ${escapeHtml(DOC_TYPE_LABEL[doc.doc_type] || doc.doc_type || "ไม่ระบุประเภท")} — ${escapeHtml(label)}
-      </label>`;
+      return `<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px; font-size:13.5px;">
+        <label style="display:block;">
+          <input type="checkbox" class="source-doc-checkbox" value="${doc.id}" style="width:auto;" ${checked}>
+          #${doc.id} — ${escapeHtml(DOC_TYPE_LABEL[doc.doc_type] || doc.doc_type || "ไม่ระบุประเภท")} — ${escapeHtml(label)}
+        </label>
+        <a href="#" class="doc-delete-link" data-doc-id="${doc.id}" style="color:#b3261e; white-space:nowrap;">ลบ</a>
+      </div>`;
     })
     .join("");
 
@@ -166,6 +162,39 @@ async function loadSourceDocuments() {
       recomputeItemsFromSelectedDocs();
     });
   });
+
+  listEl.querySelectorAll(".doc-delete-link").forEach((link) => {
+    link.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const id = Number(link.dataset.docId);
+      if (!confirm(`ลบเอกสาร #${id} ทิ้งถาวร? (ยังไม่ได้ใช้สร้าง PR ไหน ลบแล้วกู้คืนไม่ได้)`)) return;
+      const res = await apiFetch(`/documents/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        alert("ลบไม่สำเร็จ — อาจถูกใช้สร้าง PR ไปแล้ว");
+        return;
+      }
+      const wasSelected = selectedDocIds.has(id);
+      allDocs = allDocs.filter((d) => d.id !== id);
+      selectedDocIds.delete(id);
+      renderSourceDocList();
+      // Recompute เฉพาะตอนเอกสารที่ลบเคยติ๊กเลือกไว้ (มีส่วนในตารางรายการสินค้าอยู่) —
+      // ลบเอกสารอื่นที่ไม่ได้เลือกไม่ควรไปเขียนทับรายการที่ผู้ใช้แก้ไขเองไว้แล้ว
+      if (wasSelected) recomputeItemsFromSelectedDocs();
+    });
+  });
+}
+
+async function loadSourceDocuments() {
+  // unlinked_only=true: ไม่แสดงเอกสารที่ถูกใช้สร้าง PR ไปแล้ว (Feedback จริงจากผู้ใช้
+  // 2026-09-03 — รายการสะสมยาวขึ้นเรื่อยๆ ไม่ควรให้เลือกเอกสารที่ใช้ไปแล้วซ้ำ)
+  const res = await apiFetch("/documents?unlinked_only=true");
+  const listEl = document.getElementById("source-doc-list");
+  if (!res.ok) {
+    listEl.textContent = "โหลดรายการเอกสารไม่สำเร็จ";
+    return;
+  }
+  allDocs = await res.json();
+  renderSourceDocList();
 
   // ถ้ามาจากลิงก์ "ไปสร้าง PR จากเอกสารนี้" (Upload หนึ่งไฟล์ขึ้นไป) ให้ดึงข้อมูลมา
   // Prefill รายการสินค้าอัตโนมัติจากทุกเอกสารที่เลือกไว้
