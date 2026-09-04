@@ -43,7 +43,33 @@ async function requireLogin() {
   const me = await res.json();
   const nameEl = document.getElementById("nav-user-name");
   if (nameEl) nameEl.textContent = me.name;
+  // ตัวอักษรย่อในวงกลม Sidebar (2026-09-04 — Design System v2) — เอาแค่ตัวแรกของ
+  // แต่ละคำ สูงสุด 2 ตัว เผื่อชื่อเป็นภาษาไทยที่ไม่มีแนวคิด "ตัวพิมพ์ใหญ่" ก็ยังอ่านได้
+  const avatarEl = document.getElementById("nav-user-avatar");
+  if (avatarEl && me.name) {
+    const initials = me.name
+      .trim()
+      .split(/\s+/)
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+    avatarEl.textContent = initials;
+  }
   return me;
+}
+
+// ไฮไลต์เมนู Sidebar ที่ตรงกับหน้าปัจจุบัน (2026-09-04 — Design System v2) — เทียบ
+// จาก data-nav-path ที่กำหนดไว้ในแต่ละลิงก์ของ base.html เทียบกับ URL ปัจจุบัน แทนที่
+// จะเพิ่มตัวแปรส่งจาก Backend เพื่อไม่ต้องแก้ pages.py เพิ่ม
+function markActiveNav() {
+  const path = window.location.pathname;
+  document.querySelectorAll(".sidebar .nav-item").forEach((link) => {
+    const navPath = link.dataset.navPath;
+    const isActive =
+      navPath === path || (navPath !== "/app/" && path.startsWith(navPath));
+    link.classList.toggle("active", isActive);
+  });
 }
 
 function setupLogout() {
@@ -221,4 +247,7 @@ function bindDateFieldsIn(root) {
   });
 }
 
-document.addEventListener("DOMContentLoaded", setupLogout);
+document.addEventListener("DOMContentLoaded", () => {
+  setupLogout();
+  markActiveNav();
+});

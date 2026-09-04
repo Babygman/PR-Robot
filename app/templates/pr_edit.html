@@ -32,7 +32,7 @@
   </div>
 
   <div class="card">
-    <label style="display:flex; align-items:center; gap:6px; font-size:14px; color:#333; margin-bottom: 10px;">
+    <label style="display:flex; align-items:center; gap:6px; font-size:14px; text-transform:none; color:var(--color-text); margin-bottom: 10px;">
       <input type="checkbox" id="has-budget" style="width:auto;"> มี Budget Control
     </label>
     <div id="budget-fields" class="hidden">
@@ -150,7 +150,7 @@ function renderSourceDocList() {
           <input type="checkbox" class="source-doc-checkbox" value="${doc.id}" style="width:auto;" ${checked}>
           #${doc.id} — ${escapeHtml(DOC_TYPE_LABEL[doc.doc_type] || doc.doc_type || "ไม่ระบุประเภท")} — ${escapeHtml(label)}
         </label>
-        <a href="#" class="doc-delete-link" data-doc-id="${doc.id}" style="color:#b3261e; white-space:nowrap;">ลบ</a>
+        <a href="#" class="doc-delete-link" data-doc-id="${doc.id}" style="color:var(--color-danger); white-space:nowrap;">ลบ</a>
       </div>`;
     })
     .join("");

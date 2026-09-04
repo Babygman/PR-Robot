@@ -1,7 +1,16 @@
 {% extends "base.html" %}
 {% block title %}รายการ PR — PR-Robot{% endblock %}
 {% block content %}
-<h1>รายการใบขอซื้อ (Purchasing Requisition)</h1>
+<div class="topbar">
+  <div>
+    <h1>รายการใบขอซื้อ</h1>
+    <p class="muted" style="margin-top:-10px;">Purchasing Requisition ทั้งหมดของทีมคุณ — กรองตาม Section, สถานะ หรือช่วงวันที่ได้</p>
+  </div>
+  <a class="btn" href="/app/prs/new">
+    <svg width="13" height="13" viewBox="0 0 16 16"><line x1="8" y1="3" x2="8" y2="13" stroke="#fff" stroke-width="1.8"/><line x1="3" y1="8" x2="13" y2="8" stroke="#fff" stroke-width="1.8"/></svg>
+    สร้าง PR ใหม่
+  </a>
+</div>
 
 <div class="card">
   <form id="filter-form" class="filters">
@@ -31,7 +40,7 @@
     </div>
     <div class="field" style="min-width: auto;">
       <label for="f-mine">&nbsp;</label>
-      <label style="display:flex; align-items:center; gap:6px; font-size:13.5px; color:#333;">
+      <label style="display:flex; align-items:center; gap:6px; font-size:13.5px; text-transform:none; color:var(--color-text);">
         <input type="checkbox" id="f-mine" style="width:auto;"> ที่ฉันสร้างเท่านั้น
       </label>
     </div>
@@ -94,7 +103,7 @@ async function loadPrs() {
       <td>${escapeHtml(pr.division)}</td>
       <td>${formatDateDMY(pr.doc_date)}</td>
       <td>${statusBadge(pr.status)}</td>
-      <td><a href="/app/prs/${pr.id}">ดูรายละเอียด</a></td>
+      <td><a href="/app/prs/${pr.id}">ดูรายละเอียด →</a></td>
     </tr>`
     )
     .join("");

@@ -1,13 +1,17 @@
 {% extends "base.html" %}
 {% block title %}อัปโหลดเอกสาร — PR-Robot{% endblock %}
 {% block content %}
-<h1>อัปโหลดเอกสารต้นทาง</h1>
-<p class="muted">
-  อัปโหลดเอกสารได้พร้อมกันหลายไฟล์ (ใบเสนอราคา / ใบยืมสินค้า / ใบส่งสินค้า / ใบรับของ —
-  PDF/PNG/JPEG/WEBP/DOCX/XLSX/CSV/TXT) AI จะอ่านข้อมูลและเดาประเภทเอกสารให้อัตโนมัติ แก้ไขประเภทได้ถ้า AI เดาผิด
-  จากนั้นเลือกเอกสารที่ต้องการแล้วไปสร้าง PR — ระบบจะรวมรายการสินค้าจากทุกเอกสารที่เลือกให้
-  ตรวจทาน/แก้ไขอีกครั้งในขั้นตอนเดียวตอนสร้าง PR
-</p>
+<div class="topbar">
+  <div>
+    <h1>อัปโหลดเอกสารต้นทาง</h1>
+    <p class="muted">
+      อัปโหลดเอกสารได้พร้อมกันหลายไฟล์ (ใบเสนอราคา / ใบยืมสินค้า / ใบส่งสินค้า / ใบรับของ —
+      PDF/PNG/JPEG/WEBP/DOCX/XLSX/CSV/TXT) AI จะอ่านข้อมูลและเดาประเภทเอกสารให้อัตโนมัติ แก้ไขประเภทได้ถ้า AI เดาผิด
+      จากนั้นเลือกเอกสารที่ต้องการแล้วไปสร้าง PR — ระบบจะรวมรายการสินค้าจากทุกเอกสารที่เลือกให้
+      ตรวจทาน/แก้ไขอีกครั้งในขั้นตอนเดียวตอนสร้าง PR
+    </p>
+  </div>
+</div>
 
 <div class="card">
   <form id="upload-form">
@@ -92,7 +96,7 @@ function docResultRowHtml(doc, errorMsg) {
         <label>ประเภทเอกสาร</label>
         <select class="doc-type-select" data-doc-id="${doc.id}">${typeOptions}</select>
       </div>
-      <a href="#" class="doc-delete-link" data-doc-id="${doc.id}" style="color:#b3261e; white-space:nowrap; align-self:center;">ลบ</a>
+      <a href="#" class="doc-delete-link" data-doc-id="${doc.id}" style="color:var(--color-danger); white-space:nowrap; align-self:center;">ลบ</a>
     </div>
     <div>${statusNote}</div>
   </div>`;
@@ -217,9 +221,13 @@ function pendingFileIconLabel(fileName) {
 
 function pendingItemHtml(item) {
   const isImage = item.file.type.startsWith("image/");
+  const label = pendingFileIconLabel(item.file.name);
+  // สีชิปตามชนิดไฟล์ (2026-09-04 — Design System v2) — Class ตรงกับ .kind-* ใน
+  // style.css ไม่มี Class เพิ่ม = สีเริ่มต้นของ PDF
+  const kindClass = label !== "PDF" ? ` kind-${label.toLowerCase()}` : "";
   const thumb = isImage
     ? `<img src="${URL.createObjectURL(item.file)}" alt="${escapeHtml(item.file.name)}">`
-    : `<div class="pending-file-icon">${pendingFileIconLabel(item.file.name)}</div>`;
+    : `<div class="pending-file-icon${kindClass}">${label}</div>`;
   return `<div class="pending-item" data-uid="${item.uid}">
     <button type="button" class="pending-remove" data-uid="${item.uid}" title="ลบ">×</button>
     ${thumb}

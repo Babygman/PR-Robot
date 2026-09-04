@@ -1,51 +1,204 @@
-/* PR-Robot — Minimal Frontend Stylesheet (Phase 7)
-   ไม่ใช้ CSS Framework ภายนอก ตั้งใจให้เรียบง่ายที่สุดตามหลักการ "Web Frontend ขั้นต่ำ" */
+/* PR-Robot — Frontend Stylesheet (Design System v2, 2026-09-04)
+   ปรับจาก "Minimal Frontend" เดิม (Phase 7) มาเป็น Design System ใหม่ทั้งระบบ ตาม
+   Mockup ที่ Approve แล้ว — โทนน้ำเงินเหล็ก (Navy #1a567a) + กระดาษอุ่น + ทองเหลือง
+   (Brass) เน้นจุดสำคัญ ยังคง "ไม่ใช้ CSS Framework ภายนอก" ตามหลักการเดิมของโปรเจกต์
+   และคง Class/ID เดิมทั้งหมดที่ app.js และ Script ในแต่ละหน้าผูกอยู่ — เปลี่ยนแค่หน้าตา
+   ไม่เปลี่ยนโครงสร้างที่ Logic พึ่งพา */
 
 :root {
-  --color-bg: #f5f6f8;
+  --color-bg: #f6f3ea;
   --color-surface: #ffffff;
-  --color-border: #dcdfe4;
-  --color-text: #1a1a1a;
-  --color-text-muted: #666;
-  --color-primary: #1a3a6b;
-  --color-primary-hover: #12294d;
-  --color-danger: #b3261e;
-  --color-success: #1e7d32;
-  --radius: 6px;
+  --color-surface-2: #efe8d9;
+  --color-border: #e1d9c6;
+  --color-border-strong: #cdc2a6;
+  --color-text: #182230;
+  --color-text-muted: #545f6d;
+  --color-text-faint: #838d99;
+
+  --color-primary: #1a567a;
+  --color-primary-hover: #14415d;
+  --color-primary-soft: #2271a0;
+  --color-primary-tint: #e4ebef;
+  --color-navy-deep: #0d2a3b;
+
+  --color-brass: #a97c2f;
+  --color-brass-tint: #f3e6cd;
+  --color-success: #33654a;
+  --color-success-tint: #e2ecdf;
+  --color-danger: #9c3a2c;
+  --color-danger-tint: #f3e0dc;
+
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow-card: 0 1px 2px rgba(20, 20, 16, 0.05), 0 8px 20px -12px rgba(20, 20, 16, 0.18);
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: "Noto Sans Thai", "Noto Sans", -apple-system, "Segoe UI", sans-serif;
+  display: flex;
+  min-height: 100vh;
+  font-family: "IBM Plex Sans Thai", "IBM Plex Sans", "Noto Sans Thai", -apple-system, "Segoe UI", sans-serif;
   background: var(--color-bg);
   color: var(--color-text);
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
-.nav {
-  background: var(--color-primary);
-  color: #fff;
-  padding: 10px 20px;
+/* ---------- Sidebar (แทน Top Nav เดิม) ---------- */
+.sidebar {
+  flex: 0 0 232px;
+  background: var(--color-navy-deep);
+  color: #e9eff4;
+  padding: 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+.sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 20px;
-  flex-wrap: wrap;
+  gap: 10px;
+  padding: 4px 8px 18px;
 }
-.nav a { color: #fff; text-decoration: none; font-weight: 500; }
-.nav a:hover { text-decoration: underline; }
+.sidebar-brand .brand-seal {
+  width: 34px;
+  height: 34px;
+  border: 1.5px solid var(--color-brass);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--color-brass);
+  flex: none;
+}
+.sidebar-brand .brand-word { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+.sidebar-brand .brand-sub { font-size: 10.5px; color: #93a6b8; margin-top: 1px; }
+
+.sidebar-nav { display: flex; flex-direction: column; gap: 3px; }
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #c3d1de;
+  text-decoration: none;
+}
+.nav-item svg { flex: none; opacity: 0.85; }
+.nav-item:hover { background: rgba(255, 255, 255, 0.07); color: #fff; text-decoration: none; }
+.nav-item.active { background: var(--color-primary-soft); color: #fff; }
+.nav-item.active svg { opacity: 1; }
+
+.sidebar-spacer { flex: 1; }
+.sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  margin-top: 6px;
+}
+.sidebar-user .user-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--color-brass);
+  color: var(--color-navy-deep);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex: none;
+}
+.sidebar-user .user-name { font-size: 12.5px; font-weight: 600; color: #eef2f6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-user #logout-link { margin-left: auto; color: #9fb0c0; display: flex; align-items: center; opacity: 0.85; }
+.sidebar-user #logout-link:hover { opacity: 1; color: #fff; }
+
 /* ระหว่างอัปโหลด/ให้ AI อ่านข้อมูล (2026-09-04) — ล็อกเมนูไม่ให้กดออกจากหน้าโดยไม่ตั้งใจ
    (ใช้คู่กับ beforeunload confirm ที่ครอบคลุม Back/Reload/ปิดแท็บ) */
-body.uploading-lock .nav a { pointer-events: none; opacity: 0.5; cursor: not-allowed; }
+body.uploading-lock .sidebar .nav-item { pointer-events: none; opacity: 0.4; cursor: not-allowed; }
 
-/* Popup แสดง Progress ตอน AI กำลังอ่านข้อมูล (2026-09-04) — เปิดค้างตลอดทั้ง Batch
-   ปิดอัตโนมัติเมื่อไฟล์สุดท้ายอ่านเสร็จ */
+/* ---------- เนื้อหาหลัก ---------- */
+.content-area { flex: 1; min-width: 0; }
+.container {
+  max-width: 1080px;
+  margin: 28px auto;
+  padding: 0 28px 40px;
+}
+
+h1 { font-size: 21px; margin: 0 0 6px 0; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 15.5px; margin: 0 0 12px 0; font-weight: 600; }
+
+/* ---------- แถบหัวข้อหน้า (ใช้ร่วมกันหลายหน้า) ---------- */
+.topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+.topbar h1 { margin-bottom: 5px; }
+.topbar .muted { max-width: 62ch; }
+
+label { display: block; font-size: 11.5px; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 5px; }
+input, select, textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-family: inherit;
+  background: #fff;
+  color: var(--color-text);
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--color-primary-soft); outline-offset: 1px; }
+textarea { resize: vertical; min-height: 60px; }
+.field { margin-bottom: 14px; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; }
+.row > .field { flex: 1; min-width: 160px; }
+
+button, .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-primary);
+  color: #fff;
+  border: 1px solid transparent;
+  padding: 9px 17px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  font-family: inherit;
+}
+button:hover, .btn:hover { background: var(--color-primary-hover); }
+button.secondary, .btn.secondary { background: transparent; border-color: var(--color-border-strong); color: var(--color-text); }
+button.secondary:hover, .btn.secondary:hover { background: transparent; border-color: var(--color-primary); color: var(--color-primary); }
+button.danger { background: var(--color-danger); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ---------- Card ---------- */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+
+/* ---------- Popup แสดง Progress ตอน AI กำลังอ่านข้อมูล ---------- */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(13, 20, 27, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -53,11 +206,11 @@ body.uploading-lock .nav a { pointer-events: none; opacity: 0.5; cursor: not-all
 }
 .modal-box {
   background: var(--color-surface);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   padding: 28px 36px;
   max-width: min(90vw, 420px);
   text-align: center;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 12px 34px rgba(13, 20, 27, 0.3);
 }
 .modal-spinner {
   width: 32px;
@@ -70,152 +223,117 @@ body.uploading-lock .nav a { pointer-events: none; opacity: 0.5; cursor: not-all
 }
 @keyframes modal-spin { to { transform: rotate(360deg); } }
 .modal-box p { margin: 0; font-weight: 500; }
-.nav .brand { font-weight: 700; font-size: 16px; margin-right: 10px; }
-.nav .spacer { flex: 1; }
-.nav .user-name { opacity: 0.85; font-size: 13px; }
 
-.container {
-  max-width: 1000px;
-  margin: 20px auto;
-  padding: 0 16px;
-}
-
-.card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  padding: 16px;
-  margin-bottom: 16px;
-}
-
-h1 { font-size: 20px; margin: 0 0 16px 0; }
-h2 { font-size: 16px; margin: 0 0 10px 0; }
-
-label { display: block; font-size: 13px; color: var(--color-text-muted); margin-bottom: 3px; }
-input, select, textarea {
-  width: 100%;
-  padding: 7px 9px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  font-size: 14px;
-  font-family: inherit;
-  background: #fff;
-  color: var(--color-text);
-}
-textarea { resize: vertical; min-height: 60px; }
-.field { margin-bottom: 12px; }
-.row { display: flex; gap: 12px; flex-wrap: wrap; }
-.row > .field { flex: 1; min-width: 160px; }
-
-button, .btn {
-  display: inline-block;
-  background: var(--color-primary);
-  color: #fff;
-  border: none;
-  padding: 8px 16px;
-  border-radius: var(--radius);
-  font-size: 14px;
-  cursor: pointer;
-  text-decoration: none;
-}
-button:hover, .btn:hover { background: var(--color-primary-hover); }
-button.secondary, .btn.secondary { background: #6b7280; }
-button.secondary:hover, .btn.secondary:hover { background: #4b5563; }
-button.danger { background: var(--color-danger); }
-button:disabled { opacity: 0.5; cursor: not-allowed; }
-
-/* หน้า "ค่าใช้จ่าย AI" (2026-09-04) — Stat Box สรุปยอดวันนี้/เดือนนี้ */
+/* ---------- สรุปยอด (หน้า "ค่าใช้จ่าย AI") ---------- */
 .stat-grid { display: flex; gap: 12px; flex-wrap: wrap; }
 .stat-box {
   flex: 1;
   min-width: 180px;
-  background: var(--color-bg);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-brass);
   border-radius: var(--radius);
-  padding: 12px 14px;
+  padding: 13px 16px;
 }
-.stat-box .stat-label { font-size: 12.5px; color: var(--color-text-muted); margin-bottom: 4px; }
-.stat-box .stat-value { font-size: 20px; font-weight: 700; }
-.stat-box .stat-sub { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; }
+.stat-box .stat-label { font-size: 11.5px; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 5px; }
+.stat-box .stat-value { font-family: "IBM Plex Mono", monospace; font-size: 22px; font-weight: 600; }
+.stat-box .stat-sub { font-size: 12px; color: var(--color-text-faint); margin-top: 3px; }
 
+/* ---------- ตาราง ---------- */
 table { width: 100%; border-collapse: collapse; }
-th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--color-border); font-size: 13.5px; }
-th { color: var(--color-text-muted); font-weight: 600; }
-tr:hover td { background: #fafbfc; }
-td a { color: var(--color-primary); }
+th, td { text-align: left; padding: 10px 10px; border-bottom: 1px solid var(--color-border); font-size: 13.5px; }
+th { color: var(--color-text-faint); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; border-bottom-color: var(--color-border-strong); }
+tr:hover td { background: color-mix(in srgb, var(--color-primary-tint) 60%, transparent); }
+td a { color: var(--color-primary); font-weight: 600; }
 
+/* ---------- Badge/สถานะ (Pill) ---------- */
 .badge {
-  display: inline-block;
-  padding: 2px 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px 3px 8px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   color: #fff;
 }
-.badge-draft { background: #8a8a8a; }
-.badge-finalized { background: var(--color-success); }
+.badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.badge-draft { background: var(--color-brass-tint); color: var(--color-brass); }
+.badge-finalized { background: var(--color-success-tint); color: var(--color-success); }
 
 .error { color: var(--color-danger); font-size: 13.5px; margin: 8px 0; }
 .success { color: var(--color-success); font-size: 13.5px; margin: 8px 0; }
 .muted { color: var(--color-text-muted); font-size: 13px; }
 .hidden { display: none !important; }
 
-.item-row { border: 1px solid var(--color-border); border-radius: var(--radius); padding: 10px; margin-bottom: 8px; position: relative; }
-.item-row .remove-item { position: absolute; top: 8px; right: 8px; background: transparent; color: var(--color-danger); font-size: 13px; padding: 2px 8px; }
+.item-row { border: 1px solid var(--color-border); border-radius: var(--radius); padding: 12px; margin-bottom: 8px; position: relative; background: var(--color-surface); }
+.item-row .remove-item { position: absolute; top: 8px; right: 8px; background: transparent; color: var(--color-danger); font-size: 12.5px; padding: 2px 8px; border: none; }
+.item-row .remove-item:hover { background: var(--color-danger-tint); }
 
 .history-list { list-style: none; margin: 0; padding: 0; }
-.history-list li { padding: 8px 0; border-bottom: 1px solid var(--color-border); font-size: 13.5px; }
-.history-list li:last-child { border-bottom: none; }
+.history-list li { position: relative; padding: 0 0 14px 20px; border-left: 1.5px solid var(--color-border); font-size: 13px; }
+.history-list li::before { content: ""; position: absolute; left: -5px; top: 3px; width: 9px; height: 9px; border-radius: 50%; background: var(--color-primary); }
+.history-list li:last-child { border-color: transparent; padding-bottom: 0; }
 
 .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 
+/* ---------- Dropzone / อัปโหลดไฟล์ ---------- */
 .drop-zone {
-  border: 2px dashed var(--color-border);
+  border: 1.5px dashed var(--color-border-strong);
   border-radius: var(--radius);
-  padding: 48px 24px;
+  padding: 44px 24px;
   margin: 10px 0;
-  min-height: 200px;
+  min-height: 190px;
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
-  font-size: 15.5px;
+  font-size: 15px;
   line-height: 1.8;
   color: var(--color-text-muted);
+  background: var(--color-surface-2);
   transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
 .drop-zone-active {
-  border-color: var(--color-primary, #1a73e8);
-  background: rgba(26, 115, 232, 0.06);
-  color: var(--color-text, #333);
+  border-color: var(--color-primary);
+  background: var(--color-primary-tint);
+  color: var(--color-text);
 }
 
 .pending-list { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
 .pending-item {
   position: relative;
-  width: 100px;
+  width: 104px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   padding: 6px;
   background: var(--color-surface);
   text-align: center;
 }
-.pending-item img { width: 100%; height: 76px; object-fit: cover; border-radius: 4px; display: block; }
+.pending-item img { width: 100%; height: 72px; object-fit: cover; border-radius: 6px; display: block; }
 .pending-file-icon {
   width: 100%;
-  height: 76px;
+  height: 72px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-bg);
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-muted);
-}
-.pending-file-name {
+  background: var(--color-danger-tint);
+  color: var(--color-danger);
+  border-radius: 6px;
+  font-family: "IBM Plex Mono", monospace;
   font-size: 11px;
-  margin-top: 4px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+/* สีชิปตามชนิดไฟล์ (2026-09-04) — เพิ่ม Class ตามนามสกุลใน pendingItemHtml() ของ
+   upload.html ให้กวาดตาแยกชนิดไฟล์ได้เร็วขึ้น ค่า Default (ไม่มี Class เพิ่ม) คือ PDF */
+.pending-file-icon.kind-docx { background: var(--color-primary-tint); color: var(--color-primary); }
+.pending-file-icon.kind-xlsx { background: var(--color-success-tint); color: var(--color-success); }
+.pending-file-icon.kind-csv,
+.pending-file-icon.kind-txt { background: var(--color-brass-tint); color: var(--color-brass); }
+.pending-file-name {
+  font-size: 10.5px;
+  margin-top: 6px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -225,13 +343,13 @@ td a { color: var(--color-primary); }
   position: absolute;
   top: -7px;
   right: -7px;
-  width: 20px;
-  height: 20px;
+  width: 19px;
+  height: 19px;
   border-radius: 50%;
   background: var(--color-danger);
   color: #fff;
-  border: none;
-  font-size: 13px;
+  border: 2px solid var(--color-bg);
+  font-size: 12px;
   line-height: 1;
   padding: 0;
   cursor: pointer;
@@ -244,7 +362,7 @@ td a { color: var(--color-primary); }
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 10px 28px rgba(13, 20, 27, 0.18);
   padding: 10px;
   width: 240px;
   font-size: 13px;
@@ -253,7 +371,7 @@ td a { color: var(--color-primary); }
 .date-popup-nav { background: transparent; border: none; font-size: 16px; padding: 2px 8px; cursor: pointer; color: var(--color-text); }
 .date-popup-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
 .date-popup-dow { font-size: 11px; color: var(--color-text-muted); margin-bottom: 4px; }
-.date-popup-cell { border: none; background: transparent; color: var(--color-text); padding: 6px 0; border-radius: 4px; cursor: pointer; font-size: 12.5px; }
+.date-popup-cell { border: none; background: transparent; color: var(--color-text); padding: 6px 0; border-radius: 6px; cursor: pointer; font-size: 12.5px; }
 .date-popup-cell:hover:not(.date-popup-empty) { background: var(--color-bg); }
 .date-popup-selected { background: var(--color-primary); color: #fff; }
 .date-popup-today { font-weight: 700; text-decoration: underline; }
@@ -262,3 +380,20 @@ td a { color: var(--color-primary); }
 
 .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
 .filters .field { min-width: 140px; margin-bottom: 0; }
+
+/* ---------- กราฟแท่งค่าใช้จ่ายรายวัน (หน้า "ค่าใช้จ่าย AI") ---------- */
+.chart-card svg { width: 100%; height: auto; display: block; }
+.chart-card .axis-label { font-size: 9.5px; fill: var(--color-text-faint); font-family: "IBM Plex Mono", monospace; }
+.chart-card .gridline { stroke: var(--color-border); stroke-width: 1; }
+.chart-card .bar { fill: var(--color-primary); }
+.chart-card .bar.peak { fill: var(--color-brass); }
+
+.mono { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+
+/* ---------- หน้ารายละเอียด PR ---------- */
+.meta-strip { display: flex; gap: 24px; flex-wrap: wrap; margin: 12px 0 4px; }
+.meta-strip .m-field .m-label { font-size: 10.5px; text-transform: uppercase; color: var(--color-text-faint); letter-spacing: 0.04em; }
+.meta-strip .m-field .m-value { font-size: 13.5px; font-weight: 600; margin-top: 2px; }
+
+.detail-grid { display: grid; grid-template-columns: 1.75fr 1fr; gap: 16px; align-items: start; margin-top: 16px; }
+@media (max-width: 760px) { .detail-grid { grid-template-columns: 1fr; } }

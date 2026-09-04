@@ -1,22 +1,81 @@
 {% extends "base.html" %}
-{% block title %}Login — PR-Robot{% endblock %}
+{% block title %}เข้าสู่ระบบ — PR-Robot{% endblock %}
 {% block nav %}{% endblock %}
 {% block content %}
-<div class="card" style="max-width: 380px; margin: 60px auto;">
-  <h1>PR-Robot</h1>
-  <p class="muted">เข้าสู่ระบบเพื่อจัดการใบขอซื้อ</p>
-  <form id="login-form">
-    <div class="field">
-      <label for="email">อีเมล</label>
-      <input type="email" id="email" required autocomplete="username">
+<style>
+  /* หน้า Login ใช้เท่านั้น — Layout เฉพาะหน้านี้ ไม่ยุ่งกับ style.css ส่วนกลาง */
+  .container { max-width: 900px; margin: 64px auto; padding: 0 20px; }
+  .login-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+    min-height: 480px;
+  }
+  @media (max-width: 680px) { .login-grid { grid-template-columns: 1fr; } .login-side { display: none; } }
+  .login-side {
+    background: var(--color-navy-deep);
+    color: #eef2f6;
+    padding: 40px 36px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .login-side .brand-seal {
+    width: 44px; height: 44px;
+    border: 1.5px solid var(--color-brass);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 700;
+    color: var(--color-brass);
+  }
+  .login-side h2 { font-size: 22px; margin: 16px 0 0; color: #fff; }
+  .login-side p { color: #a9b7c6; font-size: 13.5px; margin-top: 8px; max-width: 32ch; }
+  .login-feats { list-style: none; margin: 22px 0 0; padding: 0; display: flex; flex-direction: column; gap: 11px; }
+  .login-feats li { display: flex; gap: 9px; font-size: 12.5px; color: #cbd6e1; align-items: flex-start; }
+  .login-feats li::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--color-brass); margin-top: 6px; flex: none; }
+  .login-side .footline { font-size: 11px; color: #6f8098; }
+  .login-form-side { padding: 48px 40px; display: flex; flex-direction: column; justify-content: center; }
+  .login-form-side h1 { font-size: 21px; margin: 0; }
+  .login-form-side .lede { font-size: 13px; color: var(--color-text-muted); margin-top: 6px; margin-bottom: 22px; }
+  .login-form-side form { max-width: 320px; }
+  .login-form-side button { width: 100%; justify-content: center; padding: 10px; margin-top: 4px; }
+</style>
+
+<div class="login-grid">
+  <div class="login-side">
+    <div>
+      <div class="brand-seal">PR</div>
+      <h2>PR-Robot</h2>
+      <p>ระบบขอซื้อและอ่านเอกสารด้วย AI สำหรับ Sunstar Chemical (Thailand)</p>
+      <ul class="login-feats">
+        <li>AI อ่านใบเสนอราคา/ใบส่งของอัตโนมัติ ไม่ต้องคีย์เอง</li>
+        <li>ออกใบขอซื้อพร้อมพิมพ์ได้ในไม่กี่นาที</li>
+        <li>ติดตามค่าใช้จ่ายการใช้งาน AI แบบรายวัน/รายเดือน</li>
+      </ul>
     </div>
-    <div class="field">
-      <label for="password">รหัสผ่าน</label>
-      <input type="password" id="password" required autocomplete="current-password">
-    </div>
-    <div class="error hidden" id="login-error"></div>
-    <button type="submit" style="width: 100%;">เข้าสู่ระบบ</button>
-  </form>
+    <div class="footline">© 2026 Sunstar Chemical (Thailand) Co., Ltd.</div>
+  </div>
+  <div class="login-form-side">
+    <h1>เข้าสู่ระบบ</h1>
+    <div class="lede">เข้าสู่ระบบเพื่อจัดการใบขอซื้อ</div>
+    <form id="login-form">
+      <div class="field">
+        <label for="email">อีเมล</label>
+        <input type="email" id="email" required autocomplete="username">
+      </div>
+      <div class="field">
+        <label for="password">รหัสผ่าน</label>
+        <input type="password" id="password" required autocomplete="current-password">
+      </div>
+      <div class="error hidden" id="login-error"></div>
+      <button type="submit">เข้าสู่ระบบ</button>
+    </form>
+  </div>
 </div>
 {% endblock %}
 {% block scripts %}

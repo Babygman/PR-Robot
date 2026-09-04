@@ -5,66 +5,73 @@
 <div id="error" class="error hidden"></div>
 
 <div id="pr-content" class="hidden">
-  <h1>
-    PR No. <span id="pr-no"></span>
-    <span id="pr-status-badge"></span>
-  </h1>
-
-  <div class="card">
-    <div class="row">
-      <div class="field"><label>Section</label><div id="pr-section"></div></div>
-      <div class="field"><label>Division</label><div id="pr-division"></div></div>
-      <div class="field"><label>วันที่เอกสาร</label><div id="pr-date"></div></div>
-    </div>
-    <div class="field"><label>Remark</label><div id="pr-remark" class="muted"></div></div>
-    <div class="row">
-      <div class="field"><label>Requested by</label><div id="pr-requested"></div></div>
-    </div>
-    <p class="muted hidden" id="finalized-note">
-      PR นี้สรุปแล้ว (Finalized) — พิมพ์เอกสารนี้เพื่อขอลายเซ็นสด (Reviewed by / Approved by / Received by) นอกระบบ
-    </p>
-    <p class="muted hidden" id="revised-from-note">
-      แก้ไขมาจาก <a id="revised-from-link" href="#">PR ฉบับก่อนหน้า</a>
-    </p>
-    <p class="error hidden" id="superseded-note">
-      PR ฉบับนี้ถูก Revise ไปแล้วเป็น <a id="superseded-link" href="#"></a> — ใช้ฉบับล่าสุดแทน
-    </p>
-    <div class="actions">
-      <a class="btn secondary" id="pdf-link" href="#" target="_blank">พิมพ์ / ดาวน์โหลด PDF</a>
-      <a class="btn secondary hidden" id="edit-link" href="#">แก้ไข PR</a>
-      <button type="button" class="secondary hidden" id="revise-btn">สร้าง Revision</button>
+  <div class="topbar">
+    <div>
+      <h1 class="mono">PR <span id="pr-no"></span> <span id="pr-status-badge"></span></h1>
+      <div class="meta-strip">
+        <div class="m-field"><div class="m-label">Section</div><div class="m-value" id="pr-section"></div></div>
+        <div class="m-field"><div class="m-label">Division</div><div class="m-value" id="pr-division"></div></div>
+        <div class="m-field"><div class="m-label">วันที่เอกสาร</div><div class="m-value mono" id="pr-date"></div></div>
+        <div class="m-field"><div class="m-label">Requested by</div><div class="m-value" id="pr-requested"></div></div>
+      </div>
     </div>
   </div>
 
-  <div class="card">
-    <h2>รายการสินค้า</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Item</th><th>Account Code</th><th>Description</th><th>Quantity</th>
-          <th>Required Date</th><th>Reason</th><th>Ref. PO</th>
-        </tr>
-      </thead>
-      <tbody id="items-body"></tbody>
-    </table>
-  </div>
+  <p class="muted" id="pr-remark-wrap"><strong>Remark:</strong> <span id="pr-remark"></span></p>
+  <p class="muted hidden" id="finalized-note">
+    PR นี้สรุปแล้ว (Finalized) — พิมพ์เอกสารนี้เพื่อขอลายเซ็นสด (Reviewed by / Approved by / Received by) นอกระบบ
+  </p>
+  <p class="muted hidden" id="revised-from-note">
+    แก้ไขมาจาก <a id="revised-from-link" href="#">PR ฉบับก่อนหน้า</a>
+  </p>
+  <p class="error hidden" id="superseded-note">
+    PR ฉบับนี้ถูก Revise ไปแล้วเป็น <a id="superseded-link" href="#"></a> — ใช้ฉบับล่าสุดแทน
+  </p>
 
-  <div class="card hidden" id="budget-card">
-    <h2>Budget Control</h2>
-    <table>
-      <tbody>
-        <tr><th>Account Code 1 / 2</th><td id="bc-accounts"></td></tr>
-        <tr><th>Budget</th><td id="bc-budget"></td></tr>
-        <tr><th>Used Before Amount</th><td id="bc-used"></td></tr>
-        <tr><th>This Application</th><td id="bc-this"></td></tr>
-        <tr><th>Balance</th><td id="bc-balance"></td></tr>
-      </tbody>
-    </table>
-  </div>
+  <div class="detail-grid">
+    <div>
+      <div class="card">
+        <h2>รายการสินค้า</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th><th>Account Code</th><th>Description</th><th>Quantity</th>
+              <th>Required Date</th><th>Reason</th><th>Ref. PO</th>
+            </tr>
+          </thead>
+          <tbody id="items-body"></tbody>
+        </table>
+      </div>
 
-  <div class="card">
-    <h2>ประวัติ</h2>
-    <ul class="history-list" id="history-list"></ul>
+      <div class="card hidden" id="budget-card">
+        <h2>Budget Control</h2>
+        <table>
+          <tbody>
+            <tr><th>Account Code 1 / 2</th><td id="bc-accounts"></td></tr>
+            <tr><th>Budget</th><td id="bc-budget"></td></tr>
+            <tr><th>Used Before Amount</th><td id="bc-used"></td></tr>
+            <tr><th>This Application</th><td id="bc-this"></td></tr>
+            <tr><th>Balance</th><td id="bc-balance"></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>การดำเนินการ</h2>
+        <div class="actions" style="flex-direction: column;">
+          <a class="btn secondary" id="pdf-link" href="#" target="_blank">พิมพ์ / ดาวน์โหลด PDF</a>
+          <a class="btn secondary hidden" id="edit-link" href="#">แก้ไข PR</a>
+          <button type="button" class="secondary hidden" id="revise-btn">สร้าง Revision</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>ประวัติ</h2>
+        <ul class="history-list" id="history-list"></ul>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}
