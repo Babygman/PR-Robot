@@ -122,13 +122,19 @@ function renderDailyChart(dailyRows) {
   const maxVal = Math.max(...values, 0.01);
   const peakIdx = values.indexOf(Math.max(...values));
   const W = 640, H = 140, top = 16, bottom = 118, left = 10, right = 630;
-  const barW = (right - left) / rows.length - 8;
+  // จำกัดความกว้างแท่งไว้ไม่เกิน 34px (เท่า Mockup ต้นฉบับ) — ช่วงแรกที่เพิ่งเริ่มเก็บ
+  // ข้อมูล อาจมีแค่ 1-2 วัน ถ้าไม่จำกัดไว้ แท่งเดียวจะยืดเต็มความกว้าง Chart ทั้งหมด
+  // (Bug จริงที่ผู้ใช้เจอ 2026-09-04 — มีข้อมูลแค่วันเดียวหลัง Deploy Feature นี้)
+  const slot = (right - left) / rows.length;
+  const barW = Math.min(slot * 0.6, 34);
+  // Peak ไม่มีความหมายถ้ามีแท่งเดียว (เป็น Max โดยปริยาย) — Highlight เฉพาะเมื่อมี
+  // ให้เทียบจริงๆ ตั้งแต่ 2 วันขึ้นไป
   const bars = rows
     .map((r, i) => {
-      const x = left + i * ((right - left) / rows.length) + 4;
+      const x = left + i * slot + (slot - barW) / 2;
       const h = (values[i] / maxVal) * (bottom - top);
       const y = bottom - h;
-      const cls = i === peakIdx ? "bar peak" : "bar";
+      const cls = rows.length > 1 && i === peakIdx ? "bar peak" : "bar";
       return `<rect class="${cls}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(h, 1).toFixed(1)}"><title>${formatDateDMY(r.period)} — ${fmtThb(values[i])}</title></rect>`;
     })
     .join("");
