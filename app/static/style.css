@@ -36,6 +36,9 @@ body {
 }
 .nav a { color: #fff; text-decoration: none; font-weight: 500; }
 .nav a:hover { text-decoration: underline; }
+/* ระหว่างอัปโหลด/ให้ AI อ่านข้อมูล (2026-09-04) — ล็อกเมนูไม่ให้กดออกจากหน้าโดยไม่ตั้งใจ
+   (ใช้คู่กับ beforeunload confirm ที่ครอบคลุม Back/Reload/ปิดแท็บ) */
+body.uploading-lock .nav a { pointer-events: none; opacity: 0.5; cursor: not-allowed; }
 .nav .brand { font-weight: 700; font-size: 16px; margin-right: 10px; }
 .nav .spacer { flex: 1; }
 .nav .user-name { opacity: 0.85; font-size: 13px; }

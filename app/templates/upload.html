@@ -29,7 +29,10 @@
     </div>
     <button type="submit" id="upload-btn">อัปโหลดและให้ AI อ่านข้อมูล</button>
   </form>
-  <div class="muted hidden" id="upload-loading">กำลังให้ AI อ่านข้อมูล... อาจใช้เวลาสักครู่ต่อไฟล์</div>
+  <div class="muted hidden" id="upload-loading">
+    <span id="upload-progress-text">กำลังเตรียมอัปโหลด...</span><br>
+    <span class="error">อย่ากดย้อนกลับ, รีโหลด หรือปิดแท็บนี้ระหว่างดำเนินการ</span>
+  </div>
 </div>
 
 <div class="card hidden" id="results-card">
@@ -102,17 +105,48 @@ async function uploadOneFile(file) {
   }
 }
 
+// ป้องกันออกจากหน้าโดยไม่ตั้งใจ (Back/Reload/ปิดแท็บ) ระหว่างอัปโหลด/ให้ AI อ่านข้อมูล
+// (Feedback จริงจากผู้ใช้ 2026-09-04) — Browser จะเด้ง Confirm Dialog ก่อนออกจากหน้าเสมอ
+// เมื่อ isUploading เป็น true (บล็อก Back ปุ่ม Browser 100% ทำไม่ได้ด้วยข้อจำกัดด้าน
+// Security ของ Browser เอง แต่ Dialog นี้ครอบคลุมทั้ง Back/Reload/ปิดแท็บในทางปฏิบัติ)
+let isUploading = false;
+window.addEventListener("beforeunload", (e) => {
+  if (!isUploading) return;
+  e.preventDefault();
+  e.returnValue = "";
+});
+
 // Upload ทีละไฟล์ วนซ้ำ แล้วต่อผลลัพธ์เป็นแถวใหม่ — เรียกตอนกดปุ่ม "อัปโหลด" เท่านั้น
+// แสดง Progress แยก 2 ช่วงต่อไฟล์ (อัปโหลด → AI อ่านข้อมูล) เพราะ AI อ่านข้อมูลเป็นช่วงที่
+// ใช้เวลานานที่สุด (Feedback จริงจากผู้ใช้ 2026-09-04)
 async function processFiles(files) {
   if (!files.length) return;
 
+  const total = files.length;
+  isUploading = true;
+  document.body.classList.add("uploading-lock");
   document.getElementById("upload-loading").classList.remove("hidden");
   document.getElementById("upload-btn").disabled = true;
   const resultsEl = document.getElementById("doc-results");
+  const progressEl = document.getElementById("upload-progress-text");
 
   try {
+    let index = 0;
     for (const file of files) {
-      const result = await uploadOneFile(file);
+      index += 1;
+      progressEl.textContent = `กำลังอัปโหลดไฟล์ ${index}/${total}: ${file.name}`;
+      // Request เดียวทำทั้งอัปโหลด+ให้ AI อ่าน (Backend ประมวลผลแบบ Synchronous) — สลับ
+      // ข้อความเป็น "AI กำลังอ่านข้อมูล" หลังจากผ่านไปสักครู่ เพื่อสื่อสารว่ากำลังรอ AI
+      // อยู่ ไม่ใช่ค้างที่การอัปโหลดไฟล์
+      const switchTimer = setTimeout(() => {
+        progressEl.textContent = `AI กำลังอ่านข้อมูลไฟล์ ${index}/${total}: ${file.name} (อาจใช้เวลาสักครู่)...`;
+      }, 600);
+      let result;
+      try {
+        result = await uploadOneFile(file);
+      } finally {
+        clearTimeout(switchTimer);
+      }
       const wrap = document.createElement("div");
       if (result.ok) {
         uploadedDocIds.push(result.doc.id);
@@ -124,7 +158,10 @@ async function processFiles(files) {
       resultsEl.appendChild(wrap.firstElementChild);
       document.getElementById("results-card").classList.remove("hidden");
     }
+    progressEl.textContent = `อัปโหลดครบ ${total}/${total} ไฟล์แล้ว`;
   } finally {
+    isUploading = false;
+    document.body.classList.remove("uploading-lock");
     document.getElementById("upload-loading").classList.add("hidden");
     document.getElementById("upload-btn").disabled = false;
   }
