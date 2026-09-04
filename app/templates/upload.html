@@ -35,6 +35,13 @@
   </div>
 </div>
 
+<div class="modal-overlay hidden" id="ai-progress-modal">
+  <div class="modal-box">
+    <div class="modal-spinner"></div>
+    <p id="ai-progress-modal-text"></p>
+  </div>
+</div>
+
 <div class="card hidden" id="results-card">
   <h2>เอกสารที่อัปโหลดแล้ว</h2>
   <p class="muted">เลือกเอกสารที่ต้องการนำไปสร้าง PR (เลือกได้หลายรายการ) แก้ไข "ประเภทเอกสาร" ได้ถ้า AI เดาผิด</p>
@@ -116,6 +123,19 @@ window.addEventListener("beforeunload", (e) => {
   e.returnValue = "";
 });
 
+// Popup แสดง Progress ตอน AI กำลังอ่านข้อมูล (Feedback จริงจากผู้ใช้ 2026-09-04) — เปิดค้าง
+// ตลอดทั้ง Batch (ไม่ปิด-เปิดสลับทีละไฟล์) ปิดอัตโนมัติเมื่อไฟล์สุดท้ายอ่านเสร็จ ไม่ต้อง
+// กดปิดเอง — ช่วงอัปโหลดไฟล์ขึ้น Server (สั้น ก่อนเข้าสู่ AI อ่านข้อมูล) ยังใช้ข้อความใต้
+// ปุ่มแบบเดิม ไม่มี Popup
+function setAiProgressModal(text) {
+  const modal = document.getElementById("ai-progress-modal");
+  document.getElementById("ai-progress-modal-text").textContent = text;
+  modal.classList.remove("hidden");
+}
+function hideAiProgressModal() {
+  document.getElementById("ai-progress-modal").classList.add("hidden");
+}
+
 // Upload ทีละไฟล์ วนซ้ำ แล้วต่อผลลัพธ์เป็นแถวใหม่ — เรียกตอนกดปุ่ม "อัปโหลด" เท่านั้น
 // แสดง Progress แยก 2 ช่วงต่อไฟล์ (อัปโหลด → AI อ่านข้อมูล) เพราะ AI อ่านข้อมูลเป็นช่วงที่
 // ใช้เวลานานที่สุด (Feedback จริงจากผู้ใช้ 2026-09-04)
@@ -139,7 +159,9 @@ async function processFiles(files) {
       // ข้อความเป็น "AI กำลังอ่านข้อมูล" หลังจากผ่านไปสักครู่ เพื่อสื่อสารว่ากำลังรอ AI
       // อยู่ ไม่ใช่ค้างที่การอัปโหลดไฟล์
       const switchTimer = setTimeout(() => {
-        progressEl.textContent = `AI กำลังอ่านข้อมูลไฟล์ ${index}/${total}: ${file.name} (อาจใช้เวลาสักครู่)...`;
+        const msg = `AI กำลังอ่านข้อมูลไฟล์ ${index}/${total}: ${file.name} (อาจใช้เวลาสักครู่)...`;
+        progressEl.textContent = msg;
+        setAiProgressModal(msg);
       }, 600);
       let result;
       try {
@@ -164,6 +186,7 @@ async function processFiles(files) {
     document.body.classList.remove("uploading-lock");
     document.getElementById("upload-loading").classList.add("hidden");
     document.getElementById("upload-btn").disabled = false;
+    hideAiProgressModal();
   }
 }
 

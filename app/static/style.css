@@ -39,6 +39,37 @@ body {
 /* ระหว่างอัปโหลด/ให้ AI อ่านข้อมูล (2026-09-04) — ล็อกเมนูไม่ให้กดออกจากหน้าโดยไม่ตั้งใจ
    (ใช้คู่กับ beforeunload confirm ที่ครอบคลุม Back/Reload/ปิดแท็บ) */
 body.uploading-lock .nav a { pointer-events: none; opacity: 0.5; cursor: not-allowed; }
+
+/* Popup แสดง Progress ตอน AI กำลังอ่านข้อมูล (2026-09-04) — เปิดค้างตลอดทั้ง Batch
+   ปิดอัตโนมัติเมื่อไฟล์สุดท้ายอ่านเสร็จ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-box {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  padding: 28px 36px;
+  max-width: min(90vw, 420px);
+  text-align: center;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+}
+.modal-spinner {
+  width: 32px;
+  height: 32px;
+  margin: 0 auto 16px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: modal-spin 0.8s linear infinite;
+}
+@keyframes modal-spin { to { transform: rotate(360deg); } }
+.modal-box p { margin: 0; font-weight: 500; }
 .nav .brand { font-weight: 700; font-size: 16px; margin-right: 10px; }
 .nav .spacer { flex: 1; }
 .nav .user-name { opacity: 0.85; font-size: 13px; }
