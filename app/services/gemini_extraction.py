@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import docx
@@ -152,6 +153,17 @@ class GeminiExtractionError(Exception):
     """เกิดข้อผิดพลาดระหว่างเรียก Gemini API หรือแปลงผลลัพธ์เป็น JSON ตาม Schema"""
 
 
+@dataclass(frozen=True)
+class TokenUsage:
+    """จำนวน Token จริงที่ Gemini ตอบกลับมาจาก Call ล่าสุด (2026-09-04 — สำหรับหน้า
+    "ค่าใช้จ่าย AI") output_tokens รวม Thinking Token ด้วย (Billed ในอัตราเดียวกับ
+    Output ปกติ ตาม Pricing ของ Google)"""
+
+    prompt_tokens: int
+    output_tokens: int
+    total_tokens: int
+
+
 class GeminiExtractionService:
     def __init__(
         self,
@@ -172,8 +184,17 @@ class GeminiExtractionService:
         # sleep_fn Inject ได้เพื่อให้ Unit Test ไม่ต้องรอจริงตอน Retry (ดู
         # tests/test_gemini_extraction.py)
         self._sleep = sleep_fn
+        # Token Usage ของ Call ล่าสุด (2026-09-04 — สำหรับหน้า "ค่าใช้จ่าย AI") ผู้เรียก
+        # (เช่น documents.py) อ่านค่านี้ต่อจาก extract() ทันทีเพื่อไปบันทึก Log ค่าใช้จ่าย
+        # — เป็น None ถ้ายังไม่เคยเรียกสำเร็จเลย หรือ Fail ก่อนได้ Response กลับมา
+        self.last_usage: TokenUsage | None = None
+
+    @property
+    def model(self) -> str:
+        return self._model
 
     def extract(self, file_path: str) -> ExtractionResult:
+        self.last_usage = None
         # Word/Excel/CSV/TXT (2026-09-04): แตกข้อความออกมาก่อนนอก Retry Loop เพราะการ
         # อ่านไฟล์เสีย/Parse ไม่ได้เป็น Error ถาวร Retry ไปก็ได้ผลเดิม (ต่างจาก Error
         # จาก Gemini API ที่ชั่วคราวได้) — PDF/รูปภาพยังใช้ Vision ผ่าน files.upload
@@ -206,6 +227,25 @@ class GeminiExtractionService:
                         response_json_schema=ExtractionResult.model_json_schema(),
                     ),
                 )
+                # เก็บ Token Usage ทันทีที่ได้ Response กลับมา (ก่อนเช็ค response.text ว่าง/
+                # แปลง JSON ผ่านหรือไม่) เพราะ Google อาจ Bill Token ไปแล้วถึงแม้ Response
+                # จะว่างเปล่าหรือแปลงเป็น JSON ตาม Schema ไม่ได้ก็ตาม — ให้ตัวเลขค่าใช้จ่าย
+                # ใกล้เคียงยอด Bill จริงที่สุด getattr กันไว้เผื่อ Fake Client ใน Test เก่า
+                # ไม่มี usage_metadata (ไม่ Error แค่ last_usage ยังเป็น None)
+                usage_metadata = getattr(response, "usage_metadata", None)
+                if usage_metadata is not None:
+                    prompt_tokens = usage_metadata.prompt_token_count or 0
+                    output_tokens = (usage_metadata.candidates_token_count or 0) + (
+                        usage_metadata.thoughts_token_count or 0
+                    )
+                    total_tokens = usage_metadata.total_token_count or (
+                        prompt_tokens + output_tokens
+                    )
+                    self.last_usage = TokenUsage(
+                        prompt_tokens=prompt_tokens,
+                        output_tokens=output_tokens,
+                        total_tokens=total_tokens,
+                    )
                 break
             except Exception as exc:  # noqa: BLE001 - ห่อ Exception ทุกชนิดจาก SDK ภายนอกเป็น Error ของเราเอง
                 last_exc = exc

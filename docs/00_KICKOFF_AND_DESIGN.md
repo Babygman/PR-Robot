@@ -629,6 +629,48 @@ API Key เดิมอัปเกรดเป็น Tier 1 อัตโนม�
 ไม่ Retry + ยืนยันไม่เรียก Vision `files.upload` สำหรับไฟล์กลุ่มนี้, 1 ใน
 `test_documents.py` ยืนยัน Endpoint ยอมรับทั้ง 4 ประเภทใหม่)
 
+## 4j. หน้า "ค่าใช้จ่าย AI" (2026-09-04)
+
+**สาเหตุ:** หลัง Upgrade Gemini API ออกจาก Free Tier ผู้ใช้เห็นยอดใน Google AI Studio
+แล้วอยากติดตามค่าใช้จ่ายในระบบเองด้วย แยกรายรายการ/รายวัน/รายเดือน (ตัดสินใจร่วมกัน:
+เห็นได้ทุกคนที่ Login แล้ว ไม่ใช่ Admin เท่านั้น, แสดงทั้ง USD + THB โดยประมาณ)
+
+**กลไก:** ทุกครั้งที่เรียก Gemini (ทั้งสำเร็จและไม่สำเร็จ) บันทึกแถวใหม่ในตาราง
+`ai_usage_logs` — ดึงจำนวน Token จริงจาก `response.usage_metadata` ที่ Gemini ตอบกลับมา
+(`GeminiExtractionService.last_usage`, เก็บเป็น State หลัง `extract()` แต่ละครั้ง เพื่อไม่
+ต้องเปลี่ยน Return Type เดิมที่มี Test อ้างอิงอยู่จำนวนมาก) คำนวณค่าใช้จ่าย USD จากตาราง
+Pricing ใน `app/services/ai_pricing.py` (Standard Tier, อ้างอิงจาก
+https://ai.google.dev/gemini-api/docs/pricing ตรวจสอบ 2026-09-04 — **ต้องอัปเดตเองถ้า
+Google เปลี่ยนราคา** ไม่มี Auto-sync) แล้วแปลงเป็น THB ด้วยอัตราแลกเปลี่ยนที่ตั้งไว้ใน
+`.env` (`GEMINI_USD_TO_THB_RATE`, ปรับเองเป็นระยะ ไม่ใช่ Real-time) — ค่าที่บันทึกเป็น
+Snapshot ณ ตอน Transaction เกิดขึ้น ไม่คำนวณซ้ำทีหลังแม้ Rate/ตาราง Pricing จะเปลี่ยน
+
+กรณี Fail (Retry หมด/อ่านไฟล์เสีย/Parse JSON ไม่ผ่าน) ก็บันทึก Log ไว้ด้วย (Token/
+ค่าใช้จ่ายเป็น 0 ถ้ายังไม่เคยได้ Response จาก Gemini เลย แต่ถ้า Fail หลังได้ Response
+มาแล้ว เช่น Parse JSON ไม่ผ่าน ยังนับ Token ที่ถูก Bill ไปแล้วให้ด้วย) เพื่อให้เห็น
+Transaction ที่เกิดขึ้นครบ ไม่ใช่แค่ที่สำเร็จ
+
+**หน้าเว็บ:** เมนู "ค่าใช้จ่าย AI" ในแถบ Nav — สรุปยอดวันนี้/เดือนนี้ + ตารางสรุปรายวัน
+(30 วันล่าสุด)/รายเดือน (12 เดือนล่าสุด) + ตาราง Transaction ล่าสุดกรองตามช่วงวันที่ได้
+— จัดกลุ่มรายวัน/รายเดือนด้วย Python ล้วนๆ (ไม่ใช้ `func.date_trunc` ของ PostgreSQL)
+เพราะ Test Suite รันบน SQLite ที่ไม่รองรับ Syntax เดียวกัน ปริมาณ Log ของระบบภายใน
+บริษัทเดียวไม่มากพอที่จะมีปัญหาประสิทธิภาพ
+
+**ข้อจำกัดที่แจ้งไว้ในหน้าเว็บ:** ตัวเลขเป็นประมาณการ ไม่ใช่ยอด Bill จริงจาก Google
+Cloud Billing โดยตรง — ดูยอดจริงและตั้ง Monthly Spend Cap ได้ที่ Google AI Studio
+ข้อมูลก่อนหน้า Deploy Feature นี้ไม่มีให้ย้อนดู
+
+**Schema:** ตารางใหม่ `ai_usage_logs` (`document_id`/`uploaded_by_id` เป็น
+`ON DELETE SET NULL` เพราะเอกสาร/User ลบทิ้งได้ แต่ประวัติค่าใช้จ่ายต้องอยู่ต่อ — เก็บ
+`file_name` Snapshot แยกไว้ในตัวตารางเองด้วยเหตุผลเดียวกัน) Migration
+(`c7f2a4b9e1d6_ai_usage_log.py`) ทดสอบเต็มรูปแบบบน PostgreSQL 16 จริง (Upgrade →
+Downgrade → Upgrade ผ่านสะอาด)
+
+**Verification:** `ruff check .` สะอาด, `pytest` ผ่านทั้งหมด 91/91 (เพิ่ม 13 Test:
+คำนวณราคา 4 Test, `last_usage` ของ Extraction Service 3 Test, Endpoint
+`/ai-usage`+`/ai-usage/summary` 6 Test ครอบคลุม Login Required, บันทึก Log ถูกต้องทั้ง
+กรณีสำเร็จ/ไม่สำเร็จ, กรองตามวันที่, สรุปยอดรายวัน/รายเดือนถูกต้อง)
+
 ## 5. Roadmap (แบ่ง Phase ตามมาตรฐาน — รออนุมัติก่อนเริ่มแต่ละ Phase)
 
 | Phase | เนื้อหา | Output |

@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-2.5-flash"  # ปรับได้ผ่าน .env ตาม Quota จริงของ Key
 
+    # อัตราแลกเปลี่ยน USD -> THB โดยประมาณ สำหรับหน้า "ค่าใช้จ่าย AI" (2026-09-04) —
+    # ปรับเองเป็นระยะผ่าน .env ไม่ใช่ Real-time (ไม่ยิง Network เรียก Currency API ทุก
+    # Request) ค่าที่บันทึกไว้ในแต่ละ Transaction เป็น Snapshot ของ Rate ณ ตอนนั้นอยู่แล้ว
+    gemini_usd_to_thb_rate: float = 33.0
+
     upload_dir: str = "storage/uploads"
     generated_dir: str = "storage/generated"
 

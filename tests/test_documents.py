@@ -14,14 +14,25 @@ from sqlalchemy.orm import Session
 
 from app.api.routes.documents import get_extraction_service
 from app.main import app
-from app.models import PRStatus, PurchasingRequisition, SourceDocType, SourceDocument, User
+from app.models import (
+    PRStatus,
+    PurchasingRequisition,
+    SourceDocType,
+    SourceDocument,
+    User,
+)
 from app.schemas.source_document import ExtractedItem, ExtractionResult
-from app.services.gemini_extraction import GeminiExtractionError
+from app.services.gemini_extraction import GeminiExtractionError, TokenUsage
 
 _FAKE_PDF_BYTES = b"%PDF-1.4 fake content for testing\n"
 
 
 class _FakeExtractionServiceSuccess:
+    # model/last_usage (2026-09-04) — documents.py อ่านทั้งสองค่านี้จาก Service จริงเพื่อ
+    # บันทึก Log ค่าใช้จ่าย AI (ดู tests/test_ai_usage.py สำหรับ Test เจาะจงเรื่องนี้)
+    model = "gemini-3.6-flash"
+    last_usage = TokenUsage(prompt_tokens=1000, output_tokens=200, total_tokens=1200)
+
     def extract(self, file_path: str) -> ExtractionResult:
         return ExtractionResult(
             detected_doc_type=SourceDocType.QUOTATION,
@@ -42,6 +53,9 @@ class _FakeExtractionServiceSuccess:
 
 
 class _FakeExtractionServiceFailure:
+    model = "gemini-3.6-flash"
+    last_usage = None
+
     def extract(self, file_path: str) -> ExtractionResult:
         raise GeminiExtractionError("จำลอง Error: เรียก Gemini API ไม่สำเร็จ")
 

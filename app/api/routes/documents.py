@@ -40,13 +40,18 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.deps import get_current_user
 from app.db.session import get_db
-from app.models import AuditLog, SourceDocType, SourceDocument, User
+from app.models import AiUsageLog, AuditLog, SourceDocType, SourceDocument, User
 from app.schemas.source_document import (
     ExtractionResult,
     SourceDocumentRead,
     SourceDocumentReviewUpdate,
 )
-from app.services.gemini_extraction import GeminiExtractionError, GeminiExtractionService
+from app.services.ai_pricing import calculate_cost_usd
+from app.services.gemini_extraction import (
+    GeminiExtractionError,
+    GeminiExtractionService,
+    TokenUsage,
+)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -73,6 +78,45 @@ _MAX_UPLOAD_BYTES = 15 * 1024 * 1024  # 15 MB
 
 def get_extraction_service() -> GeminiExtractionService:
     return GeminiExtractionService()
+
+
+def _log_ai_usage(
+    db: Session,
+    *,
+    document_id: int | None,
+    file_name: str,
+    model: str,
+    usage: TokenUsage | None,
+    success: bool,
+    error_message: str | None,
+    uploaded_by_id: int,
+) -> None:
+    """บันทึกค่าใช้จ่าย AI โดยประมาณของ 1 Transaction สำหรับหน้า "ค่าใช้จ่าย AI"
+    (2026-09-04) — เรียกทั้งกรณีสำเร็จและไม่สำเร็จ (usage เป็น None ได้ถ้า Fail ก่อนได้
+    Response กลับมาจาก Gemini เลย เช่น Retry หมด/อ่านไฟล์เสีย — จะบันทึก Token/ค่าใช้
+    จ่ายเป็น 0 แต่ยังเห็นว่ามี Transaction เกิดขึ้นและ Fail ด้วยเหตุผลอะไร)"""
+    prompt_tokens = usage.prompt_tokens if usage else 0
+    output_tokens = usage.output_tokens if usage else 0
+    total_tokens = usage.total_tokens if usage else 0
+    cost_usd = calculate_cost_usd(model, prompt_tokens, output_tokens) if usage else Decimal("0")
+    rate = Decimal(str(settings.gemini_usd_to_thb_rate))
+    cost_thb = (cost_usd * rate).quantize(Decimal("0.0001"))
+    db.add(
+        AiUsageLog(
+            document_id=document_id,
+            file_name=file_name[:512],
+            model=model,
+            success=success,
+            error_message=error_message,
+            prompt_token_count=prompt_tokens,
+            output_token_count=output_tokens,
+            total_token_count=total_tokens,
+            cost_usd=cost_usd,
+            cost_thb=cost_thb,
+            usd_to_thb_rate=rate,
+            uploaded_by_id=uploaded_by_id,
+        )
+    )
 
 
 @router.post("/upload", response_model=SourceDocumentRead, status_code=status.HTTP_201_CREATED)
@@ -125,6 +169,19 @@ async def upload_document(
         result: ExtractionResult = extraction_service.extract(str(stored_path))
     except GeminiExtractionError as exc:
         document.extraction_error = str(exc)
+        # บันทึกค่าใช้จ่าย AI แม้ Fail (2026-09-04) — usage อาจมีค่าอยู่ถ้า Gemini ตอบ
+        # กลับมาแล้วแต่ Parse ไม่ผ่าน (ยังถูก Bill Token ไปแล้ว) หรือเป็น None ถ้า Fail
+        # ก่อนได้ Response เลย (เช่น Retry หมด/อ่านไฟล์เสีย)
+        _log_ai_usage(
+            db,
+            document_id=document.id,
+            file_name=file.filename or stored_name,
+            model=extraction_service.model,
+            usage=extraction_service.last_usage,
+            success=False,
+            error_message=str(exc),
+            uploaded_by_id=current_user.id,
+        )
         db.commit()
         db.refresh(document)
         return document
@@ -137,6 +194,16 @@ async def upload_document(
     # /review ได้เสมอถ้าเดาผิด) — Scope Revision Phase 9, 2026-09-03
     if document.doc_type is None and result.detected_doc_type is not None:
         document.doc_type = result.detected_doc_type
+    _log_ai_usage(
+        db,
+        document_id=document.id,
+        file_name=file.filename or stored_name,
+        model=extraction_service.model,
+        usage=extraction_service.last_usage,
+        success=True,
+        error_message=None,
+        uploaded_by_id=current_user.id,
+    )
     db.commit()
     db.refresh(document)
     return document

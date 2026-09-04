@@ -56,3 +56,8 @@ def page_pr_detail(request: Request, pr_id: int):
 @router.get("/documents/upload")
 def page_upload(request: Request):
     return templates.TemplateResponse(request=request, name="upload.html", context={})
+
+
+@router.get("/ai-usage")
+def page_ai_usage(request: Request):
+    return templates.TemplateResponse(request=request, name="ai_usage.html", context={})

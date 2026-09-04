@@ -18,9 +18,28 @@ _VALID_JSON = (
 )
 
 
+class _FakeUsageMetadata:
+    """จำลอง response.usage_metadata ของ google-genai SDK จริง (2026-09-04 — สำหรับหน้า
+    "ค่าใช้จ่าย AI") ไม่ใส่ใน _FakeResponse Default เพื่อให้ Test เก่าที่ไม่สนใจเรื่องนี้
+    ยังผ่านเหมือนเดิม (extract() ใช้ getattr กันไว้อยู่แล้วถ้าไม่มี Attribute นี้)"""
+
+    def __init__(
+        self,
+        prompt_token_count: int = 0,
+        candidates_token_count: int = 0,
+        thoughts_token_count: int = 0,
+        total_token_count: int | None = None,
+    ) -> None:
+        self.prompt_token_count = prompt_token_count
+        self.candidates_token_count = candidates_token_count
+        self.thoughts_token_count = thoughts_token_count
+        self.total_token_count = total_token_count
+
+
 class _FakeResponse:
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, usage_metadata: Any = None) -> None:
         self.text = text
+        self.usage_metadata = usage_metadata
 
 
 class _FakeFiles:
@@ -36,10 +55,15 @@ class _FakeModels:
     """จำลอง client.models.generate_content — Raise Error ตามคิวที่ตั้งไว้ก่อน สุดท้าย
     ค่อยสำเร็จ (หรือ Raise ตลอดถ้าคิว Error ยาวกว่าจำนวนครั้งที่ทดสอบ)"""
 
-    def __init__(self, errors_then_success: list[Exception | None]) -> None:
+    def __init__(
+        self,
+        errors_then_success: list[Exception | None],
+        usage_metadata: Any = None,
+    ) -> None:
         self._queue = list(errors_then_success)
         self.call_count = 0
         self.last_kwargs: dict[str, Any] = {}
+        self._usage_metadata = usage_metadata
 
     def generate_content(self, **kwargs: Any) -> _FakeResponse:
         self.call_count += 1
@@ -47,13 +71,17 @@ class _FakeModels:
         outcome = self._queue.pop(0) if self._queue else None
         if outcome is not None:
             raise outcome
-        return _FakeResponse(_VALID_JSON)
+        return _FakeResponse(_VALID_JSON, usage_metadata=self._usage_metadata)
 
 
 class _FakeClient:
-    def __init__(self, errors_then_success: list[Exception | None]) -> None:
+    def __init__(
+        self,
+        errors_then_success: list[Exception | None],
+        usage_metadata: Any = None,
+    ) -> None:
         self.files = _FakeFiles()
-        self.models = _FakeModels(errors_then_success)
+        self.models = _FakeModels(errors_then_success, usage_metadata=usage_metadata)
 
 
 def _server_error(code: int, status: str) -> genai_errors.ServerError:
@@ -288,3 +316,54 @@ def test_extract_corrupt_docx_raises_without_retry(tmp_path):
 
     assert client.models.call_count == 0  # อ่านไฟล์เสียซ้ำก็ผิดเหมือนเดิม ไม่ควร Retry
     assert sleep_calls == []
+
+
+# last_usage (2026-09-04) — หน้า "ค่าใช้จ่าย AI" อ่านค่านี้ต่อจาก extract() เพื่อคำนวณ
+# ค่าใช้จ่ายโดยประมาณ ต้องถูกต้องทั้งค่า Token และรีเซ็ตเป็น None ก่อนเรียกทุกครั้ง
+
+
+def test_extract_captures_last_usage_on_success():
+    usage = _FakeUsageMetadata(
+        prompt_token_count=1500, candidates_token_count=200, thoughts_token_count=50
+    )
+    client = _FakeClient([], usage_metadata=usage)
+    sleep_calls, sleep_fn = _make_sleep_recorder()
+    service = GeminiExtractionService(client=client, sleep_fn=sleep_fn)
+
+    assert service.last_usage is None  # ยังไม่เคยเรียกเลย
+    service.extract("dummy.pdf")
+
+    assert service.last_usage is not None
+    assert service.last_usage.prompt_tokens == 1500
+    assert service.last_usage.output_tokens == 250  # candidates + thoughts
+    assert service.last_usage.total_tokens == 1750  # ไม่ได้ระบุ total_token_count มา
+
+
+def test_extract_last_usage_resets_to_none_at_start_of_each_call():
+    usage = _FakeUsageMetadata(prompt_token_count=100, candidates_token_count=10)
+    client = _FakeClient([], usage_metadata=usage)
+    sleep_calls, sleep_fn = _make_sleep_recorder()
+    service = GeminiExtractionService(client=client, sleep_fn=sleep_fn)
+    service.extract("dummy.pdf")
+    assert service.last_usage is not None
+
+    # ครั้งถัดไป Fail ก่อนได้ Response เลย (Retry หมด) — last_usage ต้องกลับเป็น None
+    # ไม่ใช่ค้างค่าจาก Call ก่อนหน้า
+    failing_client = _FakeClient([_client_error(404, "NOT_FOUND")])
+    service2 = GeminiExtractionService(client=failing_client, sleep_fn=sleep_fn)
+    with pytest.raises(GeminiExtractionError):
+        service2.extract("dummy.pdf")
+    assert service2.last_usage is None
+
+
+def test_extract_last_usage_none_when_fake_response_has_no_usage_metadata():
+    """Fake Client เก่าที่ไม่ได้ตั้ง usage_metadata (Default None) ต้องไม่ทำให้ extract()
+    Error — แค่ last_usage เป็น None (Backward Compatible กับ Test อื่นๆ ที่มีอยู่แล้ว)"""
+    client = _FakeClient([])  # ไม่ระบุ usage_metadata
+    sleep_calls, sleep_fn = _make_sleep_recorder()
+    service = GeminiExtractionService(client=client, sleep_fn=sleep_fn)
+
+    result = service.extract("dummy.pdf")
+
+    assert result.vendor_name == "บริษัท ทดสอบ จำกัด"
+    assert service.last_usage is None
