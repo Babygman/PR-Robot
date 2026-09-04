@@ -29,6 +29,13 @@ google-genai==2.21.0
 # --- PDF generation (Phase 5) ---
 weasyprint==63.1
 
+# --- Office document reading for Upload (2026-09-04) ---
+# รองรับ Upload Word/Excel/CSV/TXT เพิ่มจากเดิมที่มีแค่ PDF/รูปภาพ — แตกข้อความออกมา
+# ก่อนส่งให้ Gemini อ่าน (Gemini แบบ Vision อ่านไฟล์ Office ไม่ได้โดยตรง) CSV/TXT ใช้
+# Python มาตรฐานอยู่แล้ว ไม่ต้องเพิ่ม Library
+python-docx==1.2.0
+openpyxl==3.1.5
+
 # --- Security Review (Phase 8, 2026-09-02) ---
 # ยกระดับ fastapi/python-multipart/jinja2/python-dotenv/python-jose ตามผล
 # pip-audit จริง (พบ CVE ที่แก้แล้วในเวอร์ชันใหม่กว่า) — fastapi ต้องยกใหญ่ตามไป

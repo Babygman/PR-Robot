@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import docx
+import openpyxl
 import pytest
 from google.genai import errors as genai_errors
 
@@ -22,7 +24,11 @@ class _FakeResponse:
 
 
 class _FakeFiles:
+    def __init__(self) -> None:
+        self.call_count = 0
+
     def upload(self, file: str) -> Any:
+        self.call_count += 1
         return object()
 
 
@@ -33,9 +39,11 @@ class _FakeModels:
     def __init__(self, errors_then_success: list[Exception | None]) -> None:
         self._queue = list(errors_then_success)
         self.call_count = 0
+        self.last_kwargs: dict[str, Any] = {}
 
     def generate_content(self, **kwargs: Any) -> _FakeResponse:
         self.call_count += 1
+        self.last_kwargs = kwargs
         outcome = self._queue.pop(0) if self._queue else None
         if outcome is not None:
             raise outcome
@@ -168,4 +176,115 @@ def test_extract_invalid_json_raises_without_retry():
     with pytest.raises(GeminiExtractionError, match="แปลงผลลัพธ์"):
         service.extract("dummy.pdf")
 
+    assert sleep_calls == []
+
+
+# Word/Excel/CSV/TXT (2026-09-04, Feedback จริงจากผู้ใช้) — ต้องแตกข้อความออกมาก่อนแล้ว
+# ส่งเป็น Text Content Part แทนการอัปโหลดไฟล์ดิบแบบ Vision (files.upload ต้องไม่ถูกเรียก
+# เลยสำหรับไฟล์กลุ่มนี้ — ต่างจาก PDF/รูปภาพด้านบนที่ผ่าน Vision เสมอ)
+
+
+def test_extract_docx_reads_paragraphs_and_tables_as_text(tmp_path):
+    file_path = tmp_path / "quote.docx"
+    document = docx.Document()
+    document.add_paragraph("ใบเสนอราคา จาก บริษัท ทดสอบ จำกัด")
+    table = document.add_table(rows=1, cols=2)
+    table.rows[0].cells[0].text = "กระดาษ A4"
+    table.rows[0].cells[1].text = "10 รีม"
+    document.save(file_path)
+
+    client = _FakeClient([])
+    sleep_calls, sleep_fn = _make_sleep_recorder()
+    service = GeminiExtractionService(client=client, sleep_fn=sleep_fn)
+
+    result = service.extract(str(file_path))
+
+    assert result.vendor_name == "บริษัท ทดสอบ จำกัด"
+    assert client.files.call_count == 0  # ต้องไม่ผ่าน Vision/files.upload
+    text_sent = client.models.last_kwargs["contents"][1]
+    assert "ใบเสนอราคา" in text_sent
+    assert "กระดาษ A4 | 10 รีม" in text_sent
+
+
+def test_extract_xlsx_reads_cell_values_as_text(tmp_path):
+    file_path = tmp_path / "quote.xlsx"
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Sheet1"
+    sheet.append(["Product", "Quantity", "Unit Price"])
+    sheet.append(["กระดาษ A4", 10, 120.5])
+    workbook.save(file_path)
+
+    client = _FakeClient([])
+    sleep_calls, sleep_fn = _make_sleep_recorder()
+    service = GeminiExtractionService(client=client, sleep_fn=sleep_fn)
+
+    result = service.extract(str(file_path))
+
+    assert result.vendor_name == "บริษัท ทดสอบ จำกัด"
+    assert client.files.call_count == 0
+    text_sent = client.models.last_kwargs["contents"][1]
+    assert "Sheet1" in text_sent
+    assert "กระดาษ A4 | 10 | 120.5" in text_sent
+
+
+def test_extract_csv_reads_rows_as_text(tmp_path):
+    file_path = tmp_path / "quote.csv"
+    file_path.write_text("Product,Quantity\nกระดาษ A4,10\n", encoding="utf-8")
+
+    client = _FakeClient([])
+    sleep_calls, sleep_fn = _make_sleep_recorder()
+    service = GeminiExtractionService(client=client, sleep_fn=sleep_fn)
+
+    result = service.extract(str(file_path))
+
+    assert result.vendor_name == "บริษัท ทดสอบ จำกัด"
+    assert client.files.call_count == 0
+    text_sent = client.models.last_kwargs["contents"][1]
+    assert "กระดาษ A4 | 10" in text_sent
+
+
+def test_extract_txt_reads_raw_text(tmp_path):
+    file_path = tmp_path / "note.txt"
+    file_path.write_text("ใบเสนอราคา กระดาษ A4 จำนวน 10 รีม", encoding="utf-8")
+
+    client = _FakeClient([])
+    sleep_calls, sleep_fn = _make_sleep_recorder()
+    service = GeminiExtractionService(client=client, sleep_fn=sleep_fn)
+
+    result = service.extract(str(file_path))
+
+    assert result.vendor_name == "บริษัท ทดสอบ จำกัด"
+    assert client.files.call_count == 0
+    text_sent = client.models.last_kwargs["contents"][1]
+    assert "กระดาษ A4 จำนวน 10 รีม" in text_sent
+
+
+def test_extract_empty_txt_raises_without_calling_gemini(tmp_path):
+    file_path = tmp_path / "empty.txt"
+    file_path.write_text("   \n  ", encoding="utf-8")  # มีแต่ Whitespace
+
+    client = _FakeClient([])
+    sleep_calls, sleep_fn = _make_sleep_recorder()
+    service = GeminiExtractionService(client=client, sleep_fn=sleep_fn)
+
+    with pytest.raises(GeminiExtractionError, match="ไม่พบข้อความ"):
+        service.extract(str(file_path))
+
+    assert client.models.call_count == 0  # ไม่ควรยิงไป Gemini เลยถ้าไฟล์ว่าง
+    assert sleep_calls == []
+
+
+def test_extract_corrupt_docx_raises_without_retry(tmp_path):
+    file_path = tmp_path / "broken.docx"
+    file_path.write_bytes(b"not a real docx file")
+
+    client = _FakeClient([])
+    sleep_calls, sleep_fn = _make_sleep_recorder()
+    service = GeminiExtractionService(client=client, max_attempts=3, sleep_fn=sleep_fn)
+
+    with pytest.raises(GeminiExtractionError, match="อ่านเนื้อหาไฟล์ไม่สำเร็จ"):
+        service.extract(str(file_path))
+
+    assert client.models.call_count == 0  # อ่านไฟล์เสียซ้ำก็ผิดเหมือนเดิม ไม่ควร Retry
     assert sleep_calls == []

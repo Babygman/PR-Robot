@@ -50,7 +50,24 @@ from app.services.gemini_extraction import GeminiExtractionError, GeminiExtracti
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-_ALLOWED_CONTENT_TYPES = {"application/pdf", "image/png", "image/jpeg", "image/webp"}
+# Word/Excel/CSV/TXT (Feedback จริงจากผู้ใช้ 2026-09-04) — ตรวจสอบทั้ง Content-Type และ
+# นามสกุลไฟล์คู่กัน เพราะ Browser/OS บางตัวส่ง Content-Type ของ .csv/.docx มาไม่ตรงกัน
+# เสมอไป (เช่น .csv บาง Client ส่งเป็น "application/vnd.ms-excel") — ผ่านแค่ทางใดทางหนึ่ง
+# ก็พอ กันปฏิเสธไฟล์ที่ถูกต้องผิดพลาด
+_ALLOWED_CONTENT_TYPES = {
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",  # .xlsx
+    "text/csv",
+    "application/vnd.ms-excel",  # บาง Browser/Windows ส่ง .csv มาเป็น Content-Type นี้
+    "text/plain",  # .txt
+}
+_ALLOWED_EXTENSIONS = {
+    ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".docx", ".xlsx", ".csv", ".txt",
+}
 _MAX_UPLOAD_BYTES = 15 * 1024 * 1024  # 15 MB
 
 
@@ -66,10 +83,11 @@ async def upload_document(
     current_user: User = Depends(get_current_user),
     extraction_service: GeminiExtractionService = Depends(get_extraction_service),
 ) -> SourceDocument:
-    if file.content_type not in _ALLOWED_CONTENT_TYPES:
+    file_suffix = Path(file.filename or "").suffix.lower()
+    if file.content_type not in _ALLOWED_CONTENT_TYPES and file_suffix not in _ALLOWED_EXTENSIONS:
         raise HTTPException(
             status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            f"รองรับเฉพาะไฟล์ PDF/PNG/JPEG/WEBP (ได้รับ {file.content_type})",
+            f"รองรับเฉพาะไฟล์ PDF/PNG/JPEG/WEBP/DOCX/XLSX/CSV/TXT (ได้รับ {file.content_type})",
         )
 
     content = await file.read()

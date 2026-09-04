@@ -595,6 +595,40 @@ Downgrade → Upgrade, ยืนยัน Unique Constraint คู่ทำง�
 ต่อได้อิสระ, Revise ซ้ำจากฉบับที่ถูก Revise ไปแล้วถูกปฏิเสธ, Revise ซ้ำหลายรอบเพิ่ม
 `revision` ถูกต้อง, 404/401, PDF แสดง "Rev.N" ถูกต้อง)
 
+## 4i. Follow-up UI Fix รอบ 4 + รองรับ Word/Excel/CSV/TXT (2026-09-04)
+
+**Upgrade Gemini API ออกจาก Free Tier:** ผู้ใช้ผูก Google Cloud Billing Account แล้ว —
+API Key เดิมอัปเกรดเป็น Tier 1 อัตโนมัติ ไม่ต้องแก้โค้ด/`.env` ฝั่งเราเลย
+
+**Progress ระหว่าง Upload/AI อ่านข้อมูล (Feedback จริงจากผู้ใช้):**
+- แสดง Progress แยก 2 ช่วงต่อไฟล์ ("กำลังอัปโหลดไฟล์ X/N" → "AI กำลังอ่านข้อมูลไฟล์
+  X/N") แทนข้อความนิ่งๆ แบบเดิม
+- ป้องกันออกจากหน้าโดยไม่ตั้งใจระหว่างประมวลผล ด้วย `beforeunload` Confirm Dialog
+  (ครอบคลุม Back/Reload/ปิดแท็บ) + ล็อกเมนู Nav ชั่วคราว
+- ปรับเป็น Popup กลางจอ (Modal Overlay) แสดง Progress เฉพาะช่วง "AI กำลังอ่านข้อมูล"
+  (ช่วง Upload สั้นๆ ก่อนหน้ายังใช้ข้อความใต้ปุ่มแบบเดิม ไม่มี Popup) — เปิดค้างตลอดทั้ง
+  Batch ปิดอัตโนมัติเมื่อไฟล์สุดท้ายอ่านเสร็จ
+
+**รองรับ Word/Excel/CSV/TXT (Feedback จริงจากผู้ใช้):** เดิมรองรับเฉพาะ PDF/รูปภาพ
+เพราะอ่านผ่าน Gemini แบบ Vision (`files.upload`) โดยตรง ซึ่งใช้กับไฟล์ Office ไม่ได้ —
+แก้โดยแตกข้อความออกมาก่อนสำหรับไฟล์กลุ่มนี้ แล้วส่งเป็น Text Content Part แทน:
+- `.docx` → `python-docx` อ่านทั้ง Paragraph และตาราง
+- `.xlsx` → `openpyxl` อ่านค่าทุกเซลล์ทุก Sheet (`data_only=True` เอาค่าที่คำนวณแล้ว
+  ไม่ใช่สูตร)
+- `.csv`/`.txt` → Python มาตรฐาน ไม่ต้องเพิ่ม Library
+- Endpoint `/documents/upload` ตรวจสอบทั้ง Content-Type และนามสกุลไฟล์คู่กัน (ผ่านทาง
+  ใดทางหนึ่งพอ) เพราะ Browser/OS บางตัวส่ง Content-Type ของ `.csv`/`.docx` ไม่ตรงกันเสมอ
+  ไป
+- อ่านไฟล์เสีย/ว่างเปล่าเป็น Error ถาวร (ไม่ Retry — ต่างจาก Error จาก Gemini API เอง
+  ที่ Retry ได้) Fail ทันทีก่อนยิง Request ไป Gemini
+- ข้อจำกัด: วาง (Ctrl+V/Cmd+V) จาก Clipboard ใช้ได้เฉพาะรูปภาพเท่านั้น — ไฟล์ Office
+  ต้องเลือกไฟล์หรือลากวางเท่านั้น
+
+**Verification:** `ruff check .` สะอาด, `pytest` ผ่านทั้งหมด 78/78 (เพิ่ม 7 Test:
+6 ใน `test_gemini_extraction.py` ครอบคลุมการแตกข้อความแต่ละประเภท + ไฟล์ว่าง/ไฟล์เสีย
+ไม่ Retry + ยืนยันไม่เรียก Vision `files.upload` สำหรับไฟล์กลุ่มนี้, 1 ใน
+`test_documents.py` ยืนยัน Endpoint ยอมรับทั้ง 4 ประเภทใหม่)
+
 ## 5. Roadmap (แบ่ง Phase ตามมาตรฐาน — รออนุมัติก่อนเริ่มแต่ละ Phase)
 
 | Phase | เนื้อหา | Output |

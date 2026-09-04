@@ -60,10 +60,12 @@ def test_upload_requires_login(client: TestClient):
 
 
 def test_upload_rejects_unsupported_content_type(client: TestClient, plain_user: User):
+    # .txt กลายเป็นชนิดที่รองรับแล้ว (2026-09-04 — เพิ่ม Word/Excel/CSV/TXT) จึงเปลี่ยน
+    # มาใช้ .zip แทนเพื่อทดสอบชนิดไฟล์ที่ยังไม่รองรับจริงๆ
     _login(client)
     res = client.post(
         "/documents/upload",
-        files={"file": ("q.txt", io.BytesIO(b"hello"), "text/plain")},
+        files={"file": ("q.zip", io.BytesIO(b"PK\x03\x04fake"), "application/zip")},
         data={"doc_type": "quotation"},
     )
     assert res.status_code == 415
@@ -86,6 +88,38 @@ def test_upload_success_stores_extraction(client: TestClient, plain_user: User, 
         assert body["ai_extraction_raw_json"]["items"][0]["product_name"] == "SILICONE PAPER"
         assert body["ai_extraction_raw_json"]["items"][0]["color"] == "Blonde"
         assert float(body["ai_confidence"]) == 0.92
+    finally:
+        del app.dependency_overrides[get_extraction_service]
+
+
+def test_upload_accepts_word_excel_csv_txt(client: TestClient, plain_user: User):
+    """รองรับ Word/Excel/CSV/TXT เพิ่มจากเดิม (Feedback จริงจากผู้ใช้ 2026-09-04) —
+    ตรวจแค่ระดับ Endpoint ว่า Content-Type/นามสกุลผ่านแล้วเรียก Extraction Service
+    ต่อสำเร็จ (Logic แตกข้อความจริงทดสอบแยกใน tests/test_gemini_extraction.py)"""
+    app.dependency_overrides[get_extraction_service] = lambda: _FakeExtractionServiceSuccess()
+    try:
+        _login(client)
+        cases = [
+            (
+                "q.docx",
+                b"fake docx bytes",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ),
+            (
+                "q.xlsx",
+                b"fake xlsx bytes",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ),
+            ("q.csv", b"Product,Qty\nA4,10\n", "text/csv"),
+            ("q.txt", b"hello quotation", "text/plain"),
+        ]
+        for filename, content, content_type in cases:
+            res = client.post(
+                "/documents/upload",
+                files={"file": (filename, io.BytesIO(content), content_type)},
+                data={"doc_type": "quotation"},
+            )
+            assert res.status_code == 201, f"{filename} ควร Upload ผ่าน แต่ได้ {res.text}"
     finally:
         del app.dependency_overrides[get_extraction_service]
 

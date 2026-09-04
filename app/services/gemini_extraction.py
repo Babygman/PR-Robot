@@ -8,10 +8,14 @@ Client ถูกออกแบบให้ Inject แทนที่ได้ (
 """
 from __future__ import annotations
 
+import csv
 import time
 from collections.abc import Callable
+from pathlib import Path
 
+import docx
 import httpx
+import openpyxl
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
@@ -46,6 +50,72 @@ _EXTRACTION_PROMPT = """\
 
 กฎสำคัญ: ถ้าอ่านข้อมูลใดไม่ได้หรือไม่มีในเอกสาร ให้เว้นว่างไว้ (null) ห้ามเดาหรือสร้างข้อมูลที่ไม่มีในเอกสารขึ้นมาเอง
 """
+
+
+# รองรับ Word/Excel/CSV/TXT (Feedback จริงจากผู้ใช้ 2026-09-04) — Gemini แบบ Vision (ที่
+# ใช้กับ PDF/รูปภาพผ่าน files.upload ด้านล่าง) อ่านไฟล์ Office ไม่ได้โดยตรง จึงต้องแตก
+# ข้อความออกมาก่อนแล้วส่งเป็น Text Content Part แทนการอัปโหลดไฟล์ดิบ — แยก Path กันตาม
+# นามสกุลไฟล์ (ตรวจสอบชนิดไฟล์ที่ Endpoint /documents/upload ให้แล้วชั้นหนึ่ง)
+_TEXT_EXTRACT_SUFFIXES = {".docx", ".xlsx", ".csv", ".txt"}
+
+
+def _extract_docx_text(file_path: str) -> str:
+    document = docx.Document(file_path)
+    lines = [p.text for p in document.paragraphs if p.text.strip()]
+    for table in document.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells]
+            if any(cells):
+                lines.append(" | ".join(cells))
+    return "\n".join(lines)
+
+
+def _cell_to_str(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _extract_xlsx_text(file_path: str) -> str:
+    workbook = openpyxl.load_workbook(file_path, data_only=True, read_only=True)
+    lines: list[str] = []
+    for sheet in workbook.worksheets:
+        lines.append(f"--- Sheet: {sheet.title} ---")
+        for row in sheet.iter_rows(values_only=True):
+            cells = [_cell_to_str(v) for v in row]
+            if any(cells):
+                lines.append(" | ".join(cells))
+    return "\n".join(lines)
+
+
+def _extract_csv_text(file_path: str) -> str:
+    lines: list[str] = []
+    with open(file_path, newline="", encoding="utf-8-sig", errors="replace") as f:
+        for row in csv.reader(f):
+            if any(cell.strip() for cell in row):
+                lines.append(" | ".join(row))
+    return "\n".join(lines)
+
+
+def _extract_txt_text(file_path: str) -> str:
+    return Path(file_path).read_text(encoding="utf-8-sig", errors="replace")
+
+
+def _extract_text_content(file_path: str, suffix: str) -> str:
+    """อ่านข้อความจากไฟล์ Office/CSV/TXT ตามนามสกุล — ให้ Exception หลุดออกไปตรงๆ ถ้า
+    ไฟล์เสีย/อ่านไม่ได้ (ผู้เรียกจะห่อเป็น GeminiExtractionError เอง ไม่ Retry เพราะ
+    อ่านซ้ำก็ผิดเหมือนเดิมแน่ๆ ไม่ใช่ Error ชั่วคราวแบบเรียก Gemini API)"""
+    if suffix == ".docx":
+        return _extract_docx_text(file_path)
+    if suffix == ".xlsx":
+        return _extract_xlsx_text(file_path)
+    if suffix == ".csv":
+        return _extract_csv_text(file_path)
+    if suffix == ".txt":
+        return _extract_txt_text(file_path)
+    raise ValueError(f"ไม่รองรับการแตกข้อความจากไฟล์นามสกุล {suffix}")
 
 
 # Auto-Retry (เพิ่ม 2026-09-03 หลังเจอจริงตอน UAT Walkthrough): Gemini ตอบ
@@ -104,15 +174,33 @@ class GeminiExtractionService:
         self._sleep = sleep_fn
 
     def extract(self, file_path: str) -> ExtractionResult:
+        # Word/Excel/CSV/TXT (2026-09-04): แตกข้อความออกมาก่อนนอก Retry Loop เพราะการ
+        # อ่านไฟล์เสีย/Parse ไม่ได้เป็น Error ถาวร Retry ไปก็ได้ผลเดิม (ต่างจาก Error
+        # จาก Gemini API ที่ชั่วคราวได้) — PDF/รูปภาพยังใช้ Vision ผ่าน files.upload
+        # เหมือนเดิมทุกประการ (text_content เป็น None)
+        suffix = Path(file_path).suffix.lower()
+        text_content: str | None = None
+        if suffix in _TEXT_EXTRACT_SUFFIXES:
+            try:
+                text_content = _extract_text_content(file_path, suffix)
+            except Exception as exc:  # noqa: BLE001
+                raise GeminiExtractionError(f"อ่านเนื้อหาไฟล์ไม่สำเร็จ: {exc}") from exc
+            if not text_content.strip():
+                raise GeminiExtractionError("ไม่พบข้อความในไฟล์ (ไฟล์อาจว่างเปล่า)")
+
         response = None
         last_exc: Exception | None = None
 
         for attempt in range(1, self._max_attempts + 1):
             try:
-                uploaded_file = self._client.files.upload(file=file_path)
+                if text_content is not None:
+                    contents = [_EXTRACTION_PROMPT, text_content]
+                else:
+                    uploaded_file = self._client.files.upload(file=file_path)
+                    contents = [_EXTRACTION_PROMPT, uploaded_file]
                 response = self._client.models.generate_content(
                     model=self._model,
-                    contents=[_EXTRACTION_PROMPT, uploaded_file],
+                    contents=contents,
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
                         response_json_schema=ExtractionResult.model_json_schema(),

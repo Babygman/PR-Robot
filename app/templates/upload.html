@@ -4,7 +4,7 @@
 <h1>อัปโหลดเอกสารต้นทาง</h1>
 <p class="muted">
   อัปโหลดเอกสารได้พร้อมกันหลายไฟล์ (ใบเสนอราคา / ใบยืมสินค้า / ใบส่งสินค้า / ใบรับของ —
-  PDF/PNG/JPEG/WEBP) AI จะอ่านข้อมูลและเดาประเภทเอกสารให้อัตโนมัติ แก้ไขประเภทได้ถ้า AI เดาผิด
+  PDF/PNG/JPEG/WEBP/DOCX/XLSX/CSV/TXT) AI จะอ่านข้อมูลและเดาประเภทเอกสารให้อัตโนมัติ แก้ไขประเภทได้ถ้า AI เดาผิด
   จากนั้นเลือกเอกสารที่ต้องการแล้วไปสร้าง PR — ระบบจะรวมรายการสินค้าจากทุกเอกสารที่เลือกให้
   ตรวจทาน/แก้ไขอีกครั้งในขั้นตอนเดียวตอนสร้าง PR
 </p>
@@ -13,14 +13,15 @@
   <form id="upload-form">
     <div class="field">
       <label for="doc-files">ไฟล์เอกสาร (เลือกได้หลายไฟล์)</label>
-      <input type="file" id="doc-files" accept="application/pdf,image/png,image/jpeg,image/webp" multiple>
+      <input type="file" id="doc-files" accept="application/pdf,image/png,image/jpeg,image/webp,.docx,.xlsx,.csv,.txt" multiple>
     </div>
     <div id="drop-zone" class="drop-zone">
       <div>
         ลากไฟล์มาวางตรงนี้ (หลายไฟล์พร้อมกันได้)<br>
         หรือ Capture/Copy ภาพมาแล้วกด <strong>Ctrl+V</strong> (Windows) / <strong>Cmd+V</strong> (Mac) วางตรงนี้ได้เลย
         ไม่ต้อง Save เป็นไฟล์ก่อน<br>
-        <span class="muted">แนะนำ Capture เฉพาะส่วนที่ต้องการ ช่วยให้ AI อ่านข้อมูลได้แม่นยำขึ้น</span>
+        <span class="muted">แนะนำ Capture เฉพาะส่วนที่ต้องการ ช่วยให้ AI อ่านข้อมูลได้แม่นยำขึ้น</span><br>
+        <span class="muted">ไฟล์ Word/Excel/CSV/TXT วางแบบ Ctrl+V/Cmd+V ไม่ได้ — ต้องเลือกไฟล์หรือลากมาวางเท่านั้น</span>
       </div>
     </div>
     <div class="hidden" id="pending-list-wrap">
@@ -205,11 +206,20 @@ function addPendingFiles(fileList) {
   renderPendingList();
 }
 
+// ไอคอนตามนามสกุลไฟล์สำหรับไฟล์ที่ไม่ใช่รูปภาพ (2026-09-04 — เพิ่ม Word/Excel/CSV/TXT
+// นอกเหนือจาก PDF เดิม) ใช้นามสกุลไฟล์ตัดสินเพราะ item.file.type ของ .docx/.xlsx/.csv
+// จาก Browser ไม่แน่นอนเท่า PDF/รูปภาพ
+function pendingFileIconLabel(fileName) {
+  const ext = (fileName.split(".").pop() || "").toLowerCase();
+  const labels = { docx: "DOCX", xlsx: "XLSX", csv: "CSV", txt: "TXT" };
+  return labels[ext] || "PDF";
+}
+
 function pendingItemHtml(item) {
   const isImage = item.file.type.startsWith("image/");
   const thumb = isImage
     ? `<img src="${URL.createObjectURL(item.file)}" alt="${escapeHtml(item.file.name)}">`
-    : `<div class="pending-file-icon">PDF</div>`;
+    : `<div class="pending-file-icon">${pendingFileIconLabel(item.file.name)}</div>`;
   return `<div class="pending-item" data-uid="${item.uid}">
     <button type="button" class="pending-remove" data-uid="${item.uid}" title="ลบ">×</button>
     ${thumb}
