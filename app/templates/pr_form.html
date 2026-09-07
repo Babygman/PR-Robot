@@ -3,295 +3,384 @@
 <head>
 <meta charset="utf-8">
 <style>
+  {#- Redesign (2026-09-07): แนว Swiss/Administrative ตาม Design Spec ที่ Product
+     Owner อนุมัติ (เดิมเป็น Boxed-table แบบมีกรอบทุกช่อง เปลี่ยนเป็นเส้น Hairline
+     คั่นแทน) — จุดสำคัญที่ต่างจาก Mockup ตอน Preview (ที่ Verify ด้วย Playwright/
+     Chromium): PDF จริงเรนเดอร์ด้วย WeasyPrint ซึ่งมี CSS Engine คนละตัว ต้อง Verify
+     แยกต่างหาก พบ 2 จุดที่ WeasyPrint ไม่รองรับแบบ Chromium:
+       1) -webkit-line-clamp ใช้ไม่ได้เลย (WeasyPrint ไม่ใช่ WebKit) — ใช้ Div ลูกใน
+          td กำหนด height ตายตัว + overflow:hidden แทน (ทดสอบแล้วว่า td ที่ตั้ง
+          height ตรงๆ ไม่ Clip เนื้อหา แต่ Div ลูกที่ตั้ง height ตรงๆ Clip ได้จริง)
+       2) Flexbox/Grid ใช้ได้ปกติ (Weasyprint 63.1 รองรับ) ยืนยันด้วยการ Render จริง
+     Tier ความหนาแน่นของตาราง (จาก Spec): ≤12→9.5mm/10px, 13-20→7mm/8.5px,
+     21-32→5.6mm/7.5px, 33-36→4.4mm/6px — เกิน 36 แถว (Business ปัจจุบันไม่มี Cap
+     บังคับระดับ Schema) ถอยไปใช้ Layout แบบ Block เดิม (ไม่ Fixed-height/overflow:
+     hidden) เพื่อให้ล้นไปพิมพ์หน้า 2 ต่อได้ตามปกติ ไม่ตัดข้อมูลทิ้งเงียบๆ เด็ดขาด —
+     ดู .page.tier-overflow ด้านล่าง #}
+
+  @font-face {
+    font-family: 'Archivo';
+    src: url('../static/fonts/Archivo-Regular.ttf');
+    font-weight: 400;
+  }
+  @font-face {
+    font-family: 'Archivo';
+    src: url('../static/fonts/Archivo-SemiBold.ttf');
+    font-weight: 600;
+  }
+  @font-face {
+    font-family: 'Archivo';
+    src: url('../static/fonts/Archivo-Bold.ttf');
+    font-weight: 700;
+  }
+  @font-face {
+    font-family: 'Source Serif 4';
+    src: url('../static/fonts/SourceSerif4-SemiBold.ttf');
+    font-weight: 600;
+  }
+  @font-face {
+    font-family: 'JetBrains Mono';
+    src: url('../static/fonts/JetBrainsMono-Regular.ttf');
+    font-weight: 400;
+  }
+  @font-face {
+    font-family: 'JetBrains Mono';
+    src: url('../static/fonts/JetBrainsMono-Medium.ttf');
+    font-weight: 500;
+  }
+  @font-face {
+    font-family: 'JetBrains Mono';
+    src: url('../static/fonts/JetBrainsMono-Bold.ttf');
+    font-weight: 700;
+  }
+
   @page {
     size: A4;
-    margin: 14mm 12mm 12mm 12mm;
-  }
-  * { box-sizing: border-box; }
-  body {
-    font-family: "Noto Sans Thai", "Noto Sans", "TH Sarabun New", sans-serif;
-    font-size: 10.5pt;
-    color: #111;
     margin: 0;
   }
-  table { border-collapse: collapse; width: 100%; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  .mono { font-family: 'JetBrains Mono', 'Noto Sans Thai', monospace; }
 
-  /* ---------- Header ---------- */
-  .header { width: 100%; margin-bottom: 3mm; }
-  .header td { vertical-align: top; padding: 0; }
-  .badge {
-    display: inline-block;
-    background: #4a4a4a;
-    color: #fff;
-    font-weight: bold;
-    font-size: 10pt;
-    padding: 3mm 4mm;
-    border-radius: 4mm;
-    letter-spacing: 0.3pt;
+  /* ---------------- Page box — fixed height, flex column. Only .items-wrap flexes. ---------------- */
+  .page {
+    width: 210mm;
+    height: 297mm;
+    padding: 11mm 12mm 9mm 12mm;
+    display: flex;
+    flex-direction: column;
+    background: #fdfcfa;
+    color: #16181c;
+    font-family: Archivo, "Noto Sans Thai", sans-serif;
+    overflow: hidden;
   }
-  .company-th { font-weight: bold; font-size: 11pt; margin: 0 0 1mm 0; }
-  .company-en { font-weight: bold; font-size: 10.5pt; margin: 0 0 1mm 0; }
-  .company-addr { font-size: 8pt; line-height: 1.35; color: #333; }
-  .company-block { text-align: center; }
-  .brand {
-    text-align: right;
-    font-size: 20pt;
+  /* Fallback สำหรับ PR ที่มีรายการเกิน 36 แถว (ไม่มี Tier รองรับตาม Spec) — เลิก
+     Fixed-height/overflow:hidden ทั้งหมด ปล่อยให้ไหลข้ามหน้าได้ตามปกติแบบ Block
+     Layout เดิม กัน Data Loss เด็ดขาด ไม่ว่าจะเกิดขึ้นยากแค่ไหนก็ตาม */
+  .page.tier-overflow {
+    height: auto;
+    min-height: 297mm;
+    display: block;
+    overflow: visible;
+  }
+  .page.tier-overflow .items-wrap {
+    display: block;
+    flex: none;
+    overflow: visible;
+  }
+  .page.tier-overflow .cell-text {
+    height: auto;
+    overflow: visible;
+  }
+
+  /* ---------------- Header ---------------- */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex: 0 0 auto;
+  }
+  .header-left { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+  .header-title-row { display: flex; align-items: center; }
+  .tick { display: inline-block; width: 7px; height: 13px; background: #1d3557; margin-right: 6px; }
+  .doc-title {
+    font-size: 13px;
     font-weight: 700;
-    color: #1a3a6b;
-    letter-spacing: 1pt;
-    font-family: Georgia, "Times New Roman", serif;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: #16181c;
   }
+  .header-addr {
+    margin-top: 5px;
+    font-size: 7.2px;
+    color: #6d7078;
+    line-height: 1.4;
+  }
+  .header-right { text-align: right; flex: 0 0 auto; white-space: nowrap; margin-left: 6mm; }
+  .wordmark {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-weight: 600;
+    font-size: 19px;
+    color: #1d3557;
+    letter-spacing: 0.03em;
+  }
+  .company-th { margin-top: 3px; font-size: 9.5px; font-weight: 600; color: #16181c; }
+  .company-en { margin-top: 1px; font-size: 8.5px; color: #6d7078; }
+  .header-rule { flex: 0 0 auto; margin-top: 7mm; border: none; border-top: 1.5px solid #1d3557; }
 
-  /* ---------- No./Date + Section/Division ---------- */
-  .meta-table { margin-top: 3mm; }
-  .meta-table td {
-    border: 1pt solid #000;
-    padding: 2.5mm 3mm;
-    vertical-align: top;
-  }
-  .meta-left { width: 62%; }
-  .meta-right { width: 38%; }
-  .field-line { margin-bottom: 3mm; }
-  .field-line:last-child { margin-bottom: 0; }
-  .field-label { font-weight: normal; }
-  .field-value {
-    border-bottom: 0.75pt solid #000;
-    display: inline-block;
-    min-width: 60mm;
-    padding-left: 2mm;
-  }
-
-  /* ---------- Items table ---------- */
-  .items-table { margin-top: 3mm; }
-  .items-table th, .items-table td {
-    border: 1pt solid #000;
-    padding: 1.5mm 2mm;
-    font-size: 9.5pt;
-  }
-  .items-table th { font-weight: bold; text-align: center; background: #f2f2f2; }
-  .items-table td.center { text-align: center; }
-  .items-table td.item-row { height: 8mm; vertical-align: top; }
-  .col-item { width: 6%; }
-  .col-acct { width: 11%; }
-  .col-desc { width: 32%; }
-  .col-qty { width: 9%; }
-  .col-reqdate { width: 11%; }
-  .col-reason { width: 21%; }
-  .col-refpo { width: 10%; }
-
-  /* ---------- Budget control ---------- */
-  .budget-wrap { margin-top: 4mm; display: flex; }
-  .budget-box {
-    border: 1.25pt solid #000;
-    border-radius: 2mm;
-    padding: 3mm;
-    width: 62%;
-  }
-  .budget-title { font-weight: bold; font-size: 11pt; margin-bottom: 2mm; }
-  .budget-table td, .budget-table th {
-    border: 1pt solid #000;
-    padding: 1.5mm 2mm;
-    font-size: 9.5pt;
-  }
-  .budget-table th { text-align: center; font-weight: bold; }
-  .budget-table td.label { width: 40%; }
-  .budget-table td.num { text-align: right; }
-
-  /* ---------- Remark ---------- */
-  .remark-box {
-    margin-top: 4mm;
-    border: 1pt solid #000;
-    border-radius: 1.5mm;
-    padding: 4mm 3mm 3mm 3mm;
-    position: relative;
-    min-height: 18mm;
-  }
-  .remark-label {
-    position: absolute;
-    top: -3mm;
-    left: 3mm;
-    background: #fff;
-    padding: 0 1.5mm;
-    font-weight: bold;
-    font-size: 9pt;
-  }
-  .remark-text { font-size: 9.5pt; white-space: pre-wrap; }
-
-  /* ---------- Signatures ---------- */
-  .sign-wrap { margin-top: 5mm; width: 100%; }
-  .sign-wrap td { width: 25%; padding: 0 1.5mm; vertical-align: top; }
-  .sign-box {
-    border: 1pt solid #000;
-    border-radius: 1.5mm;
-    padding: 4mm 2mm 3mm 2mm;
-    position: relative;
-    height: 20mm;
-    text-align: center;
-  }
-  .sign-label {
-    position: absolute;
-    top: -3mm;
-    left: 3mm;
-    background: #fff;
-    padding: 0 1.5mm;
-    font-weight: bold;
-    font-size: 8.5pt;
-  }
-  .sign-name { margin-top: 5mm; font-size: 9.5pt; }
-
-  /* ---------- Footer ---------- */
-  .footer {
+  /* ---------------- Meta strip ---------------- */
+  .meta-strip {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
     margin-top: 5mm;
-    text-align: right;
-    font-size: 8pt;
-    color: #333;
   }
+  .meta-field { padding: 0 3mm; border-left: 1px solid #e6e2db; }
+  .meta-field:first-child { padding-left: 0; border-left: none; }
+  .meta-label {
+    font-size: 7px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #8a8d94;
+  }
+  .meta-value { margin-top: 2.5px; font-size: 10.5px; color: #16181c; }
+  .meta-value.navy { color: #1d3557; font-weight: 600; }
+
+  /* ---------------- Items table — the only flexible region ---------------- */
+  .items-wrap { flex: 1 1 auto; min-height: 0; overflow: hidden; margin-top: 5mm; }
+  table.items { width: 100%; table-layout: fixed; border-collapse: collapse; }
+  .items col.c-no   { width: 5%; }
+  .items col.c-acct { width: 11%; }
+  .items col.c-desc { width: 38%; }
+  .items col.c-qty  { width: 12%; }
+  .items col.c-req  { width: 11%; }
+  .items col.c-reason { width: 14%; }
+  .items col.c-po   { width: 9%; }
+
+  .items thead th {
+    background: #f2efe9;
+    border-bottom: 1px solid #dcd8d1;
+    text-transform: uppercase;
+    font-size: 7.5px;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    color: #16181c;
+    text-align: left;
+    padding: 3px 5px;
+  }
+  .items thead th.num { text-align: right; }
+  .items thead th.center { text-align: center; }
+
+  .items tbody td { border-bottom: 1px solid #e6e2db; padding: 0 5px; vertical-align: middle; }
+
+  .cell-text { overflow: hidden; color: #16181c; }
+  .cell-text.muted { color: #6d7078; }
+  .cell-text.num { text-align: right; }
+  .cell-text.center { text-align: center; }
+  td.no-cell .cell-text { color: #6d7078; }
+
+  /* Tier ความหนาแน่นตามจำนวนแถว (จาก Spec) — คุม font-size + Height ที่ Clip พอดี 2
+     บรรทัด (line-height x font-size x 2) ของ .cell-text ในแต่ละ Tier */
+  .tier-a .items thead th, .tier-a .cell-text { font-size: 10px; }
+  .tier-a .cell-text { line-height: 1.3; height: 26px; }
+
+  .tier-b .items thead th, .tier-b .cell-text { font-size: 8.5px; }
+  .tier-b .cell-text { line-height: 1.28; height: 21.76px; }
+
+  .tier-c .items thead th, .tier-c .cell-text { font-size: 7.2px; }
+  .tier-c .cell-text { line-height: 1.15; height: 16.56px; }
+
+  .tier-d .items thead th, .tier-d .cell-text { font-size: 5.8px; }
+  .tier-d .cell-text { line-height: 1.15; height: 13.34px; }
+
+  .tier-overflow .items thead th, .tier-overflow .cell-text { font-size: 7.5px; }
+  .tier-overflow .cell-text { line-height: 1.25; padding: 2px 0; }
+
+  /* ---------------- Bottom block — always pinned to the sheet's bottom ----------------
+     สำคัญมาก (พบจาก Test จริง 2026-09-07): WeasyPrint 63.1 คำนวณ Free Space ของ
+     flex:1 Sibling (items-wrap) ผิดถ้า bottom-block ใช้ flex-basis:auto (เว้นพื้นที่
+     ให้น้อยเกินจริง ดัน bottom-block ล้นไปหน้า 2 ทุกครั้งไม่ว่า items จะน้อยแค่ไหนก็
+     ตาม) ต้องกำหนด flex-basis เป็นค่าตายตัว (วัดจาก Render จริง = 77.55mm ปัดขึ้นเป็น
+     78mm) ถึงจะ Reserve พื้นที่ถูกต้อง — ถ้าแก้ไข Bottom Block ในอนาคตจนความสูงจริง
+     เปลี่ยน ต้องวัดใหม่ด้วย Playwright/WeasyPrint จริง ห้ามคำนวณเอามือแล้วเชื่อเลย */
+  .bottom-block { flex: 0 0 85mm; overflow: hidden; }
+  .bb-grid { display: grid; grid-template-columns: 1.05fr 1fr; gap: 8mm; margin-top: 4mm; }
+  .budget-title, .remark-title {
+    font-size: 7.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #8a8d94;
+    margin-bottom: 2mm;
+  }
+  .budget-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 1px solid #e6e2db;
+    padding: 1.6mm 0;
+    font-size: 9.5px;
+  }
+  .budget-row:last-child { border-bottom: 1px solid #dcd8d1; font-weight: 700; font-size: 11px; }
+  .budget-row .bv { color: #1d3557; }
+
+  .remark-box {
+    background: #f7f5f1;
+    border: 1px solid #e6e2db;
+    height: 22mm;
+    overflow: hidden;
+    padding: 2mm 3mm;
+    font-size: 8.5px;
+    color: #33363c;
+    white-space: pre-wrap;
+  }
+
+  .sign-gap { height: 7mm; }
+  .sign-rule { border: none; border-top: 1px solid #dcd8d1; margin: 0; }
+  .sign-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8mm; margin-top: 5mm; }
+  .sign-label { font-size: 7px; text-transform: uppercase; letter-spacing: 0.14em; color: #8a8d94; }
+  .sign-line {
+    margin-top: 8mm;
+    border-top: 1px solid #16181c;
+    padding-top: 1.6mm;
+    font-size: 8.5px;
+    color: #16181c;
+    text-align: center;
+    min-height: 3mm;
+  }
+  .sign-line.placeholder { color: #b7b9be; }
+
+  .footer { display: flex; justify-content: space-between; margin-top: 5mm; font-size: 8px; color: #6d7078; }
 </style>
 </head>
 <body>
 
-  <table class="header">
-    <tr>
-      <td style="width: 22%;"><span class="badge">PURCHASING REQUISITION</span></td>
-      <td style="width: 56%;" class="company-block">
-        <div class="company-th">บริษัท ซันสตาร์ เคมิคัล (ประเทศไทย) จำกัด</div>
-        <div class="company-en">Sunstar Chemical (Thailand) Co., Ltd.</div>
-        <div class="company-addr">
-          624 หมู่ 4 นิคมอุตสาหกรรมบางปู ซอย 7 เอ ถ.สุขุมวิท ต.แพรกษา<br>
-          อ.เมืองสมุทรปราการ จ.สมุทรปราการ 10280<br>
-          624 MOO 4 BANGPOO INDUSTRIAL ESTATE SOI 7A, SUKHUMVIT Rd., PRAKSA,<br>
-          MUANG SAMUTPRAKARN, SAMUTPRAKARN 10280<br>
-          Tel: +66 2709 4531&nbsp;&nbsp; Fax: +66 2324 0310
-        </div>
-      </td>
-      <td style="width: 22%;">
-        <div class="brand">SUNSTAR</div>
-      </td>
-    </tr>
-  </table>
+{% set item_count = display_items | length %}
+{% if item_count <= 12 %}
+  {% set tier = 'tier-a' %}
+{% elif item_count <= 20 %}
+  {% set tier = 'tier-b' %}
+{% elif item_count <= 32 %}
+  {% set tier = 'tier-c' %}
+{% elif item_count <= 36 %}
+  {% set tier = 'tier-d' %}
+{% else %}
+  {% set tier = 'tier-overflow' %}
+{% endif %}
 
-  <table class="meta-table">
-    <tr>
-      <td class="meta-left">
-        <div class="field-line">
-          <span class="field-label">Section</span>
-          <span class="field-value">{{ pr.section }}</span>
-        </div>
-        <div class="field-line">
-          <span class="field-label">Division</span>
-          <span class="field-value">{{ pr.division }}</span>
-        </div>
-      </td>
-      <td class="meta-right">
-        <div class="field-line">
-          <span class="field-label">No.</span>
-          <span class="field-value">{{ pr.pr_no }}</span>
-        </div>
-        <div class="field-line">
-          <span class="field-label">Date</span>
-          <span class="field-value">{{ pr.doc_date }}</span>
-        </div>
-      </td>
-    </tr>
-  </table>
+<div class="page {{ tier }}">
 
-  <table class="items-table">
-    <thead>
-      <tr>
-        <th class="col-item">Item</th>
-        <th class="col-acct">Account<br>Code</th>
-        <th class="col-desc">Description</th>
-        <th class="col-qty">Quantity</th>
-        <th class="col-reqdate">Required<br>Date</th>
-        <th class="col-reason">Reason</th>
-        <th class="col-refpo">Ref.<br>PO</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for item in display_items %}
-      <tr>
-        <td class="item-row center">{{ item.item_no or "" }}</td>
-        <td class="item-row">{{ item.account_code or "" }}</td>
-        <td class="item-row">{{ item.description or "" }}</td>
-        <td class="item-row center">{{ item.quantity or "" }}</td>
-        <td class="item-row center">{{ item.required_date or "" }}</td>
-        <td class="item-row">{{ item.reason or "" }}</td>
-        <td class="item-row">{{ item.ref_po or "" }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="header">
+    <div class="header-left">
+      <div class="header-title-row">
+        <span class="tick"></span>
+        <span class="doc-title">Purchasing Requisition</span>
+      </div>
+      <div class="header-addr">
+        624 หมู่ 4 นิคมอุตสาหกรรมบางปู ซอย 7 เอ ถ.สุขุมวิท ต.แพรกษา อ.เมืองสมุทรปราการ จ.สมุทรปราการ 10280 / 624 Moo 4 Bangpoo Industrial Estate Soi 7A, Sukhumvit Rd., Praksa, Samutprakarn 10280 &nbsp;&middot;&nbsp; Tel: +66 2709 4531 &nbsp;Fax: +66 2324 0310
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="wordmark">SUNSTAR</div>
+      <div class="company-th">บริษัท ซันสตาร์ เคมิคัล (ประเทศไทย) จำกัด</div>
+      <div class="company-en">Sunstar Chemical (Thailand) Co., Ltd.</div>
+    </div>
+  </div>
+  <hr class="header-rule">
 
-  <div class="budget-wrap">
-    <div class="budget-box">
-      <div class="budget-title">Budget Control</div>
-      <table class="budget-table">
-        <tr>
-          <th></th>
-          <th>Account Code</th>
-          <th>Account Code</th>
-        </tr>
-        <tr>
-          <td class="label">Budget</td>
-          <td class="num">{{ budget.budget }}</td>
-          <td class="num"></td>
-        </tr>
-        <tr>
-          <td class="label">Used Before Amount</td>
-          <td class="num">{{ budget.used_before_amount }}</td>
-          <td class="num"></td>
-        </tr>
-        <tr>
-          <td class="label">This Application</td>
-          <td class="num">{{ budget.this_application }}</td>
-          <td class="num"></td>
-        </tr>
-        <tr>
-          <td class="label">Balance</td>
-          <td class="num">{{ budget.balance }}</td>
-          <td class="num"></td>
-        </tr>
-      </table>
+  <div class="meta-strip">
+    <div class="meta-field">
+      <div class="meta-label">Section</div>
+      <div class="meta-value">{{ pr.section }}</div>
+    </div>
+    <div class="meta-field">
+      <div class="meta-label">Division</div>
+      <div class="meta-value">{{ pr.division }}</div>
+    </div>
+    <div class="meta-field">
+      <div class="meta-label">Requisition No.</div>
+      <div class="meta-value mono navy">{{ pr.pr_no }}</div>
+    </div>
+    <div class="meta-field">
+      <div class="meta-label">Date</div>
+      <div class="meta-value mono">{{ pr.doc_date }}</div>
     </div>
   </div>
 
-  <div class="remark-box">
-    <div class="remark-label">Remark</div>
-    <div class="remark-text">{{ pr.remark or "" }}</div>
+  <div class="items-wrap">
+    <table class="items">
+      <colgroup>
+        <col class="c-no"><col class="c-acct"><col class="c-desc"><col class="c-qty">
+        <col class="c-req"><col class="c-reason"><col class="c-po">
+      </colgroup>
+      <thead>
+        <tr>
+          <th class="center">#</th>
+          <th>Acct. Code</th>
+          <th>Description</th>
+          <th class="num">Quantity</th>
+          <th class="center">Required</th>
+          <th>Reason</th>
+          <th>Ref. PO</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in display_items %}
+        <tr>
+          <td class="no-cell"><div class="cell-text mono center">{{ "%02d"|format(item.item_no) if item.item_no else "" }}</div></td>
+          <td><div class="cell-text mono">{{ item.account_code or "" }}</div></td>
+          <td><div class="cell-text">{{ item.description or "" }}</div></td>
+          <td><div class="cell-text mono num">{{ item.quantity or "" }}</div></td>
+          <td><div class="cell-text mono center">{{ item.required_date or "" }}</div></td>
+          <td><div class="cell-text muted">{{ item.reason or "" }}</div></td>
+          <td><div class="cell-text mono">{{ item.ref_po or "" }}</div></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 
-  <table class="sign-wrap">
-    <tr>
-      <td>
-        <div class="sign-box">
-          <div class="sign-label">Requested by</div>
-          <div class="sign-name">{{ pr.requested_by_name or "" }}</div>
-        </div>
-      </td>
-      <td>
-        <div class="sign-box">
-          <div class="sign-label">Reviewed by</div>
-          <div class="sign-name"></div>
-        </div>
-      </td>
-      <td>
-        <div class="sign-box">
-          <div class="sign-label">Approved by</div>
-          <div class="sign-name"></div>
-        </div>
-      </td>
-      <td>
-        <div class="sign-box">
-          <div class="sign-label">Received by</div>
-          <div class="sign-name"></div>
-        </div>
-      </td>
-    </tr>
-  </table>
+  <div class="bottom-block">
+    <div class="bb-grid">
+      <div>
+        <div class="budget-title">Budget Control</div>
+        <div class="budget-row"><span>Budget</span><span class="bv mono">{{ budget.budget }}</span></div>
+        <div class="budget-row"><span>Used before amount</span><span class="bv mono">{{ budget.used_before_amount }}</span></div>
+        <div class="budget-row"><span>This application</span><span class="bv mono">{{ budget.this_application }}</span></div>
+        <div class="budget-row"><span>Balance</span><span class="bv mono">{{ budget.balance }}</span></div>
+      </div>
+      <div>
+        <div class="remark-title">Remark</div>
+        <div class="remark-box">{{ pr.remark or "" }}</div>
+      </div>
+    </div>
 
-  <div class="footer">
-    Code: FM-PU-02 &nbsp;&nbsp; Revision: 2 &nbsp;&nbsp; Generated: {{ generated_at }}
+    <div class="sign-gap"></div>
+    <hr class="sign-rule">
+    <div class="sign-row">
+      <div>
+        <div class="sign-label">Requested by</div>
+        <div class="sign-line{{ '' if pr.requested_by_name else ' placeholder' }}">{{ pr.requested_by_name or "Signature" }}</div>
+      </div>
+      <div>
+        <div class="sign-label">Reviewed by</div>
+        <div class="sign-line placeholder">Signature</div>
+      </div>
+      <div>
+        <div class="sign-label">Approved by</div>
+        <div class="sign-line placeholder">Signature</div>
+      </div>
+      <div>
+        <div class="sign-label">Received by</div>
+        <div class="sign-line placeholder">Signature</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span class="mono">FM-PU-02 &middot; Revision 3</span>
+      <span class="mono">Generated {{ generated_at }}</span>
+    </div>
   </div>
 
+</div>
 </body>
 </html>
