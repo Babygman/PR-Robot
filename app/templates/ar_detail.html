@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}รายละเอียด Approval Request — PR-Robot{% endblock %}
+{% block content %}
+<div id="loading" class="muted">กำลังโหลด...</div>
+<div id="error" class="error hidden"></div>
+
+<div id="ar-content" class="hidden">
+  <div class="topbar">
+    <div>
+      <h1 class="mono">AR <span id="ar-no"></span> <span id="ar-status-badge"></span></h1>
+      <div class="meta-strip">
+        <div class="m-field"><div class="m-label">Subject</div><div class="m-value" id="ar-subject"></div></div>
+        <div class="m-field"><div class="m-label">วันที่ยื่นคำขอ</div><div class="m-value mono" id="ar-date"></div></div>
+        <div class="m-field"><div class="m-label">Requested by</div><div class="m-value" id="ar-requested"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="muted hidden" id="finalized-note">
+    Approval Request นี้สรุปแล้ว (Finalized) — พิมพ์เอกสารนี้เพื่อขอลายเซ็นอนุมัติสด (President/Director, General Manager, Senior Manager, Manager, F&amp;A) นอกระบบ
+  </p>
+  <p class="muted hidden" id="revised-from-note">
+    แก้ไขมาจาก <a id="revised-from-link" href="#">Approval Request ฉบับก่อนหน้า</a>
+  </p>
+  <p class="error hidden" id="superseded-note">
+    Approval Request ฉบับนี้ถูก Revise ไปแล้วเป็น <a id="superseded-link" href="#"></a> — ใช้ฉบับล่าสุดแทน
+  </p>
+
+  <div class="detail-grid">
+    <div>
+      <div class="card">
+        <h2>Budget</h2>
+        <table>
+          <tbody>
+            <tr><th>Budget No.</th><td id="ar-budget-type"></td></tr>
+            <tr><th>Budget Name</th><td id="ar-budget-name"></td></tr>
+            <tr><th>Budget for the Year</th><td id="ar-budget-year"></td></tr>
+            <tr><th>Amount Used Before</th><td id="ar-used-before"></td></tr>
+            <tr><th>This Application</th><td id="ar-this-app"></td></tr>
+            <tr><th>Balance</th><td id="ar-balance"></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Description</h2>
+        <p id="ar-description" class="muted"></p>
+      </div>
+
+      <div class="card">
+        <h2>Amount &amp; Quantity</h2>
+        <table>
+          <thead><tr><th>รายการ</th><th>จำนวนเงิน (Baht)</th></tr></thead>
+          <tbody id="items-body"></tbody>
+        </table>
+        <table style="margin-top:8px;">
+          <tbody>
+            <tr><th>Total</th><td id="ar-total"></td></tr>
+            <tr><th>Vat 7%</th><td id="ar-vat"></td></tr>
+            <tr><th>Grand Total</th><td id="ar-grand-total"></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Suppliers / เงื่อนไข</h2>
+        <table>
+          <tbody>
+            <tr><th>Suppliers / Vendor</th><td id="ar-suppliers"></td></tr>
+            <tr><th>Term of Payment</th><td id="ar-term"></td></tr>
+            <tr><th>Schedule Start - Finish</th><td id="ar-schedule"></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>การดำเนินการ</h2>
+        <div class="actions" style="flex-direction: column;">
+          <a class="btn secondary" id="pdf-link" href="#" target="_blank">พิมพ์ / ดาวน์โหลด PDF</a>
+          <a class="btn secondary hidden" id="edit-link" href="#">แก้ไข Approval Request</a>
+          <button type="button" class="secondary hidden" id="revise-btn">สร้าง Revision</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>ประวัติ</h2>
+        <ul class="history-list" id="history-list"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const AR_ID = {{ ar_id }};
+
+function fmtMoney(v) {
+  if (v === null || v === undefined) return "-";
+  return Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+const BUDGET_TYPE_LABEL = { expenses: "Expenses", assets: "Assets" };
+
+async function loadDetail() {
+  const res = await apiFetch(`/ars/${AR_ID}`);
+  if (!res.ok) {
+    document.getElementById("loading").classList.add("hidden");
+    const errEl = document.getElementById("error");
+    errEl.textContent = res.status === 404 ? "ไม่พบ Approval Request นี้" : "โหลดข้อมูลไม่สำเร็จ";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  const ar = await res.json();
+
+  document.getElementById("ar-no").textContent = ar.revision ? `${ar.ar_no_display} Rev.${ar.revision}` : ar.ar_no_display;
+  document.getElementById("ar-status-badge").innerHTML = statusBadge(ar.status);
+  document.getElementById("ar-subject").textContent = ar.subject;
+  document.getElementById("ar-date").textContent = formatDateDMY(ar.application_date);
+  document.getElementById("ar-requested").textContent = ar.requested_by_name || "-";
+  document.getElementById("pdf-link").href = `/ars/${AR_ID}/pdf`;
+
+  const subCat = ar.budget_sub_category ? ` (${ar.budget_sub_category})` : "";
+  document.getElementById("ar-budget-type").textContent = (BUDGET_TYPE_LABEL[ar.budget_type] || ar.budget_type) + subCat;
+  document.getElementById("ar-budget-name").textContent = ar.budget_name || "-";
+  document.getElementById("ar-budget-year").textContent = fmtMoney(ar.budget_for_year);
+  document.getElementById("ar-used-before").textContent = fmtMoney(ar.amount_used_before);
+  document.getElementById("ar-this-app").textContent = fmtMoney(ar.this_application);
+  document.getElementById("ar-balance").textContent = fmtMoney(ar.balance);
+  document.getElementById("ar-description").textContent = ar.description || "-";
+
+  document.getElementById("items-body").innerHTML = ar.amount_items
+    .map((it) => `<tr><td>${escapeHtml(it.label)}</td><td>${fmtMoney(it.amount)}</td></tr>`)
+    .join("") || '<tr><td colspan="2" class="muted">ไม่มีรายการ</td></tr>';
+  document.getElementById("ar-total").textContent = fmtMoney(ar.total);
+  document.getElementById("ar-vat").textContent = fmtMoney(ar.vat_amount);
+  document.getElementById("ar-grand-total").textContent = fmtMoney(ar.grand_total);
+
+  document.getElementById("ar-suppliers").textContent = ar.suppliers || "-";
+  document.getElementById("ar-term").textContent = ar.term_of_payment || "-";
+  document.getElementById("ar-schedule").textContent = ar.schedule || "-";
+
+  if (ar.status === "draft") {
+    document.getElementById("edit-link").href = `/app/ars/${AR_ID}/edit`;
+    document.getElementById("edit-link").classList.remove("hidden");
+  } else {
+    document.getElementById("finalized-note").classList.remove("hidden");
+    if (ar.superseded_by_id) {
+      const link = document.getElementById("superseded-link");
+      link.href = `/app/ars/${ar.superseded_by_id}`;
+      link.textContent = `AR #${ar.superseded_by_id}`;
+      document.getElementById("superseded-note").classList.remove("hidden");
+    } else {
+      document.getElementById("revise-btn").classList.remove("hidden");
+    }
+  }
+
+  if (ar.revised_from_id) {
+    const link = document.getElementById("revised-from-link");
+    link.href = `/app/ars/${ar.revised_from_id}`;
+    document.getElementById("revised-from-note").classList.remove("hidden");
+  }
+
+  document.getElementById("loading").classList.add("hidden");
+  document.getElementById("ar-content").classList.remove("hidden");
+}
+
+async function loadHistory() {
+  const res = await apiFetch(`/ars/${AR_ID}/history`);
+  if (!res.ok) return;
+  const logs = await res.json();
+  document.getElementById("history-list").innerHTML = logs
+    .map(
+      (log) =>
+        `<li><strong>${escapeHtml(log.action)}</strong> — ${escapeHtml(log.actor_name || "ระบบ")} — ` +
+        `<span class="muted">${formatDateTimeDMY(log.timestamp)}</span></li>`
+    )
+    .join("");
+}
+
+document.getElementById("pdf-link").addEventListener("click", () => {
+  setTimeout(() => window.location.reload(), 1500);
+});
+
+document.getElementById("revise-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("revise-btn");
+  btn.disabled = true;
+  const res = await apiFetch(`/ars/${AR_ID}/revise`, { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    alert(body.detail || "สร้าง Revision ไม่สำเร็จ");
+    btn.disabled = false;
+    return;
+  }
+  const revised = await res.json();
+  window.location.href = `/app/ars/${revised.id}/edit`;
+});
+
+(async () => {
+  const me = await requireLogin();
+  if (!me) return;
+  await loadDetail();
+  await loadHistory();
+})();
+</script>
+{% endblock %}

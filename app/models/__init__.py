@@ -1,5 +1,7 @@
 """Import ทุก Model ที่นี่ ให้ Base.metadata เห็นครบสำหรับ Alembic"""
 from app.models.ai_usage_log import AiUsageLog
+from app.models.approval_request import ARAmountItem, ARBudgetType, ARStatus, ApprovalRequest
+from app.models.ar_number_counter import ARNumberCounter
 from app.models.audit_log import AuditLog
 from app.models.pr_number_counter import PRNumberCounter
 from app.models.purchasing_requisition import (
@@ -13,6 +15,11 @@ from app.models.user import User
 
 __all__ = [
     "AiUsageLog",
+    "ARAmountItem",
+    "ARBudgetType",
+    "ARNumberCounter",
+    "ARStatus",
+    "ApprovalRequest",
     "AuditLog",
     "PRBudgetControl",
     "PRItem",

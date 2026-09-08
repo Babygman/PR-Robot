@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}รายการ Approval Request — PR-Robot{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>รายการ Approval Request</h1>
+    <p class="muted" style="margin-top:-10px;">เอกสารขออนุมัติ (AR) ทั้งหมด — กรอกข้อมูลในระบบเพื่อพิมพ์ไปเซ็นอนุมัติสดนอกระบบ</p>
+  </div>
+  <a class="btn" href="/app/ars/new">
+    <svg width="13" height="13" viewBox="0 0 16 16"><line x1="8" y1="3" x2="8" y2="13" stroke="#fff" stroke-width="1.8"/><line x1="3" y1="8" x2="13" y2="8" stroke="#fff" stroke-width="1.8"/></svg>
+    สร้าง Approval Request ใหม่
+  </a>
+</div>
+
+<div class="card">
+  <form id="filter-form" class="filters">
+    <div class="field">
+      <label for="f-q">ค้นหา (Subject)</label>
+      <input type="text" id="f-q">
+    </div>
+    <div class="field">
+      <label for="f-ar-no">เลขที่ AR</label>
+      <input type="number" id="f-ar-no">
+    </div>
+    <div class="field">
+      <label for="f-status">สถานะ</label>
+      <select id="f-status">
+        <option value="">ทั้งหมด</option>
+        <option value="draft">Draft (แก้ไขได้)</option>
+        <option value="finalized">Finalized (สรุปแล้ว)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="f-date-from">วันที่เอกสาร (จาก)</label>
+      <input type="text" id="f-date-from" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="f-date-to">วันที่เอกสาร (ถึง)</label>
+      <input type="text" id="f-date-to" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off">
+    </div>
+    <div class="field" style="min-width: auto;">
+      <label for="f-mine">&nbsp;</label>
+      <label style="display:flex; align-items:center; gap:6px; font-size:13.5px; text-transform:none; color:var(--color-text);">
+        <input type="checkbox" id="f-mine" style="width:auto;"> ที่ฉันสร้างเท่านั้น
+      </label>
+    </div>
+    <button type="submit">ค้นหา</button>
+  </form>
+</div>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>เลขที่ AR</th>
+        <th>Subject</th>
+        <th>วันที่</th>
+        <th>สถานะ</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="ar-table-body">
+      <tr><td colspan="5" class="muted">กำลังโหลด...</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadArs() {
+  const params = new URLSearchParams();
+  const q = document.getElementById("f-q").value.trim();
+  const arNo = document.getElementById("f-ar-no").value;
+  const st = document.getElementById("f-status").value;
+  const from = getDateFieldIso(document.getElementById("f-date-from"));
+  const to = getDateFieldIso(document.getElementById("f-date-to"));
+  const mine = document.getElementById("f-mine").checked;
+  if (q) params.set("q", q);
+  if (arNo) params.set("ar_no", arNo);
+  if (st) params.set("status_filter", st);
+  if (from) params.set("app_date_from", from);
+  if (to) params.set("app_date_to", to);
+  if (mine) params.set("requested_by_me", "true");
+
+  const res = await apiFetch("/ars?" + params.toString());
+  const tbody = document.getElementById("ar-table-body");
+  if (!res.ok) {
+    tbody.innerHTML = '<tr><td colspan="5" class="error">โหลดรายการไม่สำเร็จ</td></tr>';
+    return;
+  }
+  const ars = await res.json();
+  if (ars.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="muted">ไม่พบ Approval Request</td></tr>';
+    return;
+  }
+  tbody.innerHTML = ars
+    .map(
+      (ar) => `
+    <tr>
+      <td class="mono">${escapeHtml(ar.ar_no_display)}${ar.revision ? ` Rev.${ar.revision}` : ""}</td>
+      <td>${escapeHtml(ar.subject)}</td>
+      <td>${formatDateDMY(ar.application_date)}</td>
+      <td>${statusBadge(ar.status)}</td>
+      <td><a href="/app/ars/${ar.id}">ดูรายละเอียด →</a></td>
+    </tr>`
+    )
+    .join("");
+}
+
+document.getElementById("filter-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  loadArs();
+});
+
+bindDateFieldsIn(document);
+
+(async () => {
+  await requireLogin();
+  await loadArs();
+})();
+</script>
+{% endblock %}

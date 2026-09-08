@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}{% if ar_id %}แก้ไข Approval Request{% else %}สร้าง Approval Request ใหม่{% endif %} — PR-Robot{% endblock %}
+{% block content %}
+<h1 id="page-title">{% if ar_id %}แก้ไข Approval Request{% else %}สร้าง Approval Request ใหม่{% endif %}</h1>
+<p class="muted" style="margin-top:-10px;">
+  กรอกข้อมูลทุกช่องที่จำเป็นเพื่อพิมพ์เอกสารไปขอลายเซ็นอนุมัติสดนอกระบบ — ระบบไม่คำนวณ Total/VAT/Grand Total/Balance ให้อัตโนมัติ กรุณาตรวจสอบตัวเลขก่อนพิมพ์ทุกครั้ง
+</p>
+
+<div class="error hidden" id="load-error"></div>
+
+<form id="ar-form" class="hidden">
+  <div class="card">
+    <div class="row">
+      <div class="field"><label for="f-appdate">วันที่ยื่นคำขอ (Application Date)</label><input type="text" id="f-appdate" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off"></div>
+    </div>
+    <div class="field"><label for="f-subject">Subject</label><input type="text" id="f-subject" required></div>
+  </div>
+
+  <div class="card">
+    <h2>Budget</h2>
+    <div class="row">
+      <div class="field">
+        <label>Budget No.</label>
+        <div style="display:flex; align-items:center; gap:16px; margin-top:4px;">
+          <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
+            <input type="radio" name="budget-type" id="f-budget-expenses" value="expenses" style="width:auto;" checked> Expenses
+          </label>
+          <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
+            <input type="radio" name="budget-type" id="f-budget-assets" value="assets" style="width:auto;"> Assets
+          </label>
+        </div>
+      </div>
+      <div class="field"><label for="f-budget-sub">หมวดย่อย (เช่น Mnt. Motor)</label><input type="text" id="f-budget-sub"></div>
+      <div class="field"><label for="f-budget-name">Budget Name</label><input type="text" id="f-budget-name"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label for="f-budget-year">Budget for the Year</label><input type="text" id="f-budget-year"></div>
+      <div class="field"><label for="f-used-before">Amount Used Before</label><input type="text" id="f-used-before"></div>
+      <div class="field"><label for="f-this-app">This Application</label><input type="text" id="f-this-app"></div>
+      <div class="field"><label for="f-balance">Balance</label><input type="text" id="f-balance"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="field"><label for="f-description">Description</label><textarea id="f-description"></textarea></div>
+  </div>
+
+  <div class="card">
+    <h2>Amount &amp; Quantity</h2>
+    <div id="items-container"></div>
+    <button type="button" class="secondary" id="add-item-btn">+ เพิ่มรายการ</button>
+    <div class="row" style="margin-top:14px;">
+      <div class="field"><label for="f-total">Total</label><input type="text" id="f-total"></div>
+      <div class="field"><label for="f-vat">Vat 7%</label><input type="text" id="f-vat"></div>
+      <div class="field"><label for="f-grand-total">Grand Total</label><input type="text" id="f-grand-total"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div class="field"><label for="f-suppliers">Suppliers / Vendor</label><input type="text" id="f-suppliers"></div>
+      <div class="field"><label for="f-term">Term of Payment</label><input type="text" id="f-term"></div>
+      <div class="field"><label for="f-schedule">Schedule Start - Finish</label><input type="text" id="f-schedule"></div>
+    </div>
+  </div>
+
+  <div class="error hidden" id="submit-error"></div>
+  <div class="actions">
+    <button type="submit">{% if ar_id %}บันทึกการแก้ไข{% else %}สร้าง Approval Request{% endif %}</button>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+const AR_ID = {{ ar_id if ar_id is not none else "null" }};
+
+function amountItemRowHtml(item) {
+  item = item || {};
+  return `<div class="item-row">
+    <button type="button" class="remove-item">ลบ</button>
+    <div class="row">
+      <div class="field" style="flex:2;"><label>รายการ (Label)</label><input type="text" class="it-label" value="${escapeHtml(item.label)}" required></div>
+      <div class="field"><label>จำนวนเงิน (Baht)</label><input type="text" class="it-amount" value="${item.amount ?? ""}"></div>
+    </div>
+  </div>`;
+}
+
+function addAmountItemRow(item) {
+  const wrap = document.createElement("div");
+  wrap.innerHTML = amountItemRowHtml(item);
+  const row = wrap.firstElementChild;
+  row.querySelector(".remove-item").addEventListener("click", () => row.remove());
+  document.getElementById("items-container").appendChild(row);
+}
+
+document.getElementById("add-item-btn").addEventListener("click", () => addAmountItemRow());
+
+async function loadForEdit() {
+  const res = await apiFetch(`/ars/${AR_ID}`);
+  if (!res.ok) {
+    document.getElementById("load-error").textContent = "โหลด Approval Request ไม่สำเร็จ";
+    document.getElementById("load-error").classList.remove("hidden");
+    return false;
+  }
+  const ar = await res.json();
+  if (ar.status !== "draft") {
+    document.getElementById("load-error").textContent =
+      "แก้ไขไม่ได้ — Approval Request นี้ถูกสรุป (Finalized) ไปแล้วตอนพิมพ์/ดาวน์โหลด PDF";
+    document.getElementById("load-error").classList.remove("hidden");
+    return false;
+  }
+  if (ar.revision) {
+    document.getElementById("page-title").textContent = `แก้ไข ${ar.ar_no_display} Rev.${ar.revision}`;
+  }
+  setDateFieldIso(document.getElementById("f-appdate"), ar.application_date);
+  document.getElementById("f-subject").value = ar.subject;
+  document.getElementById(ar.budget_type === "assets" ? "f-budget-assets" : "f-budget-expenses").checked = true;
+  document.getElementById("f-budget-sub").value = ar.budget_sub_category || "";
+  document.getElementById("f-budget-name").value = ar.budget_name || "";
+  document.getElementById("f-budget-year").value = ar.budget_for_year ?? "";
+  document.getElementById("f-used-before").value = ar.amount_used_before ?? "";
+  document.getElementById("f-this-app").value = ar.this_application ?? "";
+  document.getElementById("f-balance").value = ar.balance ?? "";
+  document.getElementById("f-description").value = ar.description || "";
+  document.getElementById("f-total").value = ar.total ?? "";
+  document.getElementById("f-vat").value = ar.vat_amount ?? "";
+  document.getElementById("f-grand-total").value = ar.grand_total ?? "";
+  document.getElementById("f-suppliers").value = ar.suppliers || "";
+  document.getElementById("f-term").value = ar.term_of_payment || "";
+  document.getElementById("f-schedule").value = ar.schedule || "";
+
+  document.getElementById("items-container").innerHTML = "";
+  ar.amount_items.forEach(addAmountItemRow);
+  return true;
+}
+
+document.getElementById("ar-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById("submit-error");
+  errEl.classList.add("hidden");
+
+  if (!getDateFieldIso(document.getElementById("f-appdate"))) {
+    errEl.textContent = "กรุณาเลือกวันที่ยื่นคำขอ (Application Date)";
+    errEl.classList.remove("hidden");
+    return;
+  }
+
+  const amountItems = Array.from(document.querySelectorAll("#items-container .item-row")).map((row) => ({
+    label: row.querySelector(".it-label").value,
+    amount: row.querySelector(".it-amount").value || null,
+  }));
+
+  const payload = {
+    application_date: getDateFieldIso(document.getElementById("f-appdate")),
+    subject: document.getElementById("f-subject").value,
+    budget_type: document.querySelector('input[name="budget-type"]:checked').value,
+    budget_sub_category: document.getElementById("f-budget-sub").value || null,
+    budget_name: document.getElementById("f-budget-name").value || null,
+    budget_for_year: document.getElementById("f-budget-year").value || null,
+    amount_used_before: document.getElementById("f-used-before").value || null,
+    this_application: document.getElementById("f-this-app").value || null,
+    balance: document.getElementById("f-balance").value || null,
+    description: document.getElementById("f-description").value || null,
+    amount_items: amountItems,
+    total: document.getElementById("f-total").value || null,
+    vat_amount: document.getElementById("f-vat").value || null,
+    grand_total: document.getElementById("f-grand-total").value || null,
+    suppliers: document.getElementById("f-suppliers").value || null,
+    term_of_payment: document.getElementById("f-term").value || null,
+    schedule: document.getElementById("f-schedule").value || null,
+  };
+
+  let res;
+  if (AR_ID) {
+    res = await apiFetch(`/ars/${AR_ID}`, { method: "PATCH", body: JSON.stringify(payload) });
+  } else {
+    res = await apiFetch("/ars", { method: "POST", body: JSON.stringify(payload) });
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    errEl.textContent = body.detail ? JSON.stringify(body.detail) : "บันทึกไม่สำเร็จ";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  const ar = await res.json();
+  window.location.href = `/app/ars/${ar.id}`;
+});
+
+bindDateFieldsIn(document);
+
+(async () => {
+  const me = await requireLogin();
+  if (!me) return;
+
+  if (AR_ID) {
+    const ok = await loadForEdit();
+    if (!ok) return;
+  } else {
+    setDateFieldIso(document.getElementById("f-appdate"), new Date().toISOString().slice(0, 10));
+    addAmountItemRow();
+  }
+
+  document.getElementById("ar-form").classList.remove("hidden");
+})();
+</script>
+{% endblock %}

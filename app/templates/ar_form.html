@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<style>
+  {#- Print Template ของ Approval Request (AR) — ใช้ Design System เดียวกับ
+     pr_form.html (Swiss/Administrative, Business Decision 2026-09-08) ทุกประการ
+     รวมถึงข้อจำกัดของ WeasyPrint ที่พบมาแล้วตอนสร้าง pr_form.html:
+       1) -webkit-line-clamp ใช้ไม่ได้ — ใช้ Div ลูกกำหนด height ตายตัว + overflow:
+          hidden แทนเสมอ (ตั้งตรงๆ บน td ไม่ Clip จริง)
+       2) Layout แบบ Flex Column ความสูงตายตัว: Sibling ที่อยู่ "หลัง" ตัว flex:1
+          ต้องกำหนด flex-basis เป็นค่าตายตัว (ไม่ใช่ auto) ไม่งั้น WeasyPrint คำนวณ
+          พื้นที่ว่างผิดแล้วดันให้ล้นไปหน้า 2 (พบจริงตอนทำ pr_form.html)
+     รายการ "Amount & Quantity" ปกติมีไม่กี่รายการ (ตัวอย่างจริงมี 2 รายการ) จึงพอมี
+     Fixed Layout หน้าเดียวได้เกือบทุกกรณี — แต่กันเหตุ Data Loss เหมือน PR ไว้ด้วย
+     Tier "overflow" (เกิน 12 รายการ) ที่เลิก Fixed-height ปล่อยไหลข้ามหน้าได้ตามปกติ
+  #}
+
+  @font-face { font-family: 'Archivo'; src: url('../static/fonts/Archivo-Regular.ttf'); font-weight: 400; }
+  @font-face { font-family: 'Archivo'; src: url('../static/fonts/Archivo-SemiBold.ttf'); font-weight: 600; }
+  @font-face { font-family: 'Archivo'; src: url('../static/fonts/Archivo-Bold.ttf'); font-weight: 700; }
+  @font-face { font-family: 'Source Serif 4'; src: url('../static/fonts/SourceSerif4-SemiBold.ttf'); font-weight: 600; }
+  @font-face { font-family: 'JetBrains Mono'; src: url('../static/fonts/JetBrainsMono-Regular.ttf'); font-weight: 400; }
+  @font-face { font-family: 'JetBrains Mono'; src: url('../static/fonts/JetBrainsMono-Medium.ttf'); font-weight: 500; }
+  @font-face { font-family: 'JetBrains Mono'; src: url('../static/fonts/JetBrainsMono-Bold.ttf'); font-weight: 700; }
+
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  .mono { font-family: 'JetBrains Mono', 'Noto Sans Thai', monospace; }
+
+  .page {
+    width: 210mm;
+    height: 297mm;
+    padding: 10mm 12mm 8mm 12mm;
+    display: flex;
+    flex-direction: column;
+    background: #fdfcfa;
+    color: #16181c;
+    font-family: Archivo, "Noto Sans Thai", sans-serif;
+    overflow: hidden;
+  }
+  .page.tier-overflow {
+    height: auto;
+    min-height: 297mm;
+    display: block;
+    overflow: visible;
+  }
+  .page.tier-overflow .items-wrap { display: block; flex: none; overflow: visible; }
+
+  /* ---------------- Header ---------------- */
+  .header { display: flex; justify-content: space-between; align-items: flex-start; flex: 0 0 auto; }
+  .header-left { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+  .header-title-row { display: flex; align-items: baseline; gap: 6px; }
+  .tick { display: inline-block; width: 7px; height: 13px; background: #1d3557; margin-right: 2px; }
+  .doc-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: #16181c; }
+  .doc-note { font-size: 7px; color: #8a8d94; font-style: italic; }
+  .header-addr { margin-top: 4px; font-size: 6.6px; color: #6d7078; }
+  .header-right { text-align: right; flex: 0 0 auto; white-space: nowrap; margin-left: 6mm; }
+  .wordmark { font-family: 'Source Serif 4', Georgia, serif; font-weight: 600; font-size: 16px; color: #1d3557; letter-spacing: 0.03em; }
+  .company-th { margin-top: 2px; font-size: 8px; font-weight: 600; color: #16181c; }
+  .company-en { margin-top: 1px; font-size: 7px; color: #6d7078; }
+  .doc-version { margin-top: 2px; font-size: 7px; color: #8a8d94; }
+  .header-rule { flex: 0 0 auto; margin-top: 3.5mm; border: none; border-top: 1.5px solid #1d3557; }
+
+  /* ---------------- Meta strip / Subject ---------------- */
+  .meta-strip { flex: 0 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 3.5mm; }
+  .meta-field { padding: 0 3mm; border-left: 1px solid #e6e2db; }
+  .meta-field:first-child { padding-left: 0; border-left: none; }
+  .meta-label { font-size: 6.6px; text-transform: uppercase; letter-spacing: 0.13em; color: #8a8d94; }
+  .meta-value { margin-top: 2px; font-size: 10px; color: #16181c; }
+  .meta-value.navy { color: #1d3557; font-weight: 700; }
+
+  .field-row { flex: 0 0 auto; margin-top: 3mm; border-bottom: 1px solid #e6e2db; padding-bottom: 2mm; }
+  .field-label { font-size: 6.6px; text-transform: uppercase; letter-spacing: 0.13em; color: #8a8d94; }
+  .field-value { margin-top: 1.5px; font-size: 9.5px; line-height: 1.3; color: #16181c; }
+  /* Field ที่ต้องความสูงตายตัว (ไม่ให้ผู้ใช้กรอกยาวจนไปแย่งพื้นที่ Amount & Quantity
+     ที่เป็น flex:1 อยู่ด้านล่าง — เรียนรู้จาก pr_form.html: ตั้ง height ตรงบน div
+     ลูก + overflow:hidden จริงถึง Clip ได้ใน WeasyPrint) — ตรงกับต้นฉบับที่ Subject/
+     Suppliers/Term/Schedule เป็นเส้นประบรรทัดเดียวอยู่แล้ว ส่วน Description ยอมให้ 2
+     บรรทัด */
+  .field-value.clip1 { height: 12.35px; overflow: hidden; }
+  .field-value.clip2 { height: 24.7px; overflow: hidden; }
+
+  /* ---------------- Budget section ---------------- */
+  .budget-section { flex: 0 0 auto; display: grid; grid-template-columns: 1.15fr 1fr; gap: 8mm; margin-top: 3.5mm; }
+  .budget-choice-row { display: flex; align-items: baseline; gap: 5px; font-size: 9.5px; margin-top: 1.5mm; }
+  .budget-choice-mark { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #1d3557; white-space: nowrap; flex: 0 0 auto; margin-right: 2px; }
+  .budget-choice-sub { font-size: 8px; color: #6d7078; margin-left: 3px; }
+  .budget-name-row { margin-top: 2.5mm; font-size: 9.5px; height: 12.35px; overflow: hidden; }
+  .budget-name-row .field-label { display: inline; margin-right: 4px; }
+  .budget-name-row .bn-value { white-space: nowrap; }
+
+  .budget-row { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #e6e2db; padding: 1.4mm 0; font-size: 9px; }
+  .budget-row:last-child { border-bottom: 1px solid #dcd8d1; font-weight: 700; font-size: 10px; }
+  .budget-row .bv { color: #1d3557; }
+
+  /* ---------------- Amount & Quantity items — the only flexible region ---------------- */
+  .items-wrap { flex: 1 1 auto; min-height: 0; overflow: hidden; margin-top: 4mm; }
+  .items-title { font-size: 6.6px; text-transform: uppercase; letter-spacing: 0.13em; color: #8a8d94; margin-bottom: 1.5mm; }
+  table.amt-items { width: 100%; table-layout: fixed; border-collapse: collapse; }
+  .amt-items col.c-label { width: 70%; }
+  .amt-items col.c-amt { width: 30%; }
+  .amt-items tbody td { border-bottom: 1px dotted #c7c3ba; padding: 1.6mm 2px; vertical-align: bottom; font-size: 9px; }
+  .amt-items tbody tr.total-row td { border-bottom: 1px solid #dcd8d1; border-top: 1px solid #dcd8d1; padding-top: 2mm; }
+  .amt-items tbody tr.grand-row td { border-top: none; font-weight: 700; font-size: 10px; color: #1d3557; }
+  .amt-cell-label { color: #16181c; }
+  .amt-cell-label.muted { color: #6d7078; }
+  .amt-cell-amt { text-align: right; }
+
+  /* ---------------- Bottom block (หลัง items-wrap flex:1 — ต้องกำหนด flex-basis
+     ตายตัวเสมอ ห้าม auto — ดูคำอธิบายด้านบน) ---------------- */
+  .bottom-block { flex: 0 0 175mm; overflow: hidden; }
+
+  .supplier-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; margin-top: 2mm; }
+
+  /* ---------------- Authority / Signature ---------------- */
+  .auth-title { font-size: 6.6px; text-transform: uppercase; letter-spacing: 0.13em; color: #8a8d94; margin: 3mm 0 1.5mm; }
+  table.auth-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+  .auth-table col.c-auth { width: 26%; }
+  .auth-table col.c-comment { width: 44%; }
+  .auth-table col.c-sig { width: 30%; }
+  .auth-table th { background: #f2efe9; border-bottom: 1px solid #dcd8d1; text-transform: uppercase; font-size: 6.6px; letter-spacing: 0.1em; font-weight: 600; text-align: left; padding: 1.4mm 2mm; }
+  .auth-table td { border-bottom: 1px solid #e6e2db; padding: 1.6mm 2mm; font-size: 8px; height: 6mm; }
+  .auth-table td.a-name { font-weight: 600; color: #16181c; }
+
+  .req-fa-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 3.5mm; gap: 8mm; }
+  .req-block { flex: 1 1 auto; }
+  .sign-label { font-size: 6.6px; text-transform: uppercase; letter-spacing: 0.13em; color: #8a8d94; }
+  .sign-line { margin-top: 4mm; border-top: 1px solid #16181c; padding-top: 1.2mm; font-size: 8.5px; color: #16181c; min-height: 3mm; }
+  .sign-line.placeholder { color: #b7b9be; }
+  .fa-box { flex: 0 0 40mm; border: 1px solid #dcd8d1; padding: 1.6mm 2.5mm; }
+  .fa-box .sign-label { text-align: center; display: block; }
+  .fa-box .sign-line { border-top: none; text-align: center; min-height: 5mm; }
+
+  /* ---------------- Static reference block (คงที่ทุกใบ) ---------------- */
+  .ref-block { margin-top: 4mm; display: grid; grid-template-columns: 1.35fr 1fr; gap: 6mm; }
+  .ref-title { font-size: 6.2px; text-transform: uppercase; letter-spacing: 0.1em; color: #8a8d94; margin-bottom: 1mm; }
+  table.limit-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 5.6px; }
+  .limit-table th, .limit-table td { border: 1px solid #dcd8d1; padding: 0.9mm 1.4mm; text-align: center; }
+  .limit-table th { background: #f2efe9; font-weight: 600; }
+  .limit-table td.lt-label { text-align: left; }
+  .limit-table col.c-lbl { width: 34%; }
+  .limit-foot { font-size: 5.2px; color: #8a8d94; margin-top: 1mm; }
+
+  .events-box { border: 1px solid #dcd8d1; padding: 2mm 2.5mm; font-size: 6px; height: 100%; }
+  .events-box .ev-title { font-weight: 700; margin-bottom: 1mm; }
+  .events-box .ev-example { color: #6d7078; }
+  .events-box ul { margin: 1mm 0 0; padding-left: 3mm; }
+  .events-box li { margin-bottom: 0.4mm; }
+
+  .flow-wrap { margin-top: 3.5mm; }
+  .flow-row { display: flex; align-items: center; gap: 1.5mm; }
+  .flow-box { border: 1px solid #16181c; padding: 1.4mm 2mm; font-size: 5.6px; text-align: center; line-height: 1.35; flex: 1 1 0; }
+  .flow-box .fb-sub { color: #6d7078; font-size: 5.2px; }
+  .flow-arrow { font-size: 8px; color: #16181c; flex: 0 0 auto; }
+  .flow-circle { border: 1px solid #16181c; border-radius: 50%; width: 9mm; height: 9mm; display: flex; align-items: center; justify-content: center; font-size: 5.2px; text-align: center; flex: 0 0 auto; }
+  .flow-note { font-size: 5.2px; color: #8a8d94; margin-top: 0.8mm; text-align: center; }
+  .flow-company { text-align: right; font-size: 7px; font-weight: 700; color: #1d3557; margin-top: 2mm; }
+
+  .footer { display: flex; justify-content: space-between; margin-top: 2.5mm; font-size: 7px; color: #6d7078; }
+</style>
+</head>
+<body>
+
+{% set item_count = display_items | length %}
+{% set tier = 'tier-overflow' if item_count > 12 else 'tier-normal' %}
+
+<div class="page {{ tier }}">
+
+  <div class="header">
+    <div class="header-left">
+      <div class="header-title-row">
+        <span class="tick"></span>
+        <span class="doc-title">Approval Request</span>
+        <span class="doc-note">(Attach a price comparison document at least 2 vendors)</span>
+      </div>
+      <div class="header-addr">
+        624 หมู่ 4 นิคมอุตสาหกรรมบางปู ซอย 7 เอ ถ.สุขุมวิท ต.แพรกษา อ.เมืองสมุทรปราการ จ.สมุทรปราการ 10280 / 624 Moo 4 Bangpoo Industrial Estate Soi 7A, Sukhumvit Rd., Praksa, Samutprakarn 10280
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="wordmark">SUNSTAR</div>
+      <div class="company-th">บริษัท ซันสตาร์ เคมิคัล (ประเทศไทย) จำกัด</div>
+      <div class="company-en">Sunstar Chemical (Thailand) Co., Ltd.</div>
+      <div class="doc-version mono">Form Ref. 20220404_rev.2</div>
+    </div>
+  </div>
+  <hr class="header-rule">
+
+  <div class="meta-strip">
+    <div class="meta-field">
+      <div class="meta-label">Application No.</div>
+      <div class="meta-value mono navy">{{ ar.ar_no_display }}</div>
+    </div>
+    <div class="meta-field">
+      <div class="meta-label">Application Date</div>
+      <div class="meta-value mono">{{ ar.application_date }}</div>
+    </div>
+    <div class="meta-field">
+      <div class="meta-label">Requested By</div>
+      <div class="meta-value">{{ ar.requested_by_name or "" }}</div>
+    </div>
+  </div>
+
+  <div class="field-row">
+    <div class="field-label">Subject</div>
+    <div class="field-value clip1">{{ ar.subject }}</div>
+  </div>
+
+  <div class="budget-section">
+    <div>
+      <div class="field-label">Budget No.</div>
+      <div class="budget-choice-row">
+        <span class="budget-choice-mark">( {{ "/" if ar.budget_type == "expenses" else " " }} )</span>
+        <span>EXPENSES</span>
+        {% if ar.budget_sub_category %}<span class="budget-choice-sub">{{ ar.budget_sub_category }}</span>{% endif %}
+      </div>
+      <div class="budget-choice-row">
+        <span class="budget-choice-mark">( {{ "/" if ar.budget_type == "assets" else " " }} )</span>
+        <span>ASSETS</span>
+      </div>
+      <div class="budget-name-row">
+        <span class="field-label">Budget Name</span>
+        <span class="bn-value">{{ ar.budget_name or "" }}</span>
+      </div>
+    </div>
+    <div>
+      <div class="budget-row"><span>Budget for the year</span><span class="bv mono">{{ ar.budget_for_year }}</span></div>
+      <div class="budget-row"><span>Amount used before</span><span class="bv mono">{{ ar.amount_used_before }}</span></div>
+      <div class="budget-row"><span>This application</span><span class="bv mono">{{ ar.this_application }}</span></div>
+      <div class="budget-row"><span>Balance</span><span class="bv mono">{{ ar.balance }}</span></div>
+    </div>
+  </div>
+
+  <div class="field-row">
+    <div class="field-label">Description</div>
+    <div class="field-value clip2">{{ ar.description or "" }}</div>
+  </div>
+
+  <div class="items-wrap">
+    <div class="items-title">Amount &amp; Quantity</div>
+    <table class="amt-items">
+      <colgroup><col class="c-label"><col class="c-amt"></colgroup>
+      <tbody>
+        {% for item in display_items %}
+        <tr>
+          <td><div class="amt-cell-label{{ '' if item.label else ' muted' }}">{{ item.label or "" }}</div></td>
+          <td><div class="amt-cell-amt mono">{{ item.amount or "" }}</div></td>
+        </tr>
+        {% endfor %}
+        <tr class="total-row">
+          <td><div class="amt-cell-label">Total</div></td>
+          <td><div class="amt-cell-amt mono">{{ ar.total }}</div></td>
+        </tr>
+        <tr>
+          <td><div class="amt-cell-label">Vat 7%</div></td>
+          <td><div class="amt-cell-amt mono">{{ ar.vat_amount }}</div></td>
+        </tr>
+        <tr class="grand-row">
+          <td><div class="amt-cell-label">Grand Total</div></td>
+          <td><div class="amt-cell-amt mono">{{ ar.grand_total }}</div></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="bottom-block">
+    <div class="supplier-fields">
+      <div class="field-row">
+        <div class="field-label">Suppliers / Vendor</div>
+        <div class="field-value clip1">{{ ar.suppliers or "" }}</div>
+      </div>
+      <div class="field-row">
+        <div class="field-label">Term of Payment</div>
+        <div class="field-value clip1">{{ ar.term_of_payment or "" }}</div>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field-label">Schedule Start - Finish</div>
+      <div class="field-value clip1">{{ ar.schedule or "" }}</div>
+    </div>
+
+    <div class="auth-title">Authority</div>
+    <table class="auth-table">
+      <colgroup><col class="c-auth"><col class="c-comment"><col class="c-sig"></colgroup>
+      <thead>
+        <tr><th>Authority</th><th>Comments</th><th>Signature</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="a-name">President / Director</td><td></td><td></td></tr>
+        <tr><td class="a-name">General Manager</td><td></td><td></td></tr>
+        <tr><td class="a-name">Senior Manager</td><td></td><td></td></tr>
+        <tr><td class="a-name">Manager</td><td></td><td></td></tr>
+      </tbody>
+    </table>
+
+    <div class="req-fa-row">
+      <div class="req-block">
+        <div class="sign-label">Requested by</div>
+        <div class="sign-line{{ '' if ar.requested_by_name else ' placeholder' }}">{{ ar.requested_by_name or "Signature" }}</div>
+      </div>
+      <div class="fa-box">
+        <span class="sign-label">F&amp;A</span>
+        <div class="sign-line placeholder"></div>
+      </div>
+    </div>
+
+    <div class="ref-block">
+      <div>
+        <div class="ref-title">Limit of Authority</div>
+        <table class="limit-table">
+          <colgroup><col class="c-lbl"><col><col><col></colgroup>
+          <thead>
+            <tr><th rowspan="2" style="vertical-align:bottom;">Limit of Authority</th><th>Purchase Requisition (PR)</th><th colspan="2">Approval Request (AR)</th></tr>
+            <tr><th></th><th>Advisor / GM</th><th>President / Director</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="lt-label">Furniture</td><td></td><td></td><td>All</td></tr>
+            <tr><td class="lt-label">Vehicles</td><td></td><td></td><td>All</td></tr>
+            <tr><td class="lt-label">Telephone</td><td></td><td></td><td>All</td></tr>
+            <tr><td class="lt-label">Computer</td><td></td><td></td><td>All</td></tr>
+            <tr><td class="lt-label">Machinery</td><td></td><td></td><td>All</td></tr>
+            <tr><td class="lt-label">Tool &amp; Equipment</td><td></td><td></td><td>All</td></tr>
+            <tr><td class="lt-label">Measurement</td><td></td><td></td><td>All</td></tr>
+            <tr><td class="lt-label">Factory Equipment</td><td></td><td></td><td>All</td></tr>
+            <tr><td class="lt-label">Maintenance</td><td>&lt; 5,000</td><td>&lt; 20,000</td><td>20,000 Up *</td></tr>
+            <tr><td class="lt-label">Facilities Work</td><td>&lt; 5,000</td><td>&lt; 20,000</td><td>20,000 Up *</td></tr>
+          </tbody>
+        </table>
+        <div class="limit-foot">* Document Flowchart</div>
+      </div>
+      <div class="events-box">
+        <div class="ev-title">Events &lt;1 Event = 1 Approval Request&gt;</div>
+        <div class="ev-example">Example:</div>
+        <ul>
+          <li>New Factory</li>
+          <li>Layout Changing</li>
+          <li>New Model Launch</li>
+          <li>Preventive Maintenance</li>
+          <li>New Year Party &amp; Activities</li>
+          <li>Etc.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="flow-wrap">
+      <div class="flow-row">
+        <div class="flow-box">Request Section<div class="fb-sub">Manager / GM</div></div>
+        <div class="flow-arrow">&rarr;</div>
+        <div class="flow-box">F&amp;A<div class="fb-sub">Manager</div></div>
+        <div class="flow-arrow">&rarr;</div>
+        <div class="flow-box">Approve By<div class="fb-sub">President / Director</div></div>
+        <div class="flow-arrow">&rarr;</div>
+        <div class="flow-box">F&amp;A<div class="fb-sub">Manager</div></div>
+        <div class="flow-arrow">&rarr;</div>
+        <div class="flow-box">Purchase Section<div class="fb-sub">Manager / Director</div></div>
+        <div class="flow-arrow">&rarr;</div>
+        <div class="flow-circle">Supplier</div>
+      </div>
+      <div class="flow-note">(Budget / Regulation) &rarr; Yes &rarr; (Register) &middot; No &rarr; Reject &rarr; Inform Request Section</div>
+      <div class="flow-company">SUNSTAR CHEMICAL (THAILAND) CO.,LTD.</div>
+    </div>
+
+    <div class="footer">
+      <span class="mono">Approval Request &middot; Ref. 20220404_rev.2</span>
+      <span class="mono">Generated {{ generated_at }}</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

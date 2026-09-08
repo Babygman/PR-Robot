@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app.api.routes.ai_usage import router as ai_usage_router
+from app.api.routes.approval_requests import router as ars_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.documents import router as documents_router
 from app.api.routes.pages import router as pages_router
@@ -22,6 +23,7 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(documents_router)
 app.include_router(prs_router)
+app.include_router(ars_router)
 app.include_router(ai_usage_router)
 app.include_router(pages_router)
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")

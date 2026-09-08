@@ -41,6 +41,34 @@ def test_page_pr_detail(client: TestClient) -> None:
     assert "PR_ID = 42" in resp.text
 
 
+def test_page_ar_list(client: TestClient) -> None:
+    resp = client.get("/app/ars")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert "ar-table-body" in resp.text
+
+
+def test_page_ar_new(client: TestClient) -> None:
+    resp = client.get("/app/ars/new")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert "AR_ID = null" in resp.text
+
+
+def test_page_ar_edit(client: TestClient) -> None:
+    resp = client.get("/app/ars/42/edit")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert "AR_ID = 42" in resp.text
+
+
+def test_page_ar_detail(client: TestClient) -> None:
+    resp = client.get("/app/ars/42")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert "AR_ID = 42" in resp.text
+
+
 def test_page_upload(client: TestClient) -> None:
     resp = client.get("/app/documents/upload")
     assert resp.status_code == 200

@@ -53,6 +53,32 @@ def page_pr_detail(request: Request, pr_id: int):
     )
 
 
+@router.get("/ars/new")
+def page_ar_new(request: Request):
+    return templates.TemplateResponse(
+        request=request, name="ar_edit.html", context={"ar_id": None}
+    )
+
+
+@router.get("/ars/{ar_id}/edit")
+def page_ar_edit(request: Request, ar_id: int):
+    return templates.TemplateResponse(
+        request=request, name="ar_edit.html", context={"ar_id": ar_id}
+    )
+
+
+@router.get("/ars/{ar_id}")
+def page_ar_detail(request: Request, ar_id: int):
+    return templates.TemplateResponse(
+        request=request, name="ar_detail.html", context={"ar_id": ar_id}
+    )
+
+
+@router.get("/ars")
+def page_ar_list(request: Request):
+    return templates.TemplateResponse(request=request, name="ar_list.html", context={})
+
+
 @router.get("/documents/upload")
 def page_upload(request: Request):
     return templates.TemplateResponse(request=request, name="upload.html", context={})
