@@ -82,6 +82,10 @@ class ApprovalRequest(Base):
         ),
         nullable=False,
     )
+    # รหัส/เลขที่บัญชีงบประมาณ (Feedback จริงจากผู้ใช้ 2026-09-08 หลังทดสอบใช้งานจริง —
+    # ฟอร์มตัวอย่างต้นฉบับไม่มีช่องนี้แยกจาก Expenses/Assets แต่ผู้ใช้ต้องการ Field
+    # แยกสำหรับกรอกรหัสบัญชีงบประมาณ เช่น "5100-01")
+    budget_no: Mapped[str | None] = mapped_column(String(100))
     budget_sub_category: Mapped[str | None] = mapped_column(String(255))  # เช่น "Mnt. Motor"
     budget_name: Mapped[str | None] = mapped_column(String(255))
     budget_for_year: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
@@ -99,7 +103,11 @@ class ApprovalRequest(Base):
 
     suppliers: Mapped[str | None] = mapped_column(Text)
     term_of_payment: Mapped[str | None] = mapped_column(Text)
-    schedule: Mapped[str | None] = mapped_column(Text)
+    # เดิมเป็นช่อง Text เดียว "Schedule Start - Finish" — แยกเป็น 2 ช่องวันที่ (Feedback
+    # จริงจากผู้ใช้ 2026-09-08: ต้องการ Date Picker เลือกวันที่แยก Start/Finish แบบ
+    # dd/mm/yyyy เหมือนช่องวันที่อื่นในระบบ ไม่ใช่พิมพ์ข้อความอิสระ)
+    schedule_start: Mapped[date | None] = mapped_column(Date)
+    schedule_finish: Mapped[date | None] = mapped_column(Date)
 
     status: Mapped[ARStatus] = mapped_column(
         SAEnum(

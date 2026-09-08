@@ -19,8 +19,11 @@
   <div class="card">
     <h2>Budget</h2>
     <div class="row">
+      <div class="field"><label for="f-budget-no">Budget No. (รหัส/เลขที่บัญชีงบประมาณ)</label><input type="text" id="f-budget-no" placeholder="เช่น 5100-01"></div>
+    </div>
+    <div class="row">
       <div class="field">
-        <label>Budget No.</label>
+        <label>Budget Type</label>
         <div style="display:flex; align-items:center; gap:16px; margin-top:4px;">
           <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
             <input type="radio" name="budget-type" id="f-budget-expenses" value="expenses" style="width:auto;" checked> Expenses
@@ -51,7 +54,7 @@
     <button type="button" class="secondary" id="add-item-btn">+ เพิ่มรายการ</button>
     <div class="row" style="margin-top:14px;">
       <div class="field"><label for="f-total">Total</label><input type="text" id="f-total"></div>
-      <div class="field"><label for="f-vat">Vat 7%</label><input type="text" id="f-vat"></div>
+      <div class="field"><label for="f-vat">Vat</label><input type="text" id="f-vat"></div>
       <div class="field"><label for="f-grand-total">Grand Total</label><input type="text" id="f-grand-total"></div>
     </div>
   </div>
@@ -60,7 +63,10 @@
     <div class="row">
       <div class="field"><label for="f-suppliers">Suppliers / Vendor</label><input type="text" id="f-suppliers"></div>
       <div class="field"><label for="f-term">Term of Payment</label><input type="text" id="f-term"></div>
-      <div class="field"><label for="f-schedule">Schedule Start - Finish</label><input type="text" id="f-schedule"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label for="f-schedule-start">Schedule Start</label><input type="text" id="f-schedule-start" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off"></div>
+      <div class="field"><label for="f-schedule-finish">Schedule Finish</label><input type="text" id="f-schedule-finish" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off"></div>
     </div>
   </div>
 
@@ -115,6 +121,7 @@ async function loadForEdit() {
   setDateFieldIso(document.getElementById("f-appdate"), ar.application_date);
   document.getElementById("f-subject").value = ar.subject;
   document.getElementById(ar.budget_type === "assets" ? "f-budget-assets" : "f-budget-expenses").checked = true;
+  document.getElementById("f-budget-no").value = ar.budget_no || "";
   document.getElementById("f-budget-sub").value = ar.budget_sub_category || "";
   document.getElementById("f-budget-name").value = ar.budget_name || "";
   document.getElementById("f-budget-year").value = ar.budget_for_year ?? "";
@@ -127,7 +134,8 @@ async function loadForEdit() {
   document.getElementById("f-grand-total").value = ar.grand_total ?? "";
   document.getElementById("f-suppliers").value = ar.suppliers || "";
   document.getElementById("f-term").value = ar.term_of_payment || "";
-  document.getElementById("f-schedule").value = ar.schedule || "";
+  setDateFieldIso(document.getElementById("f-schedule-start"), ar.schedule_start || "");
+  setDateFieldIso(document.getElementById("f-schedule-finish"), ar.schedule_finish || "");
 
   document.getElementById("items-container").innerHTML = "";
   ar.amount_items.forEach(addAmountItemRow);
@@ -154,6 +162,7 @@ document.getElementById("ar-form").addEventListener("submit", async (e) => {
     application_date: getDateFieldIso(document.getElementById("f-appdate")),
     subject: document.getElementById("f-subject").value,
     budget_type: document.querySelector('input[name="budget-type"]:checked').value,
+    budget_no: document.getElementById("f-budget-no").value || null,
     budget_sub_category: document.getElementById("f-budget-sub").value || null,
     budget_name: document.getElementById("f-budget-name").value || null,
     budget_for_year: document.getElementById("f-budget-year").value || null,
@@ -167,7 +176,8 @@ document.getElementById("ar-form").addEventListener("submit", async (e) => {
     grand_total: document.getElementById("f-grand-total").value || null,
     suppliers: document.getElementById("f-suppliers").value || null,
     term_of_payment: document.getElementById("f-term").value || null,
-    schedule: document.getElementById("f-schedule").value || null,
+    schedule_start: getDateFieldIso(document.getElementById("f-schedule-start")) || null,
+    schedule_finish: getDateFieldIso(document.getElementById("f-schedule-finish")) || null,
   };
 
   let res;

@@ -29,6 +29,7 @@ class ARCreate(BaseModel):
     application_date: date
     subject: str
     budget_type: ARBudgetType
+    budget_no: str | None = None
     budget_sub_category: str | None = None
     budget_name: str | None = None
     budget_for_year: Decimal | None = None
@@ -42,7 +43,8 @@ class ARCreate(BaseModel):
     grand_total: Decimal | None = None
     suppliers: str | None = None
     term_of_payment: str | None = None
-    schedule: str | None = None
+    schedule_start: date | None = None
+    schedule_finish: date | None = None
 
 
 class ARUpdate(BaseModel):
@@ -52,6 +54,7 @@ class ARUpdate(BaseModel):
     application_date: date
     subject: str
     budget_type: ARBudgetType
+    budget_no: str | None = None
     budget_sub_category: str | None = None
     budget_name: str | None = None
     budget_for_year: Decimal | None = None
@@ -65,7 +68,8 @@ class ARUpdate(BaseModel):
     grand_total: Decimal | None = None
     suppliers: str | None = None
     term_of_payment: str | None = None
-    schedule: str | None = None
+    schedule_start: date | None = None
+    schedule_finish: date | None = None
 
 
 class ARAmountItemRead(BaseModel):
@@ -87,6 +91,7 @@ class ARRead(BaseModel):
     application_date: date
     subject: str
     budget_type: ARBudgetType
+    budget_no: str | None
     budget_sub_category: str | None
     budget_name: str | None
     budget_for_year: Decimal | None
@@ -100,7 +105,8 @@ class ARRead(BaseModel):
     grand_total: Decimal | None
     suppliers: str | None
     term_of_payment: str | None
-    schedule: str | None
+    schedule_start: date | None
+    schedule_finish: date | None
     status: ARStatus
     requested_by_id: int
     requested_by_name: str | None = None

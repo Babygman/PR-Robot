@@ -68,6 +68,7 @@ def render_ar_html(db: Session, ar: ApprovalRequest) -> str:
     ar_view.application_date = _fmt_date(ar.application_date)
     ar_view.subject = ar.subject
     ar_view.budget_type = ar.budget_type.value if ar.budget_type else None
+    ar_view.budget_no = ar.budget_no
     ar_view.budget_sub_category = ar.budget_sub_category
     ar_view.budget_name = ar.budget_name
     ar_view.budget_for_year = _fmt_money(ar.budget_for_year)
@@ -80,19 +81,38 @@ def render_ar_html(db: Session, ar: ApprovalRequest) -> str:
     ar_view.grand_total = _fmt_money(ar.grand_total)
     ar_view.suppliers = ar.suppliers
     ar_view.term_of_payment = ar.term_of_payment
-    ar_view.schedule = ar.schedule
+    # แยก Schedule Start/Finish เป็น 2 คอลัมน์วันที่แล้ว (Feedback 2026-09-08) — รวมเป็น
+    # ข้อความ Range เดียวให้ Template แสดงง่ายๆ เช่น "3/9/2026 - 15/9/2026" (ถ้ามีแค่
+    # ด้านเดียวแสดงด้านนั้นด้านเดียว ไม่ใส่ขีดคั่นลอยๆ)
+    start_str = _fmt_date(ar.schedule_start)
+    finish_str = _fmt_date(ar.schedule_finish)
+    if start_str and finish_str:
+        ar_view.schedule_range = f"{start_str} - {finish_str}"
+    else:
+        ar_view.schedule_range = start_str or finish_str
     ar_view.requested_by_name = names.get(ar.requested_by_id)
 
     display_items = [
         _DisplayAmountItem(label=item.label, amount=_fmt_money(item.amount))
         for item in sorted(ar.amount_items, key=lambda i: i.item_no)
     ]
+    # เก็บจำนวนรายการ "จริง" ไว้ก่อน Pad บรรทัดว่าง — ใช้ตัดสิน Tier (Fixed 1 หน้า vs
+    # Overflow) แทนความยาวของ display_items หลัง Pad (ดูคำอธิบายยาวใน ar_form.html
+    # ตรง {% set tier = ... %} — สรุปสั้นๆ: แถวว่างที่ Pad เพิ่มมีความสูงเกือบ 0 เพราะ
+    # ไม่มีข้อความ (Div ว่างไม่สร้าง Line Box ใน WeasyPrint) ในขณะที่แถวจริงมีความสูง
+    # เต็มเสมอ ถ้าใช้ความยาว List หลัง Pad (ซึ่ง Pad ขั้นต่ำ 9 เสมอ) มาตัดสิน Tier จะ
+    # เข้าใจผิดว่ามีที่ว่างพอสำหรับ 12 แถวจริง ทั้งที่จริงพื้นที่ที่เหลือใน .items-wrap
+    # (หลังย้าย Total/Vat/Grand Total ออกไปไว้ .bottom-block ที่ Fix ขนาดแล้ว) รองรับ
+    # แถว "จริง" (มีข้อความ) ได้แค่ไม่กี่แถวก่อนโดน overflow:hidden ตัดทิ้งเงียบๆ
+    # (ยืนยันด้วย WeasyPrint Render จริง + pdfplumber วัดตำแหน่งจริง 2026-09-08)
+    real_item_count = len(ar.amount_items)
     while len(display_items) < _MIN_DISPLAY_ROWS:
         display_items.append(_DisplayAmountItem())
 
     return template.render(
         ar=ar_view,
         display_items=display_items,
+        real_item_count=real_item_count,
         generated_at=_now_str(),
     )
 

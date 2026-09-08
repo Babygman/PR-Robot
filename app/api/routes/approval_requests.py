@@ -43,6 +43,7 @@ def _apply_items(ar: ApprovalRequest, body: ARCreate | ARUpdate) -> None:
     ar.application_date = body.application_date
     ar.subject = body.subject
     ar.budget_type = body.budget_type
+    ar.budget_no = body.budget_no
     ar.budget_sub_category = body.budget_sub_category
     ar.budget_name = body.budget_name
     ar.budget_for_year = body.budget_for_year
@@ -55,7 +56,8 @@ def _apply_items(ar: ApprovalRequest, body: ARCreate | ARUpdate) -> None:
     ar.grand_total = body.grand_total
     ar.suppliers = body.suppliers
     ar.term_of_payment = body.term_of_payment
-    ar.schedule = body.schedule
+    ar.schedule_start = body.schedule_start
+    ar.schedule_finish = body.schedule_finish
     ar.amount_items = [
         ARAmountItem(item_no=index, label=item.label, amount=item.amount)
         for index, item in enumerate(body.amount_items, start=1)
@@ -230,6 +232,7 @@ def revise_ar(
         application_date=original.application_date,
         subject=original.subject,
         budget_type=original.budget_type,
+        budget_no=original.budget_no,
         budget_sub_category=original.budget_sub_category,
         budget_name=original.budget_name,
         budget_for_year=original.budget_for_year,
@@ -242,7 +245,8 @@ def revise_ar(
         grand_total=original.grand_total,
         suppliers=original.suppliers,
         term_of_payment=original.term_of_payment,
-        schedule=original.schedule,
+        schedule_start=original.schedule_start,
+        schedule_finish=original.schedule_finish,
     )
     new_ar.amount_items = [
         ARAmountItem(item_no=item.item_no, label=item.label, amount=item.amount)

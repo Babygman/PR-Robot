@@ -10,10 +10,19 @@
           hidden แทนเสมอ (ตั้งตรงๆ บน td ไม่ Clip จริง)
        2) Layout แบบ Flex Column ความสูงตายตัว: Sibling ที่อยู่ "หลัง" ตัว flex:1
           ต้องกำหนด flex-basis เป็นค่าตายตัว (ไม่ใช่ auto) ไม่งั้น WeasyPrint คำนวณ
-          พื้นที่ว่างผิดแล้วดันให้ล้นไปหน้า 2 (พบจริงตอนทำ pr_form.html)
+          พื้นที่ว่างผิดแล้วดันให้ล้นไปหน้า 2 (พบจริงตอนทำ pr_form.html) — ยืนยันซ้ำ
+          2026-09-08: ลด .bottom-block ให้เล็กลงจาก 182mm (แม้ยังกำหนด flex-basis
+          ตายตัวเหมือนเดิม) ก็ยังกระตุ้นบั๊กนี้ได้ — ค่า 182mm จึงต้องคงไว้ตายตัว ห้าม
+          ปรับโดยไม่ Render จริงยืนยันใหม่ทุกครั้ง
+       3) Div ว่าง (ไม่มีข้อความ) ใน overflow:hidden Container แทบไม่กิน Vertical
+          Space เลย (ไม่สร้าง Line Box) ในขณะที่ Div ที่มีข้อความจริงกินเต็มบรรทัด
+          เสมอ — ถ้าใช้ "จำนวนแถวหลัง Pad บรรทัดว่าง" ตัดสิน Layout จะเข้าใจผิดว่ามีที่
+          ว่างเหลือเฟือทั้งที่จริงไม่พอ (พบจริงตอนแก้ Feedback รอบ 2026-09-08 — ดู
+          real_item_count ด้านล่าง)
      รายการ "Amount & Quantity" ปกติมีไม่กี่รายการ (ตัวอย่างจริงมี 2 รายการ) จึงพอมี
      Fixed Layout หน้าเดียวได้เกือบทุกกรณี — แต่กันเหตุ Data Loss เหมือน PR ไว้ด้วย
-     Tier "overflow" (เกิน 12 รายการ) ที่เลิก Fixed-height ปล่อยไหลข้ามหน้าได้ตามปกติ
+     Tier "overflow" (รายการจริงเกิน 3 — วัดขอบเขตจริงด้วย WeasyPrint+pdfplumber ดู
+     Comment ตรงตัวแปร tier ด้านล่าง) ที่เลิก Fixed-height ปล่อยไหลข้ามหน้าได้ตามปกติ
   #}
 
   @font-face { font-family: 'Archivo'; src: url('../static/fonts/Archivo-Regular.ttf'); font-weight: 400; }
@@ -70,6 +79,13 @@
   .meta-label { font-size: 6.6px; text-transform: uppercase; letter-spacing: 0.13em; color: #8a8d94; }
   .meta-value { margin-top: 2px; font-size: 10px; color: #16181c; }
   .meta-value.navy { color: #1d3557; font-weight: 700; }
+  /* Total/Vat/Grand Total ย้ายมาไว้ที่นี่ใน .bottom-block (Fixed Height) แทนที่จะอยู่
+     ในตาราง amt-items ของ .items-wrap (flex:1) — Feedback จริงจากผู้ใช้ 2026-09-08:
+     ค่าเหล่านี้เคยหายไปจาก PDF จริงเพราะ WeasyPrint ใช้ overflow:hidden Clip เนื้อหา
+     ส่วนท้ายของ items-wrap ทิ้งเงียบๆเมื่อพื้นที่ไม่พอ (ไม่ Paginate เหมือนที่คาดไว้)
+     ย้ายมาไว้ในโซน Fixed แทนเพื่อรับประกันว่าค่าเหล่านี้แสดงผลเสมอ ไม่ว่ารายการใน
+     Amount & Quantity จะมีกี่แถวก็ตาม */
+  .summary-strip { margin-top: 0; margin-bottom: 3mm; padding-bottom: 2mm; border-bottom: 1px solid #dcd8d1; }
 
   .field-row { flex: 0 0 auto; margin-top: 3mm; border-bottom: 1px solid #e6e2db; padding-bottom: 2mm; }
   .field-label { font-size: 6.6px; text-transform: uppercase; letter-spacing: 0.13em; color: #8a8d94; }
@@ -87,9 +103,10 @@
   .budget-choice-row { display: flex; align-items: baseline; gap: 5px; font-size: 9.5px; margin-top: 1.5mm; }
   .budget-choice-mark { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #1d3557; white-space: nowrap; flex: 0 0 auto; margin-right: 2px; }
   .budget-choice-sub { font-size: 8px; color: #6d7078; margin-left: 3px; }
-  .budget-name-row { margin-top: 2.5mm; font-size: 9.5px; height: 12.35px; overflow: hidden; }
-  .budget-name-row .field-label { display: inline; margin-right: 4px; }
-  .budget-name-row .bn-value { white-space: nowrap; }
+  .budget-name-row, .budget-no-row { font-size: 9.5px; height: 12.35px; overflow: hidden; }
+  .budget-name-row { margin-top: 2.5mm; }
+  .budget-name-row .field-label, .budget-no-row .field-label { display: inline; margin-right: 4px; }
+  .budget-name-row .bn-value, .budget-no-row .bn-value { white-space: nowrap; }
 
   .budget-row { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #e6e2db; padding: 1.4mm 0; font-size: 9px; }
   .budget-row:last-child { border-bottom: 1px solid #dcd8d1; font-weight: 700; font-size: 10px; }
@@ -110,7 +127,7 @@
 
   /* ---------------- Bottom block (หลัง items-wrap flex:1 — ต้องกำหนด flex-basis
      ตายตัวเสมอ ห้าม auto — ดูคำอธิบายด้านบน) ---------------- */
-  .bottom-block { flex: 0 0 175mm; overflow: hidden; }
+  .bottom-block { flex: 0 0 182mm; overflow: hidden; }
 
   .supplier-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; margin-top: 2mm; }
 
@@ -163,8 +180,21 @@
 </head>
 <body>
 
-{% set item_count = display_items | length %}
-{% set tier = 'tier-overflow' if item_count > 12 else 'tier-normal' %}
+{#- Tier ต้องตัดสินจาก "จำนวนรายการจริง" (real_item_count จาก ar_pdf.py) ไม่ใช่ความยาว
+   display_items หลัง Pad บรรทัดว่าง (Pad ขั้นต่ำ 9 เสมอ) — เพราะ Div ว่างไม่มีข้อความ
+   แทบไม่กิน Vertical Space ใน WeasyPrint (ไม่สร้าง Line Box) แต่แถวที่มีข้อความจริง
+   กินพื้นที่เต็มบรรทัดเสมอ ถ้าใช้ความยาวหลัง Pad จะเข้าใจผิดว่ามีที่ว่างเหลือเฟือ
+
+   ตัวเลข 3 มาจากการวัดจริงด้วย WeasyPrint + pdfplumber (2026-09-08, หลังย้าย Total/
+   Vat/Grand Total ออกจาก .items-wrap ไปไว้ใน .bottom-block ที่ Fix ขนาดแล้ว — ดู
+   .summary-strip ด้านล่าง): รายการจริง 3 แถว fit ในหน้าเดียวโดยเหลือ Margin ปลอดภัย
+   ~6.8mm, รายการจริง 4 แถวเหลือ Margin แค่ ~0.2mm (เสี่ยงเกินไป), รายการจริง 5+ แถว
+   โดน overflow:hidden ตัดทิ้งจริง (พิสูจน์ด้วย pdfplumber วัดตำแหน่ง Text ตรงๆ ไม่ใช่
+   แค่นับจำนวนหน้า) — ตัวอย่างจริงจากฟอร์มต้นฉบับมีแค่ 2 รายการ (ดู Comment บนสุดของ
+   ไฟล์) จึงถือว่า 3 ครอบคลุมกรณีปกติได้เกือบทั้งหมด ส่วนกรณีเกิน 3 ปล่อยไหลข้ามหน้า
+   (Tier overflow) ปลอดภัยกว่าเสี่ยง Data Loss เงียบๆ เสมอ
+#}
+{% set tier = 'tier-overflow' if real_item_count > 3 else 'tier-normal' %}
 
 <div class="page {{ tier }}">
 
@@ -210,7 +240,10 @@
 
   <div class="budget-section">
     <div>
-      <div class="field-label">Budget No.</div>
+      <div class="budget-no-row">
+        <span class="field-label">Budget No.</span>
+        <span class="bn-value mono">{{ ar.budget_no or "" }}</span>
+      </div>
       <div class="budget-choice-row">
         <span class="budget-choice-mark">( {{ "/" if ar.budget_type == "expenses" else " " }} )</span>
         <span>EXPENSES</span>
@@ -249,23 +282,25 @@
           <td><div class="amt-cell-amt mono">{{ item.amount or "" }}</div></td>
         </tr>
         {% endfor %}
-        <tr class="total-row">
-          <td><div class="amt-cell-label">Total</div></td>
-          <td><div class="amt-cell-amt mono">{{ ar.total }}</div></td>
-        </tr>
-        <tr>
-          <td><div class="amt-cell-label">Vat 7%</div></td>
-          <td><div class="amt-cell-amt mono">{{ ar.vat_amount }}</div></td>
-        </tr>
-        <tr class="grand-row">
-          <td><div class="amt-cell-label">Grand Total</div></td>
-          <td><div class="amt-cell-amt mono">{{ ar.grand_total }}</div></td>
-        </tr>
       </tbody>
     </table>
   </div>
 
   <div class="bottom-block">
+    <div class="meta-strip summary-strip">
+      <div class="meta-field">
+        <div class="meta-label">Total</div>
+        <div class="meta-value mono">{{ ar.total }}</div>
+      </div>
+      <div class="meta-field">
+        <div class="meta-label">Vat</div>
+        <div class="meta-value mono">{{ ar.vat_amount }}</div>
+      </div>
+      <div class="meta-field">
+        <div class="meta-label">Grand Total</div>
+        <div class="meta-value mono navy">{{ ar.grand_total }}</div>
+      </div>
+    </div>
     <div class="supplier-fields">
       <div class="field-row">
         <div class="field-label">Suppliers / Vendor</div>
@@ -278,7 +313,7 @@
     </div>
     <div class="field-row">
       <div class="field-label">Schedule Start - Finish</div>
-      <div class="field-value clip1">{{ ar.schedule or "" }}</div>
+      <div class="field-value clip1">{{ ar.schedule_range or "" }}</div>
     </div>
 
     <div class="auth-title">Authority</div>

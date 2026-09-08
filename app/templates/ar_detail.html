@@ -32,7 +32,8 @@
         <h2>Budget</h2>
         <table>
           <tbody>
-            <tr><th>Budget No.</th><td id="ar-budget-type"></td></tr>
+            <tr><th>Budget No.</th><td id="ar-budget-no"></td></tr>
+            <tr><th>Budget Type</th><td id="ar-budget-type"></td></tr>
             <tr><th>Budget Name</th><td id="ar-budget-name"></td></tr>
             <tr><th>Budget for the Year</th><td id="ar-budget-year"></td></tr>
             <tr><th>Amount Used Before</th><td id="ar-used-before"></td></tr>
@@ -56,7 +57,7 @@
         <table style="margin-top:8px;">
           <tbody>
             <tr><th>Total</th><td id="ar-total"></td></tr>
-            <tr><th>Vat 7%</th><td id="ar-vat"></td></tr>
+            <tr><th>Vat</th><td id="ar-vat"></td></tr>
             <tr><th>Grand Total</th><td id="ar-grand-total"></td></tr>
           </tbody>
         </table>
@@ -121,6 +122,7 @@ async function loadDetail() {
   document.getElementById("ar-requested").textContent = ar.requested_by_name || "-";
   document.getElementById("pdf-link").href = `/ars/${AR_ID}/pdf`;
 
+  document.getElementById("ar-budget-no").textContent = ar.budget_no || "-";
   const subCat = ar.budget_sub_category ? ` (${ar.budget_sub_category})` : "";
   document.getElementById("ar-budget-type").textContent = (BUDGET_TYPE_LABEL[ar.budget_type] || ar.budget_type) + subCat;
   document.getElementById("ar-budget-name").textContent = ar.budget_name || "-";
@@ -139,7 +141,12 @@ async function loadDetail() {
 
   document.getElementById("ar-suppliers").textContent = ar.suppliers || "-";
   document.getElementById("ar-term").textContent = ar.term_of_payment || "-";
-  document.getElementById("ar-schedule").textContent = ar.schedule || "-";
+  const scheduleStart = ar.schedule_start ? formatDateDMY(ar.schedule_start) : "";
+  const scheduleFinish = ar.schedule_finish ? formatDateDMY(ar.schedule_finish) : "";
+  document.getElementById("ar-schedule").textContent =
+    scheduleStart && scheduleFinish
+      ? `${scheduleStart} - ${scheduleFinish}`
+      : scheduleStart || scheduleFinish || "-";
 
   if (ar.status === "draft") {
     document.getElementById("edit-link").href = `/app/ars/${AR_ID}/edit`;
