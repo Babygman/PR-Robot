@@ -38,10 +38,15 @@ def _login_as(client: TestClient, email: str, password: str = _PASSWORD) -> None
 
 
 def _make_budget_master(db_session: Session, **kwargs) -> BudgetMaster:
+    # budget_no คือ Key จริงที่ไม่ซ้ำกัน (Correction 2026-09-09) — Default ตรงกับ
+    # budget_no Default ของ _sample_ar_body() ใน test_approval_requests.py ("5100-01")
+    # เพื่อให้ Match กันอัตโนมัติในเทสที่ไม่ได้ Override ค่านี้ — account_code เป็นแค่
+    # รหัสบัญชี/หมวดหมู่ ไม่ใช่ Key ซ้ำกันได้ตามจริง
     defaults = dict(
+        budget_no="5100-01",
         department="Production",
         budget_type="expenses",
-        account_code="5100-01",
+        account_code="5100",
         period_start=date(2026, 1, 1),
         period_end=date(2026, 12, 31),
         budgeted_amount=Decimal("10000.00"),
@@ -306,7 +311,7 @@ def test_department_with_no_levels_skips_straight_to_fa(client: TestClient, db_s
     requester = _make_user(
         db_session, name="Sales Req", email="salesreq@example.com", department="Sales"
     )
-    _make_budget_master(db_session, department="Sales", account_code="6100-01")
+    _make_budget_master(db_session, department="Sales", budget_no="6100-01", account_code="6100")
 
     _login_as(client, requester.email)
     ar_id = client.post("/ars", json=_sample_ar_body(budget_no="6100-01")).json()["id"]
@@ -327,7 +332,11 @@ def test_fa_acknowledge_over_budget_blocked_unless_forced(client: TestClient, db
         db_session, name="Tight Req", email="tightreq@example.com", department="Tight"
     )
     _make_budget_master(
-        db_session, department="Tight", account_code="7100-01", budgeted_amount=Decimal("1000.00")
+        db_session,
+        department="Tight",
+        budget_no="7100-01",
+        account_code="7100",
+        budgeted_amount=Decimal("1000.00"),
     )
 
     _login_as(client, requester.email)
@@ -379,6 +388,7 @@ def _build_xlsx_bytes(rows: list[list]) -> bytes:
     ws = wb.active
     ws.append(
         [
+            "budget_no",
             "department",
             "budget_type",
             "account_code",
@@ -418,6 +428,7 @@ def test_excel_upload_partial_success_and_reupload_merge(client: TestClient, db_
     content = _build_xlsx_bytes(
         [
             [
+                "BGW001",
                 "Warehouse",
                 "expenses",
                 "8100-01",
@@ -427,6 +438,7 @@ def test_excel_upload_partial_success_and_reupload_merge(client: TestClient, db_
                 50000,
             ],
             [
+                "BGW002",
                 "Warehouse",
                 "expenses",
                 "8100-02",
@@ -436,6 +448,7 @@ def test_excel_upload_partial_success_and_reupload_merge(client: TestClient, db_
                 -100,
             ],  # ผิด: ติดลบ
             [
+                "BGW003",
                 "Warehouse",
                 "assets",
                 "8200-01",
@@ -468,10 +481,12 @@ def test_excel_upload_partial_success_and_reupload_merge(client: TestClient, db_
         str(listed[0]["budgeted_amount"])
     ) == Decimal("50000.00")
 
-    # Re-upload เดิม แต่เปลี่ยน budgeted_amount — ต้อง Merge/Update แถวเดิม ไม่สร้างซ้ำ
+    # Re-upload budget_no เดิม แต่เปลี่ยน budgeted_amount — ต้อง Merge/Update แถวเดิม
+    # ไม่สร้างซ้ำ (Key จับคู่คือ budget_no เดี่ยว ไม่ใช่ account_code+period อีกต่อไป)
     content2 = _build_xlsx_bytes(
         [
             [
+                "BGW001",
                 "Warehouse",
                 "expenses",
                 "8100-01",
@@ -500,3 +515,89 @@ def test_excel_upload_partial_success_and_reupload_merge(client: TestClient, db_
     ).json()
     assert len(listed2) == 1
     assert Decimal(str(listed2[0]["budgeted_amount"])) == Decimal("60000.00")
+
+
+# ───────────────────────── Regression: account_code ซ้ำกันได้หลาย budget_no ─────────────────────────
+# ตัวอย่างจริงที่ผู้ใช้ส่งมา 2026-09-09 (สาเหตุที่แก้ Design v4.1): account_code เดียวกัน
+# (เช่น 5100) มีได้หลายรายการงบ คนละ budget_no (BG0001, BG0002) — ก่อนแก้ Unique
+# Constraint เดิมผูกกับ account_code ทำให้แถวที่ 2 Insert ไม่ผ่าน
+def test_excel_upload_same_account_code_different_budget_no_both_succeed(
+    client: TestClient, db_session: Session
+):
+    fa = _make_user(db_session, name="FA Dup Code", email="fadupcode@example.com", is_fa=True)
+    _login_as(client, fa.email)
+
+    content = _build_xlsx_bytes(
+        [
+            [
+                "BG0001",
+                "Production",
+                "expenses",
+                "5100",
+                "01/01/2026",
+                "31/12/2026",
+                "ค่าใช้จ่ายซ่อมบำรุงเครื่องจักร 300T",
+                500000,
+            ],
+            [
+                "BG0002",
+                "Production",
+                "expenses",
+                "5100",
+                "01/01/2026",
+                "31/12/2026",
+                "ค่าใช้จ่ายซ่อมบำรุงเครื่องจักร 1000T",
+                100000,
+            ],
+        ]
+    )
+    res = client.post(
+        "/budget/upload",
+        files={
+            "file": (
+                "budget.xlsx",
+                content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert body["total_rows"] == 2
+    assert body["success_rows"] == 2, body
+    assert body["error_rows"] == 0
+
+    listed = client.get(
+        "/budget", params={"department": "Production", "account_code": "5100"}
+    ).json()
+    assert len(listed) == 2
+    assert {row["budget_no"] for row in listed} == {"BG0001", "BG0002"}
+
+
+def test_excel_upload_duplicate_budget_no_in_same_file_rejected(
+    client: TestClient, db_session: Session
+):
+    fa = _make_user(db_session, name="FA Dup No", email="fadupno@example.com", is_fa=True)
+    _login_as(client, fa.email)
+
+    content = _build_xlsx_bytes(
+        [
+            ["BG9001", "Production", "expenses", "5100", "01/01/2026", "31/12/2026", None, 1000],
+            ["BG9001", "Production", "expenses", "1600", "01/01/2026", "31/12/2026", None, 2000],
+        ]
+    )
+    res = client.post(
+        "/budget/upload",
+        files={
+            "file": (
+                "budget.xlsx",
+                content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert body["success_rows"] == 1
+    assert body["error_rows"] == 1
+    assert "ซ้ำ" in [r["message"] for r in body["rows"] if not r["ok"]][0]

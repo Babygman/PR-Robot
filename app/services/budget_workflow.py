@@ -57,27 +57,26 @@ def get_department_levels(db: Session, department: str) -> list[BudgetApprovalLe
 def resolve_budget_master(
     db: Session,
     *,
+    budget_no: str,
     department: str,
     budget_type,
-    account_code: str,
     application_date: date,
 ) -> BudgetMaster | None:
-    """หา budget_master ที่ department+budget_type+account_code ตรง และ
-    application_date อยู่ระหว่าง period_start–period_end (รวมวันแรก-วันสุดท้าย) — ถ้า
-    เจอมากกว่า 1 แถว (ช่วงทับซ้อน) เลือกแถวที่ period_start ล่าสุด (Design §2.2 v3)"""
-    if not account_code:
+    """หา budget_master ที่ budget_no ตรง (Key จริงที่ไม่ซ้ำกัน — ดู Docstring บนสุด
+    ของ app/models/budget.py สำหรับ Correction 2026-09-09 ที่แก้จาก account_code เดิม)
+    — ยังเช็ก department+budget_type+ช่วงเวลาประกอบด้วย เผื่อผู้สร้าง AR พิมพ์ Budget
+    No. ผิด (เช่น ของแผนก/ประเภทอื่น หรือหมดอายุแล้ว) ถือว่าไม่ Match เหมือนไม่เจอเลย"""
+    if not budget_no:
         return None
     return (
         db.execute(
-            select(BudgetMaster)
-            .where(
+            select(BudgetMaster).where(
+                BudgetMaster.budget_no == budget_no,
                 BudgetMaster.department == department,
                 BudgetMaster.budget_type == budget_type,
-                BudgetMaster.account_code == account_code,
                 BudgetMaster.period_start <= application_date,
                 BudgetMaster.period_end >= application_date,
             )
-            .order_by(BudgetMaster.period_start.desc())
         )
         .scalars()
         .first()
@@ -99,9 +98,9 @@ def start_budget_workflow(db: Session, ar: ApprovalRequest, requester: User) -> 
     if requester.department and ar.budget_no:
         master = resolve_budget_master(
             db,
+            budget_no=ar.budget_no,
             department=requester.department,
             budget_type=ar.budget_type,
-            account_code=ar.budget_no,
             application_date=ar.application_date,
         )
         ar.budget_master_id = master.id if master else None

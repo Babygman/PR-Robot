@@ -92,9 +92,10 @@ def list_budget_master(
     department: str | None = Query(default=None),
     budget_type: ARBudgetType | None = Query(default=None),
     account_code: str | None = Query(default=None),
+    budget_no: str | None = Query(default=None),
     db: Session = Depends(get_db),
     # เปิดให้ User ทั่วไป Login แล้วดูได้ (ไม่ใช่แค่ FA/Admin) — หน้าสร้าง AR ต้องใช้
-    # Endpoint นี้ Filter Budget Code ตาม Department ของผู้สร้างเอง (Design §6)
+    # Endpoint นี้ Filter Budget No. ตาม Department ของผู้สร้างเอง (Design §6)
     _current_user: User = Depends(get_current_user),
 ) -> list[BudgetMasterRead]:
     query = db.query(BudgetMaster)
@@ -104,8 +105,10 @@ def list_budget_master(
         query = query.filter(BudgetMaster.budget_type == budget_type)
     if account_code is not None:
         query = query.filter(BudgetMaster.account_code == account_code)
+    if budget_no is not None:
+        query = query.filter(BudgetMaster.budget_no == budget_no)
     rows = query.order_by(
-        BudgetMaster.department, BudgetMaster.account_code, BudgetMaster.period_start.desc()
+        BudgetMaster.department, BudgetMaster.budget_no, BudgetMaster.period_start.desc()
     ).all()
     result = []
     for row in rows:

@@ -5,10 +5,11 @@
   <div>
     <h1>Budget Control</h1>
     <p class="muted">
-      Upload Excel งบประมาณ (FA หรือ Admin เท่านั้น) — คอลัมน์ที่ต้องมี: department,
-      budget_type (expenses/assets), account_code, period_start, period_end,
-      budgeted_amount (budget_name ไม่บังคับ) — Re-upload แถวเดิม (Department+Type+
-      Code+ช่วงเวลาเดียวกัน) จะอัปเดตยอดงบ ไม่แตะยอดที่หักไปแล้ว
+      Upload Excel งบประมาณ (FA หรือ Admin เท่านั้น) — คอลัมน์ที่ต้องมี: budget_no
+      (เลขที่ไม่ซ้ำกัน ตรงกับช่อง "Budget No." ในฟอร์ม AR), department, budget_type
+      (expenses/assets), account_code, period_start, period_end, budgeted_amount
+      (budget_name ไม่บังคับ) — Re-upload budget_no เดิมจะอัปเดตข้อมูลแถวนั้น ไม่แตะ
+      ยอดที่หักไปแล้ว (account_code ซ้ำกันได้หลาย budget_no ตามจริง)
     </p>
   </div>
 </div>
@@ -27,13 +28,14 @@
 <div class="card">
   <h2>ค้นหางบประมาณ</h2>
   <div class="row">
+    <div class="field"><label for="s-budget-no">Budget No.</label><input type="text" id="s-budget-no"></div>
     <div class="field"><label for="s-department">Department</label><input type="text" id="s-department"></div>
     <div class="field"><label for="s-account-code">Account Code</label><input type="text" id="s-account-code"></div>
     <div class="field" style="display:flex; align-items:flex-end;"><button type="button" id="search-btn" class="secondary">ค้นหา</button></div>
   </div>
   <table>
-    <thead><tr><th>Department</th><th>Type</th><th>Account Code</th><th>ชื่อ</th><th>ช่วงเวลา</th><th>งบ</th><th>ใช้ไป</th><th>คงเหลือ</th></tr></thead>
-    <tbody id="budget-body"><tr><td colspan="8" class="muted">ค้นหาเพื่อแสดงผล</td></tr></tbody>
+    <thead><tr><th>Budget No.</th><th>Department</th><th>Type</th><th>Account Code</th><th>ชื่อ</th><th>ช่วงเวลา</th><th>งบ</th><th>ใช้ไป</th><th>คงเหลือ</th></tr></thead>
+    <tbody id="budget-body"><tr><td colspan="9" class="muted">ค้นหาเพื่อแสดงผล</td></tr></tbody>
   </table>
 </div>
 
@@ -78,14 +80,16 @@ async function loadHistory() {
 
 async function searchBudget() {
   const params = new URLSearchParams();
+  const budgetNo = document.getElementById("s-budget-no").value.trim();
   const dept = document.getElementById("s-department").value.trim();
   const code = document.getElementById("s-account-code").value.trim();
+  if (budgetNo) params.set("budget_no", budgetNo);
   if (dept) params.set("department", dept);
   if (code) params.set("account_code", code);
   const res = await apiFetch("/budget?" + params.toString());
   const body = document.getElementById("budget-body");
   if (!res.ok) {
-    body.innerHTML = '<tr><td colspan="8" class="error">ค้นหาไม่สำเร็จ</td></tr>';
+    body.innerHTML = '<tr><td colspan="9" class="error">ค้นหาไม่สำเร็จ</td></tr>';
     return;
   }
   const rows = await res.json();
@@ -93,6 +97,7 @@ async function searchBudget() {
     ? rows
         .map(
           (r) => `<tr>
+        <td class="mono">${escapeHtml(r.budget_no)}</td>
         <td>${escapeHtml(r.department)}</td>
         <td>${escapeHtml(r.budget_type)}</td>
         <td class="mono">${escapeHtml(r.account_code)}</td>
@@ -104,7 +109,7 @@ async function searchBudget() {
       </tr>`
         )
         .join("")
-    : '<tr><td colspan="8" class="muted">ไม่พบรายการ</td></tr>';
+    : '<tr><td colspan="9" class="muted">ไม่พบรายการ</td></tr>';
 }
 
 document.getElementById("search-btn").addEventListener("click", searchBudget);

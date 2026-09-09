@@ -1,19 +1,23 @@
-"""Budget Control — Excel Upload Parser/Validator/Upsert (Phase 10, 2026-09-09)
+"""Budget Control — Excel Upload Parser/Validator/Upsert (Phase 10, 2026-09-09,
+แก้ไข Business Decision v4.1 เรื่อง budget_no วันเดียวกัน — ดู app/models/budget.py
+Docstring ของ BudgetMaster สำหรับสาเหตุที่แก้)
 
-Format (ดู docs/drafts/budget_control_design_draft.md §4):
-department | budget_type | account_code | period_start | period_end | budget_name
-(Optional) | budgeted_amount
+Format: budget_no | department | budget_type | account_code | period_start |
+period_end | budgeted_amount | budget_name (Optional)
+
+budget_no คือ Key จริงที่ไม่ซ้ำกัน (Global ไม่ผูกแผนก) ตรงกับช่อง "Budget No." ของ AR
+แบบ 1:1 — account_code เป็นแค่รหัสบัญชี/หมวดหมู่ ซ้ำกันได้หลายแถว/หลาย budget_no
 
 Import แบบ Partial-success — แถวผิดไม่บล็อกแถวถูก บันทึก Log ทุกครั้งที่ Upload ลง
 budget_upload_batches + budget_upload_row_errors (เฉพาะแถวที่ Error)
 
-Re-upload (Merge/Update): จับคู่ด้วย department+budget_type+account_code+period_start+
-period_end ทั้งหมด — ถ้าตรงเป๊ะทุก Field ถือเป็นแถวเดิม อัปเดตแค่ budgeted_amount/
-budget_name (ไม่แตะ used_amount เด็ดขาด) ถ้าไม่ตรงถือเป็นแถวใหม่แยกต่างหาก
+Re-upload (Merge/Update): จับคู่ด้วย budget_no เดี่ยว (Key จริง) — เจอ budget_no เดิม
+ถือเป็นแถวเดิม อัปเดตทุก Field ยกเว้น used_amount (ไม่แตะยอดที่หักไปแล้วจากการอนุมัติ
+AR เด็ดขาด) ไม่เจอ = แถวใหม่
 
 Validate ตอน Upload: เตือน (ไม่บล็อก) ถ้าพบช่วงเวลาที่ทับซ้อนกันสำหรับ
-Department+Type+Code เดียวกัน — ให้ Admin/FA เห็น Warning ในผลลัพธ์แต่ยัง Upsert
-สำเร็จตามปกติ
+Department+Type+AccountCode เดียวกัน (คนละ budget_no) — ให้ Admin/FA เห็น Warning
+ในผลลัพธ์แต่ยัง Upsert สำเร็จตามปกติ
 """
 
 from __future__ import annotations
@@ -30,6 +34,7 @@ from sqlalchemy.orm import Session
 from app.models import ARBudgetType, BudgetMaster, BudgetUploadBatch, BudgetUploadRowError
 
 _REQUIRED_COLUMNS = [
+    "budget_no",
     "department",
     "budget_type",
     "account_code",
@@ -108,6 +113,8 @@ def _validate_row(row: dict) -> tuple[dict | None, str | None]:
     if missing:
         return None, f"ขาดข้อมูลจำเป็น: {', '.join(missing)}"
 
+    budget_no = str(row["budget_no"]).strip()
+
     department = str(row["department"]).strip()
     budget_type_raw = str(row["budget_type"]).strip().lower()
     if budget_type_raw not in {"expenses", "assets"}:
@@ -131,6 +138,7 @@ def _validate_row(row: dict) -> tuple[dict | None, str | None]:
 
     return (
         {
+            "budget_no": budget_no,
             "department": department,
             "budget_type": ARBudgetType(budget_type_raw),
             "account_code": account_code,
@@ -171,7 +179,7 @@ def parse_and_upsert(
         return batch, [_RowOutcome(row_no=0, ok=False, message=f"อ่านไฟล์ไม่สำเร็จ: {exc}")]
 
     outcomes: list[_RowOutcome] = []
-    seen_keys: set[tuple] = set()
+    seen_keys: set[str] = set()
 
     for i, row in enumerate(rows, start=2):  # แถว 1 = Header
         parsed, err = _validate_row(row)
@@ -179,19 +187,15 @@ def parse_and_upsert(
             outcomes.append(_RowOutcome(row_no=i, ok=False, message=err, raw_data=_jsonable(row)))
             continue
 
-        key = (
-            parsed["department"],
-            parsed["budget_type"].value,
-            parsed["account_code"],
-            parsed["period_start"].isoformat(),
-            parsed["period_end"].isoformat(),
-        )
+        # budget_no คือ Key จริงที่ไม่ซ้ำกัน (ดู Docstring บนสุดของไฟล์นี้) — ใช้กันแถว
+        # ซ้ำภายในไฟล์เดียวกัน และใช้จับคู่ตอน Re-upload แทน Composite Field เดิม
+        key = parsed["budget_no"]
         if key in seen_keys:
             outcomes.append(
                 _RowOutcome(
                     row_no=i,
                     ok=False,
-                    message="ซ้ำกับแถวอื่นในไฟล์เดียวกัน (Department+Type+Code+ช่วงเวลาเดียวกัน)",
+                    message=f'budget_no "{key}" ซ้ำกับแถวอื่นในไฟล์เดียวกัน',
                     department=parsed["department"],
                     account_code=parsed["account_code"],
                     raw_data=_jsonable(row),
@@ -201,19 +205,14 @@ def parse_and_upsert(
         seen_keys.add(key)
 
         existing = (
-            db.execute(
-                select(BudgetMaster).where(
-                    BudgetMaster.department == parsed["department"],
-                    BudgetMaster.budget_type == parsed["budget_type"],
-                    BudgetMaster.account_code == parsed["account_code"],
-                    BudgetMaster.period_start == parsed["period_start"],
-                    BudgetMaster.period_end == parsed["period_end"],
-                )
-            )
+            db.execute(select(BudgetMaster).where(BudgetMaster.budget_no == parsed["budget_no"]))
             .scalars()
             .first()
         )
 
+        # คำเตือนช่วงเวลาทับซ้อน — เทียบเฉพาะแถวอื่นที่ Department+Type+AccountCode
+        # เดียวกันแต่คนละ budget_no (account_code ไม่ใช่ Key แล้ว ซ้ำกันได้ตามจริง แต่
+        # ถ้าช่วงเวลาทับซ้อนกันด้วยอาจเป็นการกรอกผิดพลาด ควรเตือนให้ตรวจสอบ)
         warning = ""
         overlap = (
             db.execute(
@@ -221,31 +220,41 @@ def parse_and_upsert(
                     BudgetMaster.department == parsed["department"],
                     BudgetMaster.budget_type == parsed["budget_type"],
                     BudgetMaster.account_code == parsed["account_code"],
+                    BudgetMaster.budget_no != parsed["budget_no"],
                     BudgetMaster.period_start <= parsed["period_end"],
                     BudgetMaster.period_end >= parsed["period_start"],
-                    BudgetMaster.period_start != parsed["period_start"],
                 )
             )
             .scalars()
             .first()
         )
         if overlap is not None:
-            warning = " (คำเตือน: ช่วงเวลาทับซ้อนกับแถวเดิมที่มีอยู่แล้ว — ตรวจสอบให้แน่ใจว่าตั้งใจ)"
+            warning = (
+                f' (คำเตือน: ช่วงเวลาทับซ้อนกับ budget_no "{overlap.budget_no}" ที่ Account '
+                "Code เดียวกัน — ตรวจสอบให้แน่ใจว่าตั้งใจ)"
+            )
 
         if existing is not None:
+            # Re-upload = แก้ทุก Field ยกเว้น used_amount (budget_no คือ Key คงที่ ไม่แก้)
+            existing.department = parsed["department"]
+            existing.budget_type = parsed["budget_type"]
+            existing.account_code = parsed["account_code"]
+            existing.period_start = parsed["period_start"]
+            existing.period_end = parsed["period_end"]
             existing.budgeted_amount = parsed["budgeted_amount"]
             existing.budget_name = parsed["budget_name"]
             outcomes.append(
                 _RowOutcome(
                     row_no=i,
                     ok=True,
-                    message=f"อัปเดตแถวเดิม (id={existing.id}){warning}",
+                    message=f"อัปเดตแถวเดิม (budget_no={key}, id={existing.id}){warning}",
                     department=parsed["department"],
                     account_code=parsed["account_code"],
                 )
             )
         else:
             new_row = BudgetMaster(
+                budget_no=parsed["budget_no"],
                 department=parsed["department"],
                 budget_type=parsed["budget_type"],
                 account_code=parsed["account_code"],
@@ -260,7 +269,7 @@ def parse_and_upsert(
                 _RowOutcome(
                     row_no=i,
                     ok=True,
-                    message=f"เพิ่มแถวใหม่{warning}",
+                    message=f"เพิ่มแถวใหม่ (budget_no={key}){warning}",
                     department=parsed["department"],
                     account_code=parsed["account_code"],
                 )

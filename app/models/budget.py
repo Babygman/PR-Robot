@@ -4,10 +4,15 @@
 docs/drafts/budget_control_design_draft.md สำหรับ Design เต็ม)
 
 โครงสร้างหลัก:
-- `BudgetMaster` — ยอดงบประมาณจาก Excel ที่ Admin/FA Upload เข้ามา ต่อ
-  Department+BudgetType+AccountCode+ช่วงเวลา หนึ่งแถว — `used_amount` เป็น Counter
-  บวกสะสมจริง หักด้วย Atomic UPDATE เท่านั้น (Pattern เดียวกับ ar_numbering.py) ห้าม
-  อ่านมาลบในโค้ด Python เด็ดขาด (เสี่ยง Race Condition ตอนอนุมัติพร้อมกัน)
+- `BudgetMaster` — ยอดงบประมาณจาก Excel ที่ Admin/FA Upload เข้ามา หนึ่งแถวต่อหนึ่ง
+  "รายการงบ" — Key จริงที่ไม่ซ้ำกันคือ `budget_no` (เช่น BG0001, BG0002, ... เลขวิ่ง
+  Global ไม่ผูกแผนก) ซึ่งคือค่าเดียวกับช่อง "Budget No." ในฟอร์ม AR แบบ 1:1 ตรงๆ —
+  แก้ไขจาก Business Decision v4.1 เดิมที่เข้าใจผิดว่า `account_code` คือ Key เดียวกับ
+  Budget No. (Correction 2026-09-09 หลังผู้ใช้ส่งตัวอย่างข้อมูลจริง): `account_code`
+  เป็นแค่รหัสบัญชี/หมวดหมู่ (เช่น 5100, 1600) ซ้ำกันได้หลายแถว/หลาย Budget No. ตามจริง
+  ไม่ใช่ Key — `used_amount` เป็น Counter บวกสะสมจริง หักด้วย Atomic UPDATE เท่านั้น
+  (Pattern เดียวกับ ar_numbering.py) ห้ามอ่านมาลบในโค้ด Python เด็ดขาด (เสี่ยง Race
+  Condition ตอนอนุมัติพร้อมกัน)
 - `BudgetUploadBatch` / `BudgetUploadRowError` — Log การ Upload Excel แต่ละครั้ง
   (ใคร/เมื่อไหร่/กี่แถวสำเร็จ/กี่แถว Error) — Import แบบ Partial-success
 - `BudgetApprovalLevel` — Level Management: แต่ละแผนกกำหนดเองว่ามีกี่ Level อะไรบ้าง
@@ -57,18 +62,13 @@ class BudgetApprovalAction(str, enum.Enum):
 
 class BudgetMaster(Base):
     __tablename__ = "budget_master"
-    __table_args__ = (
-        UniqueConstraint(
-            "department",
-            "budget_type",
-            "account_code",
-            "period_start",
-            "period_end",
-            name="uq_budget_master_dept_type_code_period",
-        ),
-    )
+    __table_args__ = (UniqueConstraint("budget_no", name="uq_budget_master_budget_no"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Key จริงที่ไม่ซ้ำกัน (Global — ไม่ผูกแผนก) ตรงกับช่อง "Budget No." ของ AR แบบ 1:1
+    # — ใช้ Match ตอน Finalize AR (ดู budget_workflow.resolve_budget_master) และใช้เป็น
+    # Key จับคู่ตอน Re-upload Excel (ดู budget_excel.py) แทน Composite Field เดิม
+    budget_no: Mapped[str] = mapped_column(String(50), nullable=False, unique=True, index=True)
     department: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     budget_type: Mapped[ARBudgetType] = mapped_column(
         SAEnum(
@@ -79,7 +79,9 @@ class BudgetMaster(Base):
         ),
         nullable=False,
     )
-    account_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    # รหัสบัญชี/หมวดหมู่ (Classification) — "ไม่ใช่" Key ไม่ Unique ซ้ำกันได้หลายแถว/
+    # หลาย budget_no ตามจริง (เช่น account_code=5100 มีทั้ง BG0001 กับ BG0002)
+    account_code: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     period_start: Mapped[date] = mapped_column(Date, nullable=False)
     period_end: Mapped[date] = mapped_column(Date, nullable=False)
     budget_name: Mapped[str | None] = mapped_column(String(255))

@@ -3,6 +3,7 @@
 ครอบคลุม: Budget Master (ยอดงบจาก Excel), Budget Upload (Preview/Confirm/History),
 Level Management, และผลลัพธ์ Audit การอนุมัติแต่ละ Level/FA Acknowledge
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -17,6 +18,7 @@ from app.models.budget import BudgetApprovalAction, BudgetApprovalStepType
 # ───────────────────────── Budget Master ─────────────────────────
 class BudgetMasterRead(BaseModel):
     id: int
+    budget_no: str
     department: str
     budget_type: ARBudgetType
     account_code: str

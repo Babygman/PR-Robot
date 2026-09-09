@@ -132,7 +132,7 @@ async function loadBudgetOptions(department, budgetType) {
   BUDGET_OPTIONS.forEach((b) => {
     const opt = document.createElement("option");
     opt.value = b.id;
-    opt.textContent = `${b.account_code}${b.budget_name ? " — " + b.budget_name : ""} (คงเหลือ ${fmtMoney(b.balance)})`;
+    opt.textContent = `${b.budget_no} — ${b.account_code}${b.budget_name ? " / " + b.budget_name : ""} (คงเหลือ ${fmtMoney(b.balance)})`;
     select.appendChild(opt);
   });
 }
@@ -144,7 +144,7 @@ document.getElementById("f-budget-select").addEventListener("change", (e) => {
     readout.classList.add("hidden");
     return;
   }
-  document.getElementById("f-budget-no").value = chosen.account_code;
+  document.getElementById("f-budget-no").value = chosen.budget_no;
   if (chosen.budget_name) document.getElementById("f-budget-name").value = chosen.budget_name;
   document.getElementById("ro-budget-amount").value = fmtMoney(chosen.budgeted_amount);
   document.getElementById("ro-used-amount").value = fmtMoney(chosen.used_amount);
