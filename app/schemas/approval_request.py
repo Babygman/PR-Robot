@@ -14,7 +14,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
-from app.models.approval_request import ARBudgetType, ARStatus
+from app.models.approval_request import ARBudgetApprovalStatus, ARBudgetType, ARStatus
 
 
 class ARAmountItemCreate(BaseModel):
@@ -112,6 +112,14 @@ class ARRead(BaseModel):
     requested_by_name: str | None = None
     created_at: datetime
     updated_at: datetime
+
+    # --- Budget Control (Phase 10, 2026-09-09) ---
+    budget_department: str | None = None
+    budget_master_id: int | None = None
+    budget_approval_status: ARBudgetApprovalStatus
+    current_approval_level: int | None = None
+    budget_deducted_amount: Decimal | None = None
+    budget_overridden: bool = False
 
     model_config = {"from_attributes": True}
 

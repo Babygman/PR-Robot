@@ -87,3 +87,19 @@ def page_upload(request: Request):
 @router.get("/ai-usage")
 def page_ai_usage(request: Request):
     return templates.TemplateResponse(request=request, name="ai_usage.html", context={})
+
+
+# ───────────────────────── Budget Control (Phase 10, 2026-09-09) ─────────────────────────
+@router.get("/users")
+def page_users(request: Request):
+    return templates.TemplateResponse(request=request, name="users.html", context={})
+
+
+@router.get("/budget-levels")
+def page_budget_levels(request: Request):
+    return templates.TemplateResponse(request=request, name="budget_levels.html", context={})
+
+
+@router.get("/budget")
+def page_budget(request: Request):
+    return templates.TemplateResponse(request=request, name="budget_upload.html", context={})

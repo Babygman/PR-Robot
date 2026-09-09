@@ -14,6 +14,7 @@ Flow:
    เปลี่ยน Status เป็น finalized อัตโนมัติถ้ายังเป็น draft (ล็อกแก้ไขไม่ได้อีกหลังจากนี้)
 6. GET /ars/{id}/history -> ประวัติการกระทำทั้งหมดของ AR นี้จาก audit_log
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -24,14 +25,26 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.deps import get_current_user
 from app.db.session import get_db
-from app.models import ApprovalRequest, ARAmountItem, ARStatus, AuditLog, User
+from app.models import (
+    ApprovalRequest,
+    ARAmountItem,
+    ARStatus,
+    AuditLog,
+    User,
+)
 from app.schemas.approval_request import (
     ARCreate,
     ARListItem,
     ARRead,
     ARUpdate,
 )
+from app.schemas.budget import (
+    ARApprovalProgressStep,
+    BudgetFaAcknowledgeBody,
+    BudgetRejectBody,
+)
 from app.schemas.purchasing_requisition import AuditLogRead
+from app.services import budget_workflow
 from app.services.ar_numbering import allocate_ar_no, format_ar_no
 from app.services.ar_pdf import render_ar_pdf
 from app.services.user_lookup import resolve_user_names
@@ -100,6 +113,14 @@ def create_ar(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ARRead:
+    # Budget Control (2026-09-09, Design §2.1): ผู้สร้าง AR ต้องมี Department เสมอ —
+    # Validate ที่นี่ (Application-level) ไม่ใช่ DB Constraint เพราะผู้อนุมัติบาง Level
+    # ไม่มี Department ได้ (Cross-department) — กฎนี้บังคับเฉพาะตอน "สร้าง AR" เท่านั้น
+    if not current_user.department:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "บัญชีของคุณยังไม่ได้ระบุ Department — กรุณาติดต่อ Admin ให้กรอกก่อนสร้าง Approval Request",
+        )
     ar = ApprovalRequest(
         ar_no=allocate_ar_no(db),
         status=ARStatus.DRAFT,
@@ -206,9 +227,7 @@ def revise_ar(
         )
 
     already_superseded = (
-        db.query(ApprovalRequest.id)
-        .filter(ApprovalRequest.revised_from_id == original.id)
-        .first()
+        db.query(ApprovalRequest.id).filter(ApprovalRequest.revised_from_id == original.id).first()
     )
     if already_superseded:
         raise HTTPException(
@@ -252,6 +271,11 @@ def revise_ar(
         ARAmountItem(item_no=item.item_no, label=item.label, amount=item.amount)
         for item in original.amount_items
     ]
+    # Budget Control (2026-09-09): คืนยอดงบทันทีถ้าต้นฉบับเคย Approved แล้ว (หักยอดไป
+    # แล้วจริง) + Reset Field Budget Control ทั้งหมดของฉบับ Draft ใหม่ให้เริ่มนับ Level
+    # 1 ใหม่ทั้งหมดตอน Finalize ครั้งถัดไป (ไม่ข้าม Level ที่เคยผ่านมาก่อน Revise)
+    budget_workflow.refund_on_revise(db, original)
+    budget_workflow.reset_for_new_draft(new_ar)
 
     db.add(new_ar)
     db.flush()  # ให้ new_ar.id พร้อมใช้ก่อน Commit
@@ -294,6 +318,10 @@ def get_ar_pdf(
     # Generate สำเร็จก่อนค่อย Finalize เพื่อไม่ให้ AR ถูกล็อกถ้า Render PDF พังกลางทาง
     if ar.status == ARStatus.DRAFT:
         ar.status = ARStatus.FINALIZED
+        # Budget Control (2026-09-09): จุดเริ่ม Workflow อนุมัติหักงบ — Resolve Level
+        # แรกของแผนกผู้สร้าง (Snapshot budget_department) + Budget Master ที่อ้างอิง
+        requester = db.get(User, ar.requested_by_id)
+        budget_workflow.start_budget_workflow(db, ar, requester)
         db.add(
             AuditLog(
                 ar_id=ar.id,
@@ -314,16 +342,116 @@ def get_ar_pdf(
     )
 
 
+@router.get("/{ar_id}/approval-progress", response_model=list[ARApprovalProgressStep])
+def get_ar_approval_progress(
+    ar_id: int, db: Session = Depends(get_db), _current_user: User = Depends(get_current_user)
+) -> list[ARApprovalProgressStep]:
+    ar = _get_ar_or_404(db, ar_id)
+    steps = budget_workflow.build_approval_progress(db, ar)
+    return [ARApprovalProgressStep(**s) for s in steps]
+
+
+@router.post("/{ar_id}/approve-level", response_model=ARRead)
+def approve_ar_level(
+    ar_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ARRead:
+    ar = _get_ar_or_404(db, ar_id)
+    level_before = ar.current_approval_level
+    budget_workflow.approve_level(db, ar, current_user)
+    db.add(
+        AuditLog(
+            ar_id=ar.id,
+            action="ar.budget_level_approved",
+            actor_id=current_user.id,
+            detail={"level_no": level_before},
+        )
+    )
+    db.commit()
+    db.refresh(ar)
+    return _to_ar_read(db, ar)
+
+
+@router.post("/{ar_id}/reject-level", response_model=ARRead)
+def reject_ar_level(
+    ar_id: int,
+    body: BudgetRejectBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ARRead:
+    ar = _get_ar_or_404(db, ar_id)
+    level_before = ar.current_approval_level
+    budget_workflow.reject_level(db, ar, current_user, body.reason)
+    db.add(
+        AuditLog(
+            ar_id=ar.id,
+            action="ar.budget_level_rejected",
+            actor_id=current_user.id,
+            detail={"level_no": level_before, "reason": body.reason},
+        )
+    )
+    db.commit()
+    db.refresh(ar)
+    return _to_ar_read(db, ar)
+
+
+@router.post("/{ar_id}/fa-acknowledge", response_model=ARRead)
+def fa_acknowledge_ar(
+    ar_id: int,
+    body: BudgetFaAcknowledgeBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ARRead:
+    ar = _get_ar_or_404(db, ar_id)
+    budget_workflow.fa_acknowledge(db, ar, current_user, force=body.force)
+    db.add(
+        AuditLog(
+            ar_id=ar.id,
+            action="ar.budget_fa_acknowledged",
+            actor_id=current_user.id,
+            detail={
+                "deducted_amount": str(ar.budget_deducted_amount)
+                if ar.budget_deducted_amount
+                else None,
+                "overridden": ar.budget_overridden,
+            },
+        )
+    )
+    db.commit()
+    db.refresh(ar)
+    return _to_ar_read(db, ar)
+
+
+@router.post("/{ar_id}/reject-fa", response_model=ARRead)
+def reject_ar_fa(
+    ar_id: int,
+    body: BudgetRejectBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ARRead:
+    ar = _get_ar_or_404(db, ar_id)
+    budget_workflow.reject_fa(db, ar, current_user, body.reason)
+    db.add(
+        AuditLog(
+            ar_id=ar.id,
+            action="ar.budget_fa_rejected",
+            actor_id=current_user.id,
+            detail={"reason": body.reason},
+        )
+    )
+    db.commit()
+    db.refresh(ar)
+    return _to_ar_read(db, ar)
+
+
 @router.get("/{ar_id}/history", response_model=list[AuditLogRead])
 def get_ar_history(
     ar_id: int, db: Session = Depends(get_db), _current_user: User = Depends(get_current_user)
 ) -> list[AuditLogRead]:
     _get_ar_or_404(db, ar_id)  # 404 ถ้าไม่มี AR นี้จริง
     logs = (
-        db.query(AuditLog)
-        .filter(AuditLog.ar_id == ar_id)
-        .order_by(AuditLog.timestamp.asc())
-        .all()
+        db.query(AuditLog).filter(AuditLog.ar_id == ar_id).order_by(AuditLog.timestamp.asc()).all()
     )
     names = resolve_user_names(db, {log.actor_id for log in logs if log.actor_id})
     return [

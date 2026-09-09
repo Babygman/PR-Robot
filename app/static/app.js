@@ -56,6 +56,14 @@ async function requireLogin() {
       .toUpperCase();
     avatarEl.textContent = initials;
   }
+  // Budget Control (2026-09-09) — เมนู "จัดการ User" (Admin เท่านั้น) / "Level อนุมัติ"
+  // (Admin เท่านั้น) / "Budget Control" (FA หรือ Admin) โชว์เฉพาะคนมีสิทธิ์
+  const navUsers = document.getElementById("nav-users");
+  if (navUsers && me.is_admin) navUsers.classList.remove("hidden");
+  const navLevels = document.getElementById("nav-budget-levels");
+  if (navLevels && me.is_admin) navLevels.classList.remove("hidden");
+  const navBudget = document.getElementById("nav-budget");
+  if (navBudget && (me.is_admin || me.is_fa)) navBudget.classList.remove("hidden");
   return me;
 }
 

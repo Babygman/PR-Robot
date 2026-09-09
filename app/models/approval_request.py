@@ -17,14 +17,24 @@ revision/revised_from_id (Revise ได้เฉพาะฉบับ Finalized 
 
 ตารางอ้างอิงสถิต (Limit of Authority, EVENTS Example, Flowchart, ชื่อบริษัท) ไม่มี
 คอลัมน์ในนี้เลย — พิมพ์ตายตัวเหมือนกันทุกฉบับใน Print Template (ar_form.html)
+
+Budget Control (Phase 10, 2026-09-09, Business Decision v4.1): ย้อนกลับหมายเหตุ
+ด้านบนเฉพาะจุด — ช่องลายเซ็นทั้ง 5 ช่อง (President/Director, General Manager, Senior
+Manager, Manager, F&A) ไม่ได้ว่างเปล่ารอเซ็นสดอีกต่อไป แต่ Auto-fill ชื่อผู้อนุมัติ+
+วันที่ทันทีที่แต่ละ Level (ดู app/models/budget.py: BudgetApprovalLevel) อนุมัติผ่าน
+จริงในระบบ — เพิ่ม Field ใหม่ 4 ตัวด้านล่างเพื่อติดตามสถานะ Workflow อนุมัติหักงบ
+ประมาณนี้ (แยกจาก `status` Draft/Finalized เดิมโดยสิ้นเชิง — เอกสารยัง Lock ตอน
+Finalize/พิมพ์ครั้งแรกเหมือนเดิมทุกประการ ไม่เกี่ยวกับ Workflow อนุมัติหักงบเลย)
 """
 from __future__ import annotations
 
 import enum
 from datetime import date, datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -40,6 +50,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
+if TYPE_CHECKING:
+    # หลีกเลี่ยง Circular Import จริง (budget.py Import ARBudgetType จากไฟล์นี้อยู่แล้ว)
+    # — Import แค่ตอน Type-check เท่านั้น ตอน Runtime ใช้ String Forward-ref ในตัว
+    # relationship() ข้างล่างแทน (SQLAlchemy Resolve ผ่าน Registry ตอน Mapper Configure)
+    from app.models.budget import ARBudgetApproval
+
 
 class ARStatus(str, enum.Enum):
     """เหมือน PRStatus ทุกประการ — DRAFT = แก้ไขได้, FINALIZED = ล็อกแล้ว (Trigger
@@ -54,6 +70,18 @@ class ARBudgetType(str, enum.Enum):
 
     EXPENSES = "expenses"
     ASSETS = "assets"
+
+
+class ARBudgetApprovalStatus(str, enum.Enum):
+    """สถานะ Workflow อนุมัติหักงบประมาณ (Budget Control, แยกจาก ARStatus
+    Draft/Finalized โดยสิ้นเชิง) — ดู app/services/budget_workflow.py สำหรับ Logic
+    การเปลี่ยนสถานะทั้งหมด"""
+
+    NOT_SUBMITTED = "not_submitted"  # ยังไม่ Finalize หรือ Revise ใหม่ (รีเซ็ตเสมอ)
+    PENDING = "pending"  # รอ Level ใดๆ (ดู current_approval_level) อนุมัติ/ปฏิเสธ
+    PENDING_FA_ACKNOWLEDGE = "pending_fa_acknowledge"  # Level ครบแล้ว รอ FA Acknowledge
+    APPROVED = "approved"  # FA Acknowledge ผ่านแล้ว หักยอดงบจริงแล้ว
+    REJECTED = "rejected"  # ถูกปฏิเสธจาก Level ใดก็ได้ (รวม FA) — แก้ไขผ่าน Revise เท่านั้น
 
 
 class ApprovalRequest(Base):
@@ -122,6 +150,34 @@ class ApprovalRequest(Base):
 
     requested_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
 
+    # --- Budget Control (Phase 10, 2026-09-09) — ดู Docstring บนสุดของไฟล์ ---
+    # Snapshot Department ของผู้สร้าง ณ ตอน Finalize (ไม่ใช่ Live-lookup จาก User.department
+    # ทุกครั้ง) — กัน Bug ถ้า Admin แก้ Department ของ User คนนั้นระหว่างที่ AR ยังอยู่
+    # ระหว่างขั้นตอนอนุมัติ (Level ที่ Query ไปแล้วต้องนิ่ง ไม่เปลี่ยนกลางทาง)
+    budget_department: Mapped[str | None] = mapped_column(String(255))
+    budget_master_id: Mapped[int | None] = mapped_column(
+        ForeignKey("budget_master.id", ondelete="SET NULL")
+    )
+    budget_approval_status: Mapped[ARBudgetApprovalStatus] = mapped_column(
+        SAEnum(
+            ARBudgetApprovalStatus,
+            name="ar_budget_approval_status",
+            native_enum=True,
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
+        default=ARBudgetApprovalStatus.NOT_SUBMITTED,
+        server_default=ARBudgetApprovalStatus.NOT_SUBMITTED.value,
+        nullable=False,
+    )
+    # Level (level_no ใน BudgetApprovalLevel) ที่กำลังรอการอนุมัติอยู่ตอนนี้ — มีค่า
+    # เฉพาะตอน budget_approval_status = pending เท่านั้น
+    current_approval_level: Mapped[int | None] = mapped_column(Integer)
+    # จำนวนที่หักไปจริงตอน FA Acknowledge (เก็บไว้คืนยอดตอน Revise — ไม่คำนวณใหม่จาก
+    # this_application ที่อาจถูกแก้ไปแล้วหลัง Approved)
+    budget_deducted_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    # Mark ไว้ว่า FA Acknowledge ทั้งที่เกินงบ (Force) — โชว์ชัดใน UI/Report
+    budget_overridden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -129,6 +185,13 @@ class ApprovalRequest(Base):
 
     amount_items: Mapped[list[ARAmountItem]] = relationship(
         back_populates="ar", cascade="all, delete-orphan"
+    )
+    budget_approvals: Mapped[list[ARBudgetApproval]] = relationship(
+        "ARBudgetApproval",
+        primaryjoin="ApprovalRequest.id==ARBudgetApproval.ar_id",
+        cascade="all, delete-orphan",
+        order_by="ARBudgetApproval.acted_at",
+        viewonly=False,
     )
 
 

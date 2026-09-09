@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}จัดการ User — PR-Robot{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>จัดการ User</h1>
+    <p class="muted">
+      Admin เท่านั้น — กำหนด Department/Position/สิทธิ์ FA (Upload Excel งบประมาณ +
+      FA Acknowledge ทุกแผนก) ให้แต่ละคน ผู้สร้าง Approval Request ต้องมี Department
+      ก่อนถึงจะสร้างได้
+    </p>
+  </div>
+</div>
+
+<div class="error hidden" id="page-error"></div>
+
+<div class="card">
+  <h2>เพิ่ม User ใหม่</h2>
+  <form id="create-form">
+    <div class="row">
+      <div class="field"><label for="c-name">ชื่อ</label><input type="text" id="c-name" required></div>
+      <div class="field"><label for="c-email">อีเมล</label><input type="email" id="c-email" required></div>
+      <div class="field"><label for="c-password">รหัสผ่าน (อย่างน้อย 8 ตัว)</label><input type="password" id="c-password" minlength="8" required></div>
+    </div>
+    <div class="row">
+      <div class="field"><label for="c-department">Department</label><input type="text" id="c-department" placeholder="เช่น Production"></div>
+      <div class="field"><label for="c-position">Position</label><input type="text" id="c-position" placeholder="เช่น Manager"></div>
+      <div class="field" style="display:flex; align-items:flex-end; gap:14px;">
+        <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
+          <input type="checkbox" id="c-is-admin" style="width:auto;"> Admin
+        </label>
+        <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
+          <input type="checkbox" id="c-is-fa" style="width:auto;"> FA
+        </label>
+      </div>
+    </div>
+    <div class="error hidden" id="create-error"></div>
+    <div class="actions"><button type="submit">เพิ่ม User</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>รายชื่อ User ทั้งหมด</h2>
+  <table>
+    <thead>
+      <tr><th>ชื่อ</th><th>อีเมล</th><th>Department</th><th>Position</th><th>Admin</th><th>FA</th><th>Active</th><th></th></tr>
+    </thead>
+    <tbody id="users-body"><tr><td colspan="8" class="muted">กำลังโหลด...</td></tr></tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let USERS_CACHE = [];
+
+function userRowHtml(u) {
+  return `<tr data-id="${u.id}">
+    <td>${escapeHtml(u.name)}</td>
+    <td class="mono">${escapeHtml(u.email)}</td>
+    <td><input type="text" class="u-department" value="${escapeHtml(u.department || "")}" placeholder="(ไม่มี)"></td>
+    <td><input type="text" class="u-position" value="${escapeHtml(u.position || "")}" placeholder="(ไม่มี)"></td>
+    <td style="text-align:center;"><input type="checkbox" class="u-is-admin" ${u.is_admin ? "checked" : ""}></td>
+    <td style="text-align:center;"><input type="checkbox" class="u-is-fa" ${u.is_fa ? "checked" : ""}></td>
+    <td style="text-align:center;"><input type="checkbox" class="u-is-active" ${u.is_active ? "checked" : ""}></td>
+    <td><button type="button" class="secondary save-user-btn">บันทึก</button></td>
+  </tr>`;
+}
+
+async function loadUsers() {
+  const res = await apiFetch("/users");
+  const body = document.getElementById("users-body");
+  if (!res.ok) {
+    body.innerHTML = '<tr><td colspan="8" class="error">โหลดรายชื่อไม่สำเร็จ (ต้องเป็น Admin เท่านั้น)</td></tr>';
+    return;
+  }
+  USERS_CACHE = await res.json();
+  body.innerHTML = USERS_CACHE.map(userRowHtml).join("") || '<tr><td colspan="8" class="muted">ยังไม่มี User</td></tr>';
+  body.querySelectorAll(".save-user-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const row = btn.closest("tr");
+      const id = row.dataset.id;
+      btn.disabled = true;
+      const payload = {
+        department: row.querySelector(".u-department").value || null,
+        position: row.querySelector(".u-position").value || null,
+        is_admin: row.querySelector(".u-is-admin").checked,
+        is_fa: row.querySelector(".u-is-fa").checked,
+        is_active: row.querySelector(".u-is-active").checked,
+      };
+      const r = await apiFetch(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+      btn.disabled = false;
+      if (!r.ok) {
+        alert("บันทึกไม่สำเร็จ");
+        return;
+      }
+      btn.textContent = "บันทึกแล้ว";
+      setTimeout(() => (btn.textContent = "บันทึก"), 1200);
+    });
+  });
+}
+
+document.getElementById("create-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById("create-error");
+  errEl.classList.add("hidden");
+  const payload = {
+    name: document.getElementById("c-name").value,
+    email: document.getElementById("c-email").value,
+    password: document.getElementById("c-password").value,
+    department: document.getElementById("c-department").value || null,
+    position: document.getElementById("c-position").value || null,
+    is_admin: document.getElementById("c-is-admin").checked,
+    is_fa: document.getElementById("c-is-fa").checked,
+  };
+  const res = await apiFetch("/users", { method: "POST", body: JSON.stringify(payload) });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    errEl.textContent = body.detail ? JSON.stringify(body.detail) : "เพิ่ม User ไม่สำเร็จ";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  document.getElementById("create-form").reset();
+  await loadUsers();
+});
+
+(async () => {
+  const me = await requireLogin();
+  if (!me) return;
+  if (!me.is_admin) {
+    document.getElementById("page-error").textContent = "หน้านี้สำหรับ Admin เท่านั้น";
+    document.getElementById("page-error").classList.remove("hidden");
+    return;
+  }
+  await loadUsers();
+})();
+</script>
+{% endblock %}

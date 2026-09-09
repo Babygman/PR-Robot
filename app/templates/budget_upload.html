@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}Budget Control — PR-Robot{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Budget Control</h1>
+    <p class="muted">
+      Upload Excel งบประมาณ (FA หรือ Admin เท่านั้น) — คอลัมน์ที่ต้องมี: department,
+      budget_type (expenses/assets), account_code, period_start, period_end,
+      budgeted_amount (budget_name ไม่บังคับ) — Re-upload แถวเดิม (Department+Type+
+      Code+ช่วงเวลาเดียวกัน) จะอัปเดตยอดงบ ไม่แตะยอดที่หักไปแล้ว
+    </p>
+  </div>
+</div>
+
+<div class="error hidden" id="page-error"></div>
+
+<div class="card">
+  <h2>Upload ไฟล์ Excel</h2>
+  <form id="upload-form">
+    <div class="field"><input type="file" id="f-file" accept=".xlsx,.xlsm" required></div>
+    <div class="actions"><button type="submit">Upload</button></div>
+  </form>
+  <div id="upload-result" class="hidden" style="margin-top:12px;"></div>
+</div>
+
+<div class="card">
+  <h2>ค้นหางบประมาณ</h2>
+  <div class="row">
+    <div class="field"><label for="s-department">Department</label><input type="text" id="s-department"></div>
+    <div class="field"><label for="s-account-code">Account Code</label><input type="text" id="s-account-code"></div>
+    <div class="field" style="display:flex; align-items:flex-end;"><button type="button" id="search-btn" class="secondary">ค้นหา</button></div>
+  </div>
+  <table>
+    <thead><tr><th>Department</th><th>Type</th><th>Account Code</th><th>ชื่อ</th><th>ช่วงเวลา</th><th>งบ</th><th>ใช้ไป</th><th>คงเหลือ</th></tr></thead>
+    <tbody id="budget-body"><tr><td colspan="8" class="muted">ค้นหาเพื่อแสดงผล</td></tr></tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>ประวัติการ Upload</h2>
+  <table>
+    <thead><tr><th>เวลา</th><th>ไฟล์</th><th>ผู้ Upload</th><th>ทั้งหมด</th><th>สำเร็จ</th><th>Error</th></tr></thead>
+    <tbody id="history-body"><tr><td colspan="6" class="muted">กำลังโหลด...</td></tr></tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function fmtMoney(v) {
+  if (v === null || v === undefined) return "-";
+  return Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+async function loadHistory() {
+  const res = await apiFetch("/budget/upload-history");
+  const body = document.getElementById("history-body");
+  if (!res.ok) {
+    body.innerHTML = '<tr><td colspan="6" class="error">โหลดประวัติไม่สำเร็จ</td></tr>';
+    return;
+  }
+  const rows = await res.json();
+  body.innerHTML = rows.length
+    ? rows
+        .map(
+          (r) => `<tr>
+        <td class="mono">${formatDateTimeDMY(r.uploaded_at)}</td>
+        <td>${escapeHtml(r.filename)}</td>
+        <td>${escapeHtml(r.uploaded_by_name || "-")}</td>
+        <td class="mono">${r.total_rows}</td>
+        <td class="mono">${r.success_rows}</td>
+        <td class="mono">${r.error_rows}</td>
+      </tr>`
+        )
+        .join("")
+    : '<tr><td colspan="6" class="muted">ยังไม่มีการ Upload</td></tr>';
+}
+
+async function searchBudget() {
+  const params = new URLSearchParams();
+  const dept = document.getElementById("s-department").value.trim();
+  const code = document.getElementById("s-account-code").value.trim();
+  if (dept) params.set("department", dept);
+  if (code) params.set("account_code", code);
+  const res = await apiFetch("/budget?" + params.toString());
+  const body = document.getElementById("budget-body");
+  if (!res.ok) {
+    body.innerHTML = '<tr><td colspan="8" class="error">ค้นหาไม่สำเร็จ</td></tr>';
+    return;
+  }
+  const rows = await res.json();
+  body.innerHTML = rows.length
+    ? rows
+        .map(
+          (r) => `<tr>
+        <td>${escapeHtml(r.department)}</td>
+        <td>${escapeHtml(r.budget_type)}</td>
+        <td class="mono">${escapeHtml(r.account_code)}</td>
+        <td>${escapeHtml(r.budget_name || "-")}</td>
+        <td class="mono">${formatDateDMY(r.period_start)} - ${formatDateDMY(r.period_end)}</td>
+        <td class="mono">${fmtMoney(r.budgeted_amount)}</td>
+        <td class="mono">${fmtMoney(r.used_amount)}</td>
+        <td class="mono">${fmtMoney(r.balance)}</td>
+      </tr>`
+        )
+        .join("")
+    : '<tr><td colspan="8" class="muted">ไม่พบรายการ</td></tr>';
+}
+
+document.getElementById("search-btn").addEventListener("click", searchBudget);
+
+document.getElementById("upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fileInput = document.getElementById("f-file");
+  if (!fileInput.files.length) return;
+  const formData = new FormData();
+  formData.append("file", fileInput.files[0]);
+
+  const resultEl = document.getElementById("upload-result");
+  resultEl.classList.remove("hidden");
+  resultEl.innerHTML = '<p class="muted">กำลัง Upload...</p>';
+
+  const res = await apiFetch("/budget/upload", { method: "POST", body: formData });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    resultEl.innerHTML = `<p class="error">Upload ไม่สำเร็จ: ${escapeHtml(body.detail || "")}</p>`;
+    return;
+  }
+  const result = await res.json();
+  const errorRows = result.rows.filter((r) => !r.ok);
+  resultEl.innerHTML = `
+    <p>ทั้งหมด ${result.total_rows} แถว — สำเร็จ ${result.success_rows} — Error ${result.error_rows}</p>
+    ${errorRows.length
+      ? `<table><thead><tr><th>แถว</th><th>ข้อความ</th></tr></thead><tbody>${errorRows
+          .map((r) => `<tr><td class="mono">${r.row_no}</td><td>${escapeHtml(r.message)}</td></tr>`)
+          .join("")}</tbody></table>`
+      : ""}
+  `;
+  fileInput.value = "";
+  await loadHistory();
+});
+
+(async () => {
+  const me = await requireLogin();
+  if (!me) return;
+  if (!(me.is_admin || me.is_fa)) {
+    document.getElementById("page-error").textContent = "หน้านี้สำหรับ FA หรือ Admin เท่านั้น";
+    document.getElementById("page-error").classList.remove("hidden");
+    return;
+  }
+  await loadHistory();
+})();
+</script>
+{% endblock %}

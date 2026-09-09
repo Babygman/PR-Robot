@@ -19,9 +19,6 @@
   <div class="card">
     <h2>Budget</h2>
     <div class="row">
-      <div class="field"><label for="f-budget-no">Budget No. (รหัส/เลขที่บัญชีงบประมาณ)</label><input type="text" id="f-budget-no" placeholder="เช่น 5100-01"></div>
-    </div>
-    <div class="row">
       <div class="field">
         <label>Budget Type</label>
         <div style="display:flex; align-items:center; gap:16px; margin-top:4px;">
@@ -33,6 +30,18 @@
           </label>
         </div>
       </div>
+      <div class="field" style="flex:2;">
+        <label for="f-budget-select">เลือกงบประมาณ (ถ้ามีใน Budget Control แล้ว)</label>
+        <select id="f-budget-select"><option value="">— เลือก หรือกรอก Budget No. เองด้านล่าง —</option></select>
+      </div>
+    </div>
+    <div class="row hidden" id="budget-readout">
+      <div class="field"><label>Budget for Period</label><input type="text" class="mono" id="ro-budget-amount" readonly></div>
+      <div class="field"><label>Used Amount (สะสมทั้งแผนก)</label><input type="text" class="mono" id="ro-used-amount" readonly></div>
+      <div class="field"><label>Balance คงเหลือ</label><input type="text" class="mono" id="ro-balance" readonly></div>
+    </div>
+    <div class="row">
+      <div class="field"><label for="f-budget-no">Budget No. (รหัส/เลขที่บัญชีงบประมาณ)</label><input type="text" id="f-budget-no" placeholder="เช่น 5100-01"></div>
       <div class="field"><label for="f-budget-sub">หมวดย่อย (เช่น Mnt. Motor)</label><input type="text" id="f-budget-sub"></div>
       <div class="field"><label for="f-budget-name">Budget Name</label><input type="text" id="f-budget-name"></div>
     </div>
@@ -100,6 +109,53 @@ function addAmountItemRow(item) {
 }
 
 document.getElementById("add-item-btn").addEventListener("click", () => addAmountItemRow());
+
+// Budget Control (2026-09-09): Dropdown ช่วยเลือกงบที่มีอยู่แล้วในระบบ (ไม่บังคับ — ยัง
+// กรอก Budget No. เป็น Text อิสระได้เหมือนเดิม เผื่อแผนก/รหัสนั้นยังไม่ได้ Upload Excel
+// เข้ามา) Filter จาก Department ของผู้ Login เอง + Budget Type ที่เลือกอยู่ตอนนี้
+let BUDGET_OPTIONS = [];
+
+function fmtMoney(v) {
+  if (v === null || v === undefined) return "-";
+  return Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+async function loadBudgetOptions(department, budgetType) {
+  const select = document.getElementById("f-budget-select");
+  select.innerHTML = '<option value="">— เลือก หรือกรอก Budget No. เองด้านล่าง —</option>';
+  document.getElementById("budget-readout").classList.add("hidden");
+  if (!department) return;
+  const params = new URLSearchParams({ department, budget_type: budgetType });
+  const res = await apiFetch("/budget?" + params.toString());
+  if (!res.ok) return;
+  BUDGET_OPTIONS = await res.json();
+  BUDGET_OPTIONS.forEach((b) => {
+    const opt = document.createElement("option");
+    opt.value = b.id;
+    opt.textContent = `${b.account_code}${b.budget_name ? " — " + b.budget_name : ""} (คงเหลือ ${fmtMoney(b.balance)})`;
+    select.appendChild(opt);
+  });
+}
+
+document.getElementById("f-budget-select").addEventListener("change", (e) => {
+  const chosen = BUDGET_OPTIONS.find((b) => String(b.id) === e.target.value);
+  const readout = document.getElementById("budget-readout");
+  if (!chosen) {
+    readout.classList.add("hidden");
+    return;
+  }
+  document.getElementById("f-budget-no").value = chosen.account_code;
+  if (chosen.budget_name) document.getElementById("f-budget-name").value = chosen.budget_name;
+  document.getElementById("ro-budget-amount").value = fmtMoney(chosen.budgeted_amount);
+  document.getElementById("ro-used-amount").value = fmtMoney(chosen.used_amount);
+  document.getElementById("ro-balance").value = fmtMoney(chosen.balance);
+  readout.classList.remove("hidden");
+});
+
+let CURRENT_USER_DEPARTMENT = null;
+document.querySelectorAll('input[name="budget-type"]').forEach((el) => {
+  el.addEventListener("change", () => loadBudgetOptions(CURRENT_USER_DEPARTMENT, el.value));
+});
 
 async function loadForEdit() {
   const res = await apiFetch(`/ars/${AR_ID}`);
@@ -202,6 +258,7 @@ bindDateFieldsIn(document);
 (async () => {
   const me = await requireLogin();
   if (!me) return;
+  CURRENT_USER_DEPARTMENT = me.department;
 
   if (AR_ID) {
     const ok = await loadForEdit();
@@ -210,6 +267,9 @@ bindDateFieldsIn(document);
     setDateFieldIso(document.getElementById("f-appdate"), new Date().toISOString().slice(0, 10));
     addAmountItemRow();
   }
+
+  const checkedType = document.querySelector('input[name="budget-type"]:checked').value;
+  await loadBudgetOptions(CURRENT_USER_DEPARTMENT, checkedType);
 
   document.getElementById("ar-form").classList.remove("hidden");
 })();

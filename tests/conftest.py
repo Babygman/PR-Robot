@@ -66,10 +66,14 @@ def admin_user(db_session: Session) -> User:
 
 @pytest.fixture()
 def plain_user(db_session: Session) -> User:
+    # Budget Control (2026-09-09): ผู้สร้าง AR ต้องมี Department เสมอ (Design §2.1) —
+    # ใส่ค่า Default ให้ Fixture นี้เพื่อไม่ให้ AR Test ทั้งชุดโดนบล็อกตอนสร้าง AR ใหม่
+    # (Test ที่ต้องการยืนยัน Error กรณีไม่มี Department แยกสร้าง User เองโดยเฉพาะ)
     user = User(
         name="Plain User",
         email="plain@example.com",
         password_hash=hash_password("plainpass123"),
+        department="Production",
     )
     db_session.add(user)
     db_session.commit()

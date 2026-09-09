@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Level อนุมัติ Budget — PR-Robot{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>จัดการ Level อนุมัติ Budget</h1>
+    <p class="muted">
+      Admin เท่านั้น — แต่ละแผนกกำหนดเองว่ามีกี่ Level อนุมัติ อะไรบ้าง ใครเป็นผู้อนุมัติ
+      (ยืดหยุ่นได้อิสระ ไม่ต้องเท่ากันทุกแผนก) — ขั้นตอนสุดท้าย "FA Acknowledge" เป็น
+      Role กลาง (User ที่ตั้ง FA=Yes คนไหนก็ได้) ไม่ต้องตั้งไว้ในหน้านี้
+    </p>
+  </div>
+</div>
+
+<div class="error hidden" id="page-error"></div>
+
+<div class="card">
+  <div class="row">
+    <div class="field">
+      <label for="dept-select">แผนก</label>
+      <input type="text" id="dept-select" list="dept-list" placeholder="พิมพ์ชื่อแผนก แล้วกด Enter">
+      <datalist id="dept-list"></datalist>
+    </div>
+  </div>
+</div>
+
+<div class="card hidden" id="levels-card">
+  <h2>Level ของแผนก <span id="current-dept" class="mono"></span></h2>
+  <table>
+    <thead><tr><th>Level</th><th>ชื่อ Level</th><th>ผู้อนุมัติ</th><th>Active</th><th></th></tr></thead>
+    <tbody id="levels-body"></tbody>
+  </table>
+
+  <h3 style="margin-top:16px;">เพิ่ม Level ใหม่</h3>
+  <div class="row">
+    <div class="field"><label for="n-level-no">Level No.</label><input type="number" id="n-level-no" min="1" value="1"></div>
+    <div class="field" style="flex:2;"><label for="n-level-name">ชื่อ Level</label><input type="text" id="n-level-name" placeholder="เช่น Manager, Senior Manager, General Manager, President / Director"></div>
+    <div class="field" style="flex:2;"><label for="n-approver">ผู้อนุมัติ</label><select id="n-approver"></select></div>
+    <div class="field" style="display:flex; align-items:flex-end;"><button type="button" id="add-level-btn">เพิ่ม Level</button></div>
+  </div>
+  <p class="muted" style="font-size:12px;">
+    หมายเหตุ: ตาราง "Authority" ในฟอร์ม PDF มี 4 ช่องตายตัว (President / Director, General
+    Manager, Senior Manager, Manager) — ถ้าตั้งชื่อ Level ให้ตรงกับ 4 ชื่อนี้เป๊ะ ระบบจะ
+    Auto-fill ชื่อผู้อนุมัติ+วันที่ลงช่องนั้นให้อัตโนมัติหลังอนุมัติจริง
+  </p>
+  <div class="error hidden" id="add-error"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let ALL_USERS = [];
+
+function levelRowHtml(lv) {
+  return `<tr data-id="${lv.id}">
+    <td class="mono">${lv.level_no}</td>
+    <td><input type="text" class="lv-name" value="${escapeHtml(lv.level_name)}"></td>
+    <td>
+      <select class="lv-approver"></select>
+    </td>
+    <td style="text-align:center;"><input type="checkbox" class="lv-active" ${lv.is_active ? "checked" : ""}></td>
+    <td><button type="button" class="secondary lv-save-btn">บันทึก</button></td>
+  </tr>`;
+}
+
+function approverOptionsHtml(selectedId) {
+  return ALL_USERS
+    .map((u) => `<option value="${u.id}" ${u.id === selectedId ? "selected" : ""}>${escapeHtml(u.name)}${u.department ? " (" + escapeHtml(u.department) + ")" : ""}</option>`)
+    .join("");
+}
+
+async function loadUsers() {
+  const res = await apiFetch("/users");
+  if (res.ok) ALL_USERS = await res.json();
+}
+
+async function loadDeptList() {
+  const res = await apiFetch("/budget-approval-levels/departments");
+  if (!res.ok) return;
+  const depts = await res.json();
+  document.getElementById("dept-list").innerHTML = depts.map((d) => `<option value="${escapeHtml(d)}">`).join("");
+}
+
+async function loadLevels(department) {
+  const res = await apiFetch(`/budget-approval-levels?department=${encodeURIComponent(department)}`);
+  if (!res.ok) return;
+  const levels = await res.json();
+  document.getElementById("current-dept").textContent = department;
+  document.getElementById("levels-card").classList.remove("hidden");
+  const body = document.getElementById("levels-body");
+  body.innerHTML = levels.length
+    ? levels.map(levelRowHtml).join("")
+    : '<tr><td colspan="5" class="muted">แผนกนี้ยังไม่มี Level (AR จะข้ามตรงไป FA Acknowledge ทันที)</td></tr>';
+  body.querySelectorAll("tr[data-id]").forEach((row) => {
+    const lv = levels.find((l) => String(l.id) === row.dataset.id);
+    row.querySelector(".lv-approver").innerHTML = approverOptionsHtml(lv.approver_user_id);
+  });
+  body.querySelectorAll(".lv-save-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const row = btn.closest("tr");
+      const id = row.dataset.id;
+      btn.disabled = true;
+      const payload = {
+        level_name: row.querySelector(".lv-name").value,
+        approver_user_id: Number(row.querySelector(".lv-approver").value),
+        is_active: row.querySelector(".lv-active").checked,
+      };
+      const r = await apiFetch(`/budget-approval-levels/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+      btn.disabled = false;
+      if (!r.ok) {
+        alert("บันทึกไม่สำเร็จ");
+        return;
+      }
+      btn.textContent = "บันทึกแล้ว";
+      setTimeout(() => (btn.textContent = "บันทึก"), 1200);
+    });
+  });
+
+  document.getElementById("n-approver").innerHTML = approverOptionsHtml(null);
+  const maxLevel = levels.reduce((m, l) => Math.max(m, l.level_no), 0);
+  document.getElementById("n-level-no").value = maxLevel + 1;
+}
+
+let currentDept = "";
+
+document.getElementById("dept-select").addEventListener("change", (e) => {
+  currentDept = e.target.value.trim();
+  if (currentDept) loadLevels(currentDept);
+});
+
+document.getElementById("add-level-btn").addEventListener("click", async () => {
+  const errEl = document.getElementById("add-error");
+  errEl.classList.add("hidden");
+  if (!currentDept) {
+    errEl.textContent = "กรุณาระบุแผนกก่อน";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  const payload = {
+    department: currentDept,
+    level_no: Number(document.getElementById("n-level-no").value),
+    level_name: document.getElementById("n-level-name").value,
+    approver_user_id: Number(document.getElementById("n-approver").value),
+  };
+  if (!payload.level_name || !payload.approver_user_id) {
+    errEl.textContent = "กรุณากรอกชื่อ Level และเลือกผู้อนุมัติ";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  const res = await apiFetch("/budget-approval-levels", { method: "POST", body: JSON.stringify(payload) });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    errEl.textContent = body.detail || "เพิ่ม Level ไม่สำเร็จ";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  document.getElementById("n-level-name").value = "";
+  await loadLevels(currentDept);
+  await loadDeptList();
+});
+
+(async () => {
+  const me = await requireLogin();
+  if (!me) return;
+  if (!me.is_admin) {
+    document.getElementById("page-error").textContent = "หน้านี้สำหรับ Admin เท่านั้น";
+    document.getElementById("page-error").classList.remove("hidden");
+    return;
+  }
+  await loadUsers();
+  await loadDeptList();
+})();
+</script>
+{% endblock %}

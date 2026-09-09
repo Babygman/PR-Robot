@@ -261,6 +261,17 @@ td a { color: var(--color-primary); font-weight: 600; }
 .badge-draft { background: var(--color-brass-tint); color: var(--color-brass); }
 .badge-finalized { background: var(--color-success-tint); color: var(--color-success); }
 
+/* Budget Control (Phase 10) — สถานะ Workflow อนุมัติงบประมาณ แยกจาก Draft/Finalized */
+.badge-budget-not_submitted { background: var(--color-surface-2); color: var(--color-text-faint); }
+.badge-budget-pending,
+.badge-budget-pending_fa_acknowledge { background: var(--color-brass-tint); color: var(--color-brass); }
+.badge-budget-approved { background: var(--color-success-tint); color: var(--color-success); }
+.badge-budget-rejected { background: var(--color-danger-tint); color: var(--color-danger); }
+
+.history-list li.step-approved::before { background: var(--color-success); }
+.history-list li.step-rejected::before { background: var(--color-danger); }
+.history-list li.step-waiting::before { background: var(--color-text-faint); }
+
 .error { color: var(--color-danger); font-size: 13.5px; margin: 8px 0; }
 .success { color: var(--color-success); font-size: 13.5px; margin: 8px 0; }
 .muted { color: var(--color-text-muted); font-size: 13px; }

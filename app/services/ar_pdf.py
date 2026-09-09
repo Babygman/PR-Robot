@@ -16,9 +16,16 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.orm import Session
 from weasyprint import HTML
 
-from app.models import ApprovalRequest
+from app.models import ApprovalRequest, ARStatus
+from app.services import budget_workflow
 from app.services.ar_numbering import format_ar_no
 from app.services.user_lookup import resolve_user_names
+
+# 4 ชื่อ Rank ที่ตรงกับตาราง "Authority" ในฟอร์มจริง (ar_form.html) — ตัวอย่าง Flow
+# จริงที่แนบมา (2026-09-09) ยืนยันว่าใช้ 4 ชื่อนี้เป๊ะ ระบบ Match BudgetApprovalLevel.
+# level_name กับชื่อในลิสต์นี้แบบ Exact String — Level ที่ตั้งชื่อไม่ตรงจะไม่ถูก
+# Auto-fill ลงตาราง Authority (ไม่ Error/ไม่ Crash แค่ไม่มีลายเซ็นแสดงในช่องนั้น)
+_AUTHORITY_RANKS = ["President / Director", "General Manager", "Senior Manager", "Manager"]
 
 _TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
 _MIN_DISPLAY_ROWS = 9
@@ -109,10 +116,28 @@ def render_ar_html(db: Session, ar: ApprovalRequest) -> str:
     while len(display_items) < _MIN_DISPLAY_ROWS:
         display_items.append(_DisplayAmountItem())
 
+    # Budget Control (2026-09-09, Design v4.1 §6.1): Auto-fill ตาราง Authority + ช่อง
+    # F&A จาก Workflow อนุมัติจริงในระบบ (เดิม Hardcode ว่างเปล่าไว้เซ็นสด) — เติมทีละ
+    # แถวทันทีที่ Level นั้น/FA Acknowledge ผ่านจริง (ไม่ต้องรอครบ) PDF Regenerate ใหม่
+    # ทุกครั้งที่เปิด/พิมพ์อยู่แล้ว จึงไม่กระทบกลไก Finalize/Lock เดิมเลย
+    authority_signatures: dict[str, dict[str, str]] = {}
+    fa_signature: dict[str, str] | None = None
+    if ar.status == ARStatus.FINALIZED:
+        for step in budget_workflow.build_approval_progress(db, ar):
+            if step["status"] != "approved":
+                continue
+            signed = {"name": step["acted_by_name"] or "", "date": _fmt_date(step["acted_at"])}
+            if step["step_type"].value == "level" and step["level_name"] in _AUTHORITY_RANKS:
+                authority_signatures[step["level_name"]] = signed
+            elif step["step_type"].value == "fa_acknowledge":
+                fa_signature = signed
+
     return template.render(
         ar=ar_view,
         display_items=display_items,
         real_item_count=real_item_count,
+        authority_signatures=authority_signatures,
+        fa_signature=fa_signature,
         generated_at=_now_str(),
     )
 

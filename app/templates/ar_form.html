@@ -140,6 +140,10 @@
   .auth-table th { background: #f2efe9; border-bottom: 1px solid #dcd8d1; text-transform: uppercase; font-size: 6.6px; letter-spacing: 0.1em; font-weight: 600; text-align: left; padding: 1.4mm 2mm; }
   .auth-table td { border-bottom: 1px solid #e6e2db; padding: 1.6mm 2mm; font-size: 8px; height: 6mm; }
   .auth-table td.a-name { font-weight: 600; color: #16181c; }
+  /* Budget Control (2026-09-09) — Auto-fill ชื่อ+วันที่ผู้อนุมัติจริงลงช่อง Signature
+     (เดิมว่างเปล่ารอเซ็นสด) ดู app/services/ar_pdf.py: authority_signatures/fa_signature */
+  .auth-table td.a-sig { font-weight: 600; color: #16181c; }
+  .a-sig-date { font-weight: 400; font-size: 6.4px; color: #6d7078; margin-top: 0.3mm; }
 
   .req-fa-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 3.5mm; gap: 8mm; }
   .req-block { flex: 1 1 auto; }
@@ -323,10 +327,14 @@
         <tr><th>Authority</th><th>Comments</th><th>Signature</th></tr>
       </thead>
       <tbody>
-        <tr><td class="a-name">President / Director</td><td></td><td></td></tr>
-        <tr><td class="a-name">General Manager</td><td></td><td></td></tr>
-        <tr><td class="a-name">Senior Manager</td><td></td><td></td></tr>
-        <tr><td class="a-name">Manager</td><td></td><td></td></tr>
+        {% for rank in ["President / Director", "General Manager", "Senior Manager", "Manager"] %}
+        {% set sig = authority_signatures.get(rank) %}
+        <tr>
+          <td class="a-name">{{ rank }}</td>
+          <td></td>
+          <td class="a-sig">{% if sig %}{{ sig.name }}<div class="a-sig-date">{{ sig.date }}</div>{% endif %}</td>
+        </tr>
+        {% endfor %}
       </tbody>
     </table>
 
@@ -337,7 +345,11 @@
       </div>
       <div class="fa-box">
         <span class="sign-label">F&amp;A</span>
+        {% if fa_signature %}
+        <div class="sign-line">{{ fa_signature.name }}<div class="a-sig-date">{{ fa_signature.date }}</div></div>
+        {% else %}
         <div class="sign-line placeholder"></div>
+        {% endif %}
       </div>
     </div>
 

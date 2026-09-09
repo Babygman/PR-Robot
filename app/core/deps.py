@@ -36,3 +36,11 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     if not user.is_admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "ต้องเป็น Admin เท่านั้น")
     return user
+
+
+# Budget Control (Phase 10, 2026-09-09): FA = Role กลาง Upload/จัดการ Excel งบประมาณ
+# ได้ (ดู app/models/budget.py, app/services/budget_excel.py) — Admin ทำแทนได้เสมอ
+def require_fa_or_admin(user: User = Depends(get_current_user)) -> User:
+    if not (user.is_fa or user.is_admin):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "ต้องมีสิทธิ์ FA หรือ Admin เท่านั้น")
+    return user

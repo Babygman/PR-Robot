@@ -63,6 +63,13 @@
         </table>
       </div>
 
+      <div class="card hidden" id="approval-card">
+        <h2>สถานะการอนุมัติ Budget <span id="budget-status-badge"></span></h2>
+        <ul class="history-list" id="approval-steps"></ul>
+        <div class="error hidden" id="approval-action-error"></div>
+        <div class="actions" id="approval-actions"></div>
+      </div>
+
       <div class="card">
         <h2>Suppliers / เงื่อนไข</h2>
         <table>
@@ -96,6 +103,7 @@
 {% block scripts %}
 <script>
 const AR_ID = {{ ar_id }};
+let ME = null;
 
 function fmtMoney(v) {
   if (v === null || v === undefined) return "-";
@@ -103,6 +111,120 @@ function fmtMoney(v) {
 }
 
 const BUDGET_TYPE_LABEL = { expenses: "Expenses", assets: "Assets" };
+
+// สถานะ Workflow อนุมัติ Budget (Phase 10) — แยกจาก ar-status-badge (draft/finalized)
+const BUDGET_STATUS_LABEL = {
+  not_submitted: "ยังไม่เข้าสู่ Workflow",
+  pending: "รออนุมัติ Level",
+  pending_fa_acknowledge: "รอ FA Acknowledge",
+  approved: "อนุมัติแล้ว (หักงบแล้ว)",
+  rejected: "ถูกปฏิเสธ",
+};
+const STEP_STATUS_LABEL = { waiting: "รอดำเนินการ", approved: "อนุมัติแล้ว", rejected: "ปฏิเสธ" };
+
+function budgetStatusBadge(status) {
+  const label = BUDGET_STATUS_LABEL[status] || status;
+  return `<span class="badge badge-budget-${status}">${label}</span>`;
+}
+
+function approvalStepHtml(step) {
+  const label = STEP_STATUS_LABEL[step.status] || step.status;
+  const who = step.step_type === "fa_acknowledge" ? "FA (Role กลาง)" : escapeHtml(step.approver_name || "-");
+  let html = `<strong>${escapeHtml(step.level_name)}</strong> — ${who} — <span class="mono">${label}</span>`;
+  if (step.acted_by_name) {
+    html += `<br><span class="muted">โดย ${escapeHtml(step.acted_by_name)} — ${formatDateTimeDMY(step.acted_at)}${step.acted_as_override ? " (Admin Override)" : ""}</span>`;
+  }
+  if (step.reason) {
+    html += `<br><span class="error">เหตุผล: ${escapeHtml(step.reason)}</span>`;
+  }
+  return `<li class="step-${step.status}">${html}</li>`;
+}
+
+async function submitApprovalAction(kind, force = false) {
+  const errEl = document.getElementById("approval-action-error");
+  errEl.classList.add("hidden");
+  let path = "";
+  let body = {};
+  if (kind === "approve-level") {
+    path = `/ars/${AR_ID}/approve-level`;
+  } else if (kind === "reject-level" || kind === "reject-fa") {
+    const reason = prompt("เหตุผลที่ปฏิเสธ:");
+    if (!reason) return;
+    path = `/ars/${AR_ID}/${kind}`;
+    body = { reason };
+  } else if (kind === "fa-acknowledge") {
+    path = `/ars/${AR_ID}/fa-acknowledge`;
+    body = { force };
+  }
+
+  const res = await apiFetch(path, { method: "POST", body: JSON.stringify(body) });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    if (kind === "fa-acknowledge" && res.status === 409 && !force && errBody.detail && typeof errBody.detail === "object") {
+      const d = errBody.detail;
+      const confirmForce = confirm(
+        `${d.message}\n\nงบประมาณ: ${d.budgeted_amount}  ใช้ไปแล้ว: ${d.used_amount}  คงเหลือ: ${d.balance}\n` +
+          `ยอดที่ขอ: ${d.requested_amount}  เกินไป: ${d.shortfall}\n\nยืนยันอนุมัติทั้งที่เกินงบ?`
+      );
+      if (confirmForce) await submitApprovalAction("fa-acknowledge", true);
+      return;
+    }
+    errEl.textContent =
+      typeof errBody.detail === "string" ? errBody.detail : (errBody.detail && errBody.detail.message) || "ดำเนินการไม่สำเร็จ";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  await loadDetail();
+}
+
+function renderApprovalActions(ar, steps) {
+  const actionsEl = document.getElementById("approval-actions");
+  actionsEl.innerHTML = "";
+
+  if (ar.budget_approval_status === "pending") {
+    const step = steps.find((s) => s.step_type === "level" && s.level_no === ar.current_approval_level);
+    if (step && ME && (ME.id === step.approver_user_id || ME.is_admin)) {
+      actionsEl.innerHTML = `
+        <button type="button" id="approve-level-btn">อนุมัติ "${escapeHtml(step.level_name)}"</button>
+        <button type="button" class="secondary" id="reject-level-btn">ปฏิเสธ</button>
+      `;
+      document.getElementById("approve-level-btn").addEventListener("click", () => submitApprovalAction("approve-level"));
+      document.getElementById("reject-level-btn").addEventListener("click", () => submitApprovalAction("reject-level"));
+    }
+  } else if (ar.budget_approval_status === "pending_fa_acknowledge") {
+    if (ME && (ME.is_fa || ME.is_admin)) {
+      actionsEl.innerHTML = `
+        <button type="button" id="fa-ack-btn">FA Acknowledge</button>
+        <button type="button" class="secondary" id="reject-fa-btn">ปฏิเสธ</button>
+      `;
+      document.getElementById("fa-ack-btn").addEventListener("click", () => submitApprovalAction("fa-acknowledge"));
+      document.getElementById("reject-fa-btn").addEventListener("click", () => submitApprovalAction("reject-fa"));
+    }
+  }
+}
+
+async function loadApprovalProgress(ar) {
+  const card = document.getElementById("approval-card");
+  if (!ar.budget_approval_status || ar.budget_approval_status === "not_submitted") {
+    card.classList.add("hidden");
+    return;
+  }
+  card.classList.remove("hidden");
+  document.getElementById("approval-action-error").classList.add("hidden");
+  document.getElementById("budget-status-badge").innerHTML =
+    budgetStatusBadge(ar.budget_approval_status) + (ar.budget_overridden ? ' <span class="muted">(มีการอนุมัติแบบเกินงบประมาณ)</span>' : "");
+
+  const stepsEl = document.getElementById("approval-steps");
+  const res = await apiFetch(`/ars/${AR_ID}/approval-progress`);
+  if (!res.ok) {
+    stepsEl.innerHTML = '<li class="error">โหลดสถานะการอนุมัติไม่สำเร็จ</li>';
+    document.getElementById("approval-actions").innerHTML = "";
+    return;
+  }
+  const steps = await res.json();
+  stepsEl.innerHTML = steps.map(approvalStepHtml).join("");
+  renderApprovalActions(ar, steps);
+}
 
 async function loadDetail() {
   const res = await apiFetch(`/ars/${AR_ID}`);
@@ -169,6 +291,8 @@ async function loadDetail() {
     document.getElementById("revised-from-note").classList.remove("hidden");
   }
 
+  await loadApprovalProgress(ar);
+
   document.getElementById("loading").classList.add("hidden");
   document.getElementById("ar-content").classList.remove("hidden");
 }
@@ -205,8 +329,8 @@ document.getElementById("revise-btn").addEventListener("click", async () => {
 });
 
 (async () => {
-  const me = await requireLogin();
-  if (!me) return;
+  ME = await requireLogin();
+  if (!ME) return;
   await loadDetail();
   await loadHistory();
 })();
