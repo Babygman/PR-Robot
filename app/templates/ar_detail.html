@@ -129,7 +129,7 @@ function budgetStatusBadge(status) {
 
 function approvalStepHtml(step) {
   const label = STEP_STATUS_LABEL[step.status] || step.status;
-  const who = step.step_type === "fa_acknowledge" ? "FA (Role กลาง)" : escapeHtml(step.approver_name || "-");
+  const who = step.step_type === "fa_acknowledge" ? "FA (Role กลาง)" : escapeHtml(step.approver_names || "-");
   let html = `<strong>${escapeHtml(step.level_name)}</strong> — ${who} — <span class="mono">${label}</span>`;
   if (step.acted_by_name) {
     html += `<br><span class="muted">โดย ${escapeHtml(step.acted_by_name)} — ${formatDateTimeDMY(step.acted_at)}${step.acted_as_override ? " (Admin Override)" : ""}</span>`;
@@ -183,7 +183,7 @@ function renderApprovalActions(ar, steps) {
 
   if (ar.budget_approval_status === "pending") {
     const step = steps.find((s) => s.step_type === "level" && s.level_no === ar.current_approval_level);
-    if (step && ME && (ME.id === step.approver_user_id || ME.is_admin)) {
+    if (step && ME && ((step.approver_user_ids || []).includes(ME.id) || ME.is_admin)) {
       actionsEl.innerHTML = `
         <button type="button" id="approve-level-btn">อนุมัติ "${escapeHtml(step.level_name)}"</button>
         <button type="button" class="secondary" id="reject-level-btn">ปฏิเสธ</button>

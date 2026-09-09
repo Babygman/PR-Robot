@@ -112,13 +112,17 @@ class ARBudgetApprovalRead(BaseModel):
 
 class ARApprovalProgressStep(BaseModel):
     """1 แถวใน Stepper ของหน้า AR Detail — รวม Level ที่ Config ไว้ (BudgetApprovalLevel)
-    เข้ากับผลจริง (ARBudgetApproval ถ้ามี) ให้ Client Render ง่ายๆ ไม่ต้อง Join เอง"""
+    เข้ากับผลจริง (ARBudgetApproval ถ้ามี) ให้ Client Render ง่ายๆ ไม่ต้อง Join เอง
+
+    Correction 2026-09-09 (Multi-approver per Level, OR): approver_user_id/approver_name
+    (เดี่ยว) เปลี่ยนเป็น approver_user_ids/approver_names (รายชื่อ) เพราะ 1 Level มีผู้มี
+    สิทธิ์อนุมัติได้มากกว่า 1 คนแล้ว — ดู app/models/budget.py Docstring BudgetApprovalLevel"""
 
     step_type: BudgetApprovalStepType
     level_no: int | None
     level_name: str
-    approver_user_id: int | None  # None เฉพาะ fa_acknowledge (ไม่ผูกคนเจาะจง)
-    approver_name: str | None
+    approver_user_ids: list[int] = []  # ว่างเฉพาะ fa_acknowledge (ไม่ผูกคนเจาะจง เป็น Role กลาง)
+    approver_names: str | None  # ชื่อทุกคนในกลุ่ม คั่นด้วย ", " เช่น "Hori, Ochi, Ukai"
     status: str  # "waiting" | "approved" | "rejected"
     acted_by_name: str | None = None
     acted_at: datetime | None = None

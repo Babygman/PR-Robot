@@ -6,8 +6,9 @@
     <h1>จัดการ Level อนุมัติ Budget</h1>
     <p class="muted">
       Admin เท่านั้น — แต่ละแผนกกำหนดเองว่ามีกี่ Level อนุมัติ อะไรบ้าง ใครเป็นผู้อนุมัติ
-      (ยืดหยุ่นได้อิสระ ไม่ต้องเท่ากันทุกแผนก) — ขั้นตอนสุดท้าย "FA Acknowledge" เป็น
-      Role กลาง (User ที่ตั้ง FA=Yes คนไหนก็ได้) ไม่ต้องตั้งไว้ในหน้านี้
+      (ยืดหยุ่นได้อิสระ ไม่ต้องเท่ากันทุกแผนก) — 1 Level ตั้งผู้อนุมัติได้มากกว่า 1 คน
+      (ใครก็ได้ในกลุ่มกดอนุมัติก่อน ถือว่า Level นั้นผ่าน) ขั้นตอนสุดท้าย "FA Acknowledge"
+      เป็น Role กลาง (User ที่ตั้ง FA=Yes คนไหนก็ได้) ไม่ต้องตั้งไว้ในหน้านี้
     </p>
   </div>
 </div>
@@ -24,48 +25,78 @@
   </div>
 </div>
 
-<div class="card hidden" id="levels-card">
+<div class="hidden" id="levels-card">
   <h2>Level ของแผนก <span id="current-dept" class="mono"></span></h2>
-  <table>
-    <thead><tr><th>Level</th><th>ชื่อ Level</th><th>ผู้อนุมัติ</th><th>Active</th><th></th></tr></thead>
-    <tbody id="levels-body"></tbody>
-  </table>
+  <p class="muted" id="no-levels-msg" style="display:none;">แผนกนี้ยังไม่มี Level (AR จะข้ามตรงไป FA Acknowledge ทันที)</p>
+  <div id="levels-groups"></div>
 
-  <h3 style="margin-top:16px;">เพิ่ม Level ใหม่</h3>
-  <div class="row">
-    <div class="field"><label for="n-level-no">Level No.</label><input type="number" id="n-level-no" min="1" value="1"></div>
-    <div class="field" style="flex:2;"><label for="n-level-name">ชื่อ Level</label><input type="text" id="n-level-name" placeholder="เช่น Manager, Senior Manager, General Manager, President / Director"></div>
-    <div class="field" style="flex:2;"><label for="n-approver">ผู้อนุมัติ</label><select id="n-approver"></select></div>
-    <div class="field" style="display:flex; align-items:flex-end;"><button type="button" id="add-level-btn">เพิ่ม Level</button></div>
+  <div class="card" style="margin-top:16px;">
+    <h3 style="margin-top:0;">เพิ่ม Level ใหม่ (หรือเพิ่มผู้อนุมัติเข้า Level ที่มีอยู่แล้ว)</h3>
+    <div class="row">
+      <div class="field"><label for="n-level-no">Level No.</label><input type="number" id="n-level-no" min="1" value="1"></div>
+      <div class="field" style="flex:2;"><label for="n-level-name">ชื่อ Level</label><input type="text" id="n-level-name" placeholder="เช่น Manager, Senior Manager, General Manager, President or Director"></div>
+      <div class="field" style="flex:2;"><label for="n-approver">ผู้อนุมัติ</label><select id="n-approver"></select></div>
+      <div class="field" style="display:flex; align-items:flex-end;"><button type="button" id="add-level-btn">เพิ่มผู้อนุมัติ</button></div>
+    </div>
+    <p class="muted" style="font-size:12px;">
+      ถ้า Level No. ที่กรอกมีอยู่แล้ว ต้องพิมพ์ชื่อ Level ให้ตรงกับที่ตั้งไว้เป๊ะ ระบบจะเพิ่ม
+      คนนี้เข้ากลุ่มเดียวกัน (Level เดียวกันอนุมัติได้หลายคน ใครก็ได้ในกลุ่มอนุมัติก่อนถือว่าผ่าน)
+      — หมายเหตุ: ตาราง "Authority" ในฟอร์ม PDF มี 4 ช่องตายตัว (President / Director, General
+      Manager, Senior Manager, Manager) ถ้าตั้งชื่อ Level ให้ตรงกับ 4 ชื่อนี้เป๊ะ ระบบจะ
+      Auto-fill ชื่อผู้อนุมัติ+วันที่ลงช่องนั้นให้อัตโนมัติหลังอนุมัติจริง
+    </p>
+    <div class="error hidden" id="add-error"></div>
   </div>
-  <p class="muted" style="font-size:12px;">
-    หมายเหตุ: ตาราง "Authority" ในฟอร์ม PDF มี 4 ช่องตายตัว (President / Director, General
-    Manager, Senior Manager, Manager) — ถ้าตั้งชื่อ Level ให้ตรงกับ 4 ชื่อนี้เป๊ะ ระบบจะ
-    Auto-fill ชื่อผู้อนุมัติ+วันที่ลงช่องนั้นให้อัตโนมัติหลังอนุมัติจริง
-  </p>
-  <div class="error hidden" id="add-error"></div>
 </div>
 {% endblock %}
 {% block scripts %}
 <script>
 let ALL_USERS = [];
+let currentDept = "";
 
-function levelRowHtml(lv) {
+function userName(id) {
+  const u = ALL_USERS.find((x) => x.id === id);
+  return u ? u.name : `#${id}`;
+}
+
+function approverOptionsHtml(selectedId, excludeIds) {
+  const exclude = new Set(excludeIds || []);
+  return ALL_USERS
+    .filter((u) => !exclude.has(u.id) || u.id === selectedId)
+    .map((u) => `<option value="${u.id}" ${u.id === selectedId ? "selected" : ""}>${escapeHtml(u.name)}${u.department ? " (" + escapeHtml(u.department) + ")" : ""}</option>`)
+    .join("");
+}
+
+// 1 แถวผู้อนุมัติภายในการ์ดของ Level นั้น (เปลี่ยนตัวคน/Active/ลบคนนี้ออกจาก Level ได้)
+function approverRowHtml(lv) {
   return `<tr data-id="${lv.id}">
-    <td class="mono">${lv.level_no}</td>
-    <td><input type="text" class="lv-name" value="${escapeHtml(lv.level_name)}"></td>
-    <td>
-      <select class="lv-approver"></select>
-    </td>
+    <td><select class="lv-approver"></select></td>
     <td style="text-align:center;"><input type="checkbox" class="lv-active" ${lv.is_active ? "checked" : ""}></td>
-    <td><button type="button" class="secondary lv-save-btn">บันทึก</button></td>
+    <td>
+      <button type="button" class="secondary lv-save-btn">บันทึก</button>
+      <button type="button" class="secondary lv-remove-btn">ลบออกจาก Level</button>
+    </td>
   </tr>`;
 }
 
-function approverOptionsHtml(selectedId) {
-  return ALL_USERS
-    .map((u) => `<option value="${u.id}" ${u.id === selectedId ? "selected" : ""}>${escapeHtml(u.name)}${u.department ? " (" + escapeHtml(u.department) + ")" : ""}</option>`)
-    .join("");
+// การ์ด 1 ใบต่อ Level (level_no) — รวมทุกคนที่อยู่ใน Level นี้ไว้ด้วยกัน (Multi-approver)
+function levelGroupHtml(levelNo, group) {
+  return `<div class="card" style="margin-top:12px;" data-level-no="${levelNo}">
+    <div class="row" style="align-items:flex-end;">
+      <div class="field" style="flex:0 0 90px;"><label>Level</label><div class="mono" style="padding:8px 0;">${levelNo}</div></div>
+      <div class="field" style="flex:2;"><label>ชื่อ Level</label><input type="text" class="lv-group-name" value="${escapeHtml(group[0].level_name)}"></div>
+      <div class="field" style="display:flex;"><button type="button" class="secondary lv-group-name-save">บันทึกชื่อ Level</button></div>
+    </div>
+    <table style="margin-top:8px;">
+      <thead><tr><th>ผู้อนุมัติ</th><th>Active</th><th></th></tr></thead>
+      <tbody class="lv-approver-body"></tbody>
+    </table>
+    <div class="row" style="margin-top:8px;">
+      <div class="field" style="flex:2;"><select class="lv-add-approver"></select></div>
+      <div class="field" style="display:flex;"><button type="button" class="secondary lv-add-approver-btn">+ เพิ่มผู้อนุมัติใน Level นี้</button></div>
+    </div>
+    <div class="error hidden lv-group-error"></div>
+  </div>`;
 }
 
 async function loadUsers() {
@@ -80,47 +111,112 @@ async function loadDeptList() {
   document.getElementById("dept-list").innerHTML = depts.map((d) => `<option value="${escapeHtml(d)}">`).join("");
 }
 
+function wireApproverRow(row, department, levelNo, group) {
+  const id = row.dataset.id;
+  const lv = group.find((l) => String(l.id) === id);
+  const excludeIds = group.filter((l) => String(l.id) !== id).map((l) => l.approver_user_id);
+  row.querySelector(".lv-approver").innerHTML = approverOptionsHtml(lv.approver_user_id, excludeIds);
+
+  row.querySelector(".lv-save-btn").addEventListener("click", async () => {
+    const btn = row.querySelector(".lv-save-btn");
+    btn.disabled = true;
+    const payload = {
+      approver_user_id: Number(row.querySelector(".lv-approver").value),
+      is_active: row.querySelector(".lv-active").checked,
+    };
+    const r = await apiFetch(`/budget-approval-levels/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+    btn.disabled = false;
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      alert(body.detail || "บันทึกไม่สำเร็จ");
+      return;
+    }
+    await loadLevels(department);
+  });
+
+  row.querySelector(".lv-remove-btn").addEventListener("click", async () => {
+    if (!confirm(`ลบ "${userName(lv.approver_user_id)}" ออกจาก Level ${levelNo} นี้?`)) return;
+    const r = await apiFetch(`/budget-approval-levels/${id}`, { method: "DELETE" });
+    if (!r.ok) {
+      alert("ลบไม่สำเร็จ");
+      return;
+    }
+    await loadLevels(department);
+  });
+}
+
+function wireGroupCard(card, department, levelNo, group) {
+  card.querySelectorAll(".lv-approver-body tr[data-id]").forEach((row) => wireApproverRow(row, department, levelNo, group));
+
+  const approverIds = group.map((l) => l.approver_user_id);
+  card.querySelector(".lv-add-approver").innerHTML = approverOptionsHtml(null, approverIds);
+
+  card.querySelector(".lv-group-name-save").addEventListener("click", async () => {
+    const firstId = group[0].id;
+    const newName = card.querySelector(".lv-group-name").value;
+    const r = await apiFetch(`/budget-approval-levels/${firstId}`, { method: "PATCH", body: JSON.stringify({ level_name: newName }) });
+    if (!r.ok) {
+      alert("บันทึกชื่อ Level ไม่สำเร็จ");
+      return;
+    }
+    await loadLevels(department);
+  });
+
+  card.querySelector(".lv-add-approver-btn").addEventListener("click", async () => {
+    const errEl = card.querySelector(".lv-group-error");
+    errEl.classList.add("hidden");
+    const approverId = Number(card.querySelector(".lv-add-approver").value);
+    if (!approverId) {
+      errEl.textContent = "กรุณาเลือกผู้อนุมัติ";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    const payload = {
+      department,
+      level_no: levelNo,
+      level_name: group[0].level_name,
+      approver_user_id: approverId,
+    };
+    const r = await apiFetch("/budget-approval-levels", { method: "POST", body: JSON.stringify(payload) });
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      errEl.textContent = body.detail || "เพิ่มผู้อนุมัติไม่สำเร็จ";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    await loadLevels(department);
+  });
+}
+
 async function loadLevels(department) {
   const res = await apiFetch(`/budget-approval-levels?department=${encodeURIComponent(department)}`);
   if (!res.ok) return;
   const levels = await res.json();
   document.getElementById("current-dept").textContent = department;
   document.getElementById("levels-card").classList.remove("hidden");
-  const body = document.getElementById("levels-body");
-  body.innerHTML = levels.length
-    ? levels.map(levelRowHtml).join("")
-    : '<tr><td colspan="5" class="muted">แผนกนี้ยังไม่มี Level (AR จะข้ามตรงไป FA Acknowledge ทันที)</td></tr>';
-  body.querySelectorAll("tr[data-id]").forEach((row) => {
-    const lv = levels.find((l) => String(l.id) === row.dataset.id);
-    row.querySelector(".lv-approver").innerHTML = approverOptionsHtml(lv.approver_user_id);
-  });
-  body.querySelectorAll(".lv-save-btn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const row = btn.closest("tr");
-      const id = row.dataset.id;
-      btn.disabled = true;
-      const payload = {
-        level_name: row.querySelector(".lv-name").value,
-        approver_user_id: Number(row.querySelector(".lv-approver").value),
-        is_active: row.querySelector(".lv-active").checked,
-      };
-      const r = await apiFetch(`/budget-approval-levels/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
-      btn.disabled = false;
-      if (!r.ok) {
-        alert("บันทึกไม่สำเร็จ");
-        return;
-      }
-      btn.textContent = "บันทึกแล้ว";
-      setTimeout(() => (btn.textContent = "บันทึก"), 1200);
-    });
+
+  const groupsEl = document.getElementById("levels-groups");
+  document.getElementById("no-levels-msg").style.display = levels.length ? "none" : "block";
+
+  const byLevelNo = new Map();
+  for (const lv of levels) {
+    if (!byLevelNo.has(lv.level_no)) byLevelNo.set(lv.level_no, []);
+    byLevelNo.get(lv.level_no).push(lv);
+  }
+  const sortedLevelNos = [...byLevelNo.keys()].sort((a, b) => a - b);
+
+  groupsEl.innerHTML = sortedLevelNos.map((levelNo) => levelGroupHtml(levelNo, byLevelNo.get(levelNo))).join("");
+  groupsEl.querySelectorAll(".card[data-level-no]").forEach((card) => {
+    const levelNo = Number(card.dataset.levelNo);
+    const group = byLevelNo.get(levelNo);
+    card.querySelector(".lv-approver-body").innerHTML = group.map(approverRowHtml).join("");
+    wireGroupCard(card, department, levelNo, group);
   });
 
   document.getElementById("n-approver").innerHTML = approverOptionsHtml(null);
-  const maxLevel = levels.reduce((m, l) => Math.max(m, l.level_no), 0);
+  const maxLevel = sortedLevelNos.length ? Math.max(...sortedLevelNos) : 0;
   document.getElementById("n-level-no").value = maxLevel + 1;
 }
-
-let currentDept = "";
 
 document.getElementById("dept-select").addEventListener("change", (e) => {
   currentDept = e.target.value.trim();

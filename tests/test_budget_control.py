@@ -109,7 +109,9 @@ def test_level_management_crud(client: TestClient, admin_user: User, db_session:
     level = res.json()
     assert level["approver_name"] == "Manager A"
 
-    # ห้ามซ้ำ level_no เดิมของแผนกเดียวกัน
+    # ห้ามคนเดิมซ้ำใน Level เดียวกัน (Multi-approver per Level, OR — Correction
+    # 2026-09-09) แม้ level_name ที่ส่งมาจะไม่ตรงกับที่ตั้งไว้ก็ยัง 409 เพราะ Reason
+    # แรกที่เจอคือ "คนซ้ำ" (ดู _validate_level_slot ใน budget_levels.py)
     dup = client.post(
         "/budget-approval-levels",
         json={
@@ -131,6 +133,170 @@ def test_level_management_crud(client: TestClient, admin_user: User, db_session:
     assert deleted.status_code == 204
     listed = client.get("/budget-approval-levels", params={"department": "Production"}).json()
     assert listed[0]["is_active"] is False
+
+
+# ───────────────── Multi-approver per Level (OR) — Correction 2026-09-09 ─────────────────
+def test_level_management_multiple_approvers_same_level(
+    client: TestClient, admin_user: User, db_session: Session
+):
+    """Level เดียวกัน (department+level_no) ตั้งผู้อนุมัติได้มากกว่า 1 คน ตราบใดที่
+    level_name ตรงกันเป๊ะ — ตรงกับตัวอย่าง Approve Flow จริงที่ผู้ใช้ส่งมา (Level
+    "President or Director" มี Hori/Ochi/Ukai พร้อมกัน)"""
+    hori = _make_user(db_session, name="Hori", email="hori@example.com")
+    ochi = _make_user(db_session, name="Ochi", email="ochi@example.com")
+    _login_as(client, admin_user.email, "adminpass123")
+
+    first = client.post(
+        "/budget-approval-levels",
+        json={
+            "department": "Production",
+            "level_no": 4,
+            "level_name": "President or Director",
+            "approver_user_id": hori.id,
+        },
+    )
+    assert first.status_code == 201, first.text
+
+    # เพิ่มคนที่ 2 เข้า Level เดียวกัน (level_name ตรงกันเป๊ะ) — ต้องผ่าน ไม่ใช่ 409 แบบเดิม
+    second = client.post(
+        "/budget-approval-levels",
+        json={
+            "department": "Production",
+            "level_no": 4,
+            "level_name": "President or Director",
+            "approver_user_id": ochi.id,
+        },
+    )
+    assert second.status_code == 201, second.text
+
+    listed = client.get("/budget-approval-levels", params={"department": "Production"}).json()
+    level4_rows = [lv for lv in listed if lv["level_no"] == 4]
+    assert len(level4_rows) == 2
+    assert {lv["approver_name"] for lv in level4_rows} == {"Hori", "Ochi"}
+
+
+def test_level_management_mismatched_level_name_in_same_level_rejected(
+    client: TestClient, admin_user: User, db_session: Session
+):
+    """คนที่ 2 ใน Level เดียวกันต้องตั้งชื่อ Level ให้ตรงกับกลุ่มเดิมเป๊ะ — กัน Audit
+    Trail สับสนว่า Level ไหนชื่ออะไรกันแน่"""
+    hori = _make_user(db_session, name="Hori2", email="hori2@example.com")
+    ochi = _make_user(db_session, name="Ochi2", email="ochi2@example.com")
+    _login_as(client, admin_user.email, "adminpass123")
+
+    client.post(
+        "/budget-approval-levels",
+        json={
+            "department": "Sales",
+            "level_no": 4,
+            "level_name": "President or Director",
+            "approver_user_id": hori.id,
+        },
+    )
+    mismatched = client.post(
+        "/budget-approval-levels",
+        json={
+            "department": "Sales",
+            "level_no": 4,
+            "level_name": "President/Director",  # สะกดไม่ตรงกับกลุ่มเดิมเป๊ะ
+            "approver_user_id": ochi.id,
+        },
+    )
+    assert mismatched.status_code == 409
+
+
+def test_level_management_rename_group_syncs_all_rows(
+    client: TestClient, admin_user: User, db_session: Session
+):
+    """แก้ level_name ผ่านแถวใดแถวหนึ่งในกลุ่ม ต้อง Sync ชื่อใหม่ให้ทุกคนในกลุ่มเดียวกัน
+    อัตโนมัติ (department+level_no เดียวกัน)"""
+    hori = _make_user(db_session, name="Hori3", email="hori3@example.com")
+    ochi = _make_user(db_session, name="Ochi3", email="ochi3@example.com")
+    _login_as(client, admin_user.email, "adminpass123")
+
+    r1 = client.post(
+        "/budget-approval-levels",
+        json={
+            "department": "Maintenance",
+            "level_no": 4,
+            "level_name": "President or Director",
+            "approver_user_id": hori.id,
+        },
+    ).json()
+    client.post(
+        "/budget-approval-levels",
+        json={
+            "department": "Maintenance",
+            "level_no": 4,
+            "level_name": "President or Director",
+            "approver_user_id": ochi.id,
+        },
+    )
+
+    renamed = client.patch(
+        f"/budget-approval-levels/{r1['id']}", json={"level_name": "President / Director"}
+    )
+    assert renamed.status_code == 200
+
+    listed = client.get("/budget-approval-levels", params={"department": "Maintenance"}).json()
+    assert all(lv["level_name"] == "President / Director" for lv in listed)
+
+
+def test_multi_approver_level_any_one_can_approve(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    """Level มี 2 คน (OR) — ใครกดอนุมัติก่อนก็ผ่านได้ ไม่ต้องรอครบทุกคน และคนที่เหลือใน
+    กลุ่มกดซ้ำไม่ได้อีกต่อไปเพราะ Level เดินหน้าไปแล้ว"""
+    manager_a = _make_user(
+        db_session, name="Manager A2", email="mgra2@example.com", department="Production"
+    )
+    manager_b = _make_user(
+        db_session, name="Manager B2", email="mgrb2@example.com", department="Production"
+    )
+    _make_user(db_session, name="FA B2", email="fab2@example.com", is_fa=True)
+    _make_level(
+        db_session,
+        department="Production",
+        level_no=1,
+        level_name="Manager",
+        approver_user_id=manager_a.id,
+    )
+    _make_level(
+        db_session,
+        department="Production",
+        level_no=1,
+        level_name="Manager",
+        approver_user_id=manager_b.id,
+    )
+    _make_budget_master(db_session)
+
+    _login_as(client, plain_user.email, "plainpass123")
+    ar_id = client.post("/ars", json=_sample_ar_body()).json()["id"]
+    _finalize(client, ar_id)
+
+    # ก่อนมีใครกด — Progress ต้องโชว์ทั้งคู่เป็นผู้มีสิทธิ์ Level นี้
+    progress_before = client.get(f"/ars/{ar_id}/approval-progress").json()
+    level1_step = next(s for s in progress_before if s["level_no"] == 1)
+    assert set(level1_step["approver_user_ids"]) == {manager_a.id, manager_b.id}
+    assert "Manager A2" in level1_step["approver_names"]
+    assert "Manager B2" in level1_step["approver_names"]
+
+    # manager_b (ไม่ใช่คนแรกที่ตั้งไว้) กดอนุมัติก่อน — ต้องผ่านได้เลย (OR)
+    _login_as(client, manager_b.email)
+    approved = client.post(f"/ars/{ar_id}/approve-level")
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["budget_approval_status"] == "pending_fa_acknowledge"
+
+    # manager_a (คนที่เหลือในกลุ่มเดียวกัน) กดซ้ำไม่ได้อีกแล้ว เพราะ Workflow เดินหน้า
+    # ไปพ้น Level 1 แล้ว (ไม่ใช่ current_approval_level อีกต่อไป)
+    _login_as(client, manager_a.email)
+    stale = client.post(f"/ars/{ar_id}/approve-level")
+    assert stale.status_code == 409
+
+    progress_after = client.get(f"/ars/{ar_id}/approval-progress").json()
+    level1_after = next(s for s in progress_after if s["level_no"] == 1)
+    assert level1_after["status"] == "approved"
+    assert level1_after["acted_by_name"] == "Manager B2"
 
 
 # ───────────────────────── Requester ต้องมี Department ─────────────────────────

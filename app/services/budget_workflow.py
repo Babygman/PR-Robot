@@ -116,10 +116,13 @@ def start_budget_workflow(db: Session, ar: ApprovalRequest, requester: User) -> 
 
 
 # ───────────────────────── Permission Helper ─────────────────────────
-def _current_level(db: Session, ar: ApprovalRequest) -> BudgetApprovalLevel:
+def _current_level_group(db: Session, ar: ApprovalRequest) -> list[BudgetApprovalLevel]:
+    """คืนทุกแถว (ทุกคน) ของ Level ปัจจุบันที่ยัง Active — Level เดียวกันมีได้หลายคน
+    (OR — ใครก็ได้ในกลุ่มอนุมัติ/ปฏิเสธก่อน ถือว่า Level นั้นจบ) ดู Docstring
+    BudgetApprovalLevel ใน app/models/budget.py สำหรับที่มาของ Correction นี้"""
     if ar.current_approval_level is None or not ar.budget_department:
         raise HTTPException(status.HTTP_409_CONFLICT, "Approval Request นี้ไม่ได้อยู่ระหว่างรอ Level อนุมัติ")
-    level = (
+    group = list(
         db.execute(
             select(BudgetApprovalLevel).where(
                 BudgetApprovalLevel.department == ar.budget_department,
@@ -128,15 +131,15 @@ def _current_level(db: Session, ar: ApprovalRequest) -> BudgetApprovalLevel:
             )
         )
         .scalars()
-        .first()
+        .all()
     )
-    if level is None:
+    if not group:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             f"ไม่พบ Level {ar.current_approval_level} ที่ยัง Active ของแผนก {ar.budget_department} "
             "(อาจถูกลบ/ปิดใช้งานไปแล้ว — กรุณาติดต่อ Admin)",
         )
-    return level
+    return group
 
 
 @dataclass
@@ -144,13 +147,16 @@ class _ActorCheck:
     is_override: bool
 
 
-def _check_level_actor(level: BudgetApprovalLevel, actor: User) -> _ActorCheck:
-    if actor.id == level.approver_user_id:
+def _check_level_actor(group: list[BudgetApprovalLevel], actor: User) -> _ActorCheck:
+    """เช็คว่า actor เป็นหนึ่งในกลุ่มผู้มีสิทธิ์อนุมัติ Level นี้หรือไม่ (OR — เป็นคน
+    ไหนในกลุ่มก็ได้) ไม่ใช่แค่คนเดียวเป๊ะแบบเดิมก่อน Correction 2026-09-09"""
+    approver_ids = {lv.approver_user_id for lv in group}
+    if actor.id in approver_ids:
         return _ActorCheck(is_override=False)
     if actor.is_admin:
         return _ActorCheck(is_override=True)
     raise HTTPException(
-        status.HTTP_403_FORBIDDEN, f'คุณไม่ใช่ผู้อนุมัติ Level "{level.level_name}" ของแผนกนี้'
+        status.HTTP_403_FORBIDDEN, f'คุณไม่ใช่ผู้อนุมัติ Level "{group[0].level_name}" ของแผนกนี้'
     )
 
 
@@ -169,8 +175,9 @@ def approve_level(db: Session, ar: ApprovalRequest, actor: User) -> ApprovalRequ
             status.HTTP_409_CONFLICT, "Approval Request นี้ไม่ได้อยู่ในสถานะรอ Level อนุมัติ"
         )
 
-    level = _current_level(db, ar)
-    check = _check_level_actor(level, actor)
+    group = _current_level_group(db, ar)
+    check = _check_level_actor(group, actor)
+    level = group[0]  # ทุกแถวในกลุ่มเดียวกันมี level_no/level_name ตรงกันเสมอ (บังคับ Sync ที่ Route Layer)
 
     db.add(
         ARBudgetApproval(
@@ -185,9 +192,13 @@ def approve_level(db: Session, ar: ApprovalRequest, actor: User) -> ApprovalRequ
     )
 
     remaining_levels = get_department_levels(db, ar.budget_department)
-    next_levels = [lv for lv in remaining_levels if lv.level_no > level.level_no]
-    if next_levels:
-        ar.current_approval_level = next_levels[0].level_no
+    # level_no ซ้ำกันได้หลายแถวต่อกลุ่มแล้ว (Multi-approver) — ต้องหา level_no ถัดไปที่
+    # "ไม่ซ้ำ" ตัวถัดจาก Level ปัจจุบัน ไม่ใช่แค่แถวถัดไปในลิสต์เฉยๆ
+    next_level_nos = sorted(
+        {lv.level_no for lv in remaining_levels if lv.level_no > level.level_no}
+    )
+    if next_level_nos:
+        ar.current_approval_level = next_level_nos[0]
     else:
         ar.current_approval_level = None
         ar.budget_approval_status = ARBudgetApprovalStatus.PENDING_FA_ACKNOWLEDGE
@@ -200,8 +211,9 @@ def reject_level(db: Session, ar: ApprovalRequest, actor: User, reason: str) -> 
             status.HTTP_409_CONFLICT, "Approval Request นี้ไม่ได้อยู่ในสถานะรอ Level อนุมัติ"
         )
 
-    level = _current_level(db, ar)
-    check = _check_level_actor(level, actor)
+    group = _current_level_group(db, ar)
+    check = _check_level_actor(group, actor)
+    level = group[0]
 
     db.add(
         ARBudgetApproval(
@@ -341,15 +353,23 @@ def build_approval_progress(db: Session, ar: ApprovalRequest) -> list[dict]:
     user_ids |= {a.acted_by_id for a in ar.budget_approvals}
     names = resolve_user_names(db, user_ids)
 
-    steps: list[dict] = []
+    # จัดกลุ่มตาม level_no (Multi-approver per Level — OR) — Level เดียวกันอาจมีหลาย
+    # แถว/หลายคน ทุกแถวในกลุ่มเดียวกัน level_name ตรงกันเสมอ (บังคับ Sync ที่ Route Layer)
+    groups: dict[int, list[BudgetApprovalLevel]] = {}
     for lv in levels:
-        rec = approvals.get((BudgetApprovalStepType.LEVEL, lv.level_no))
+        groups.setdefault(lv.level_no, []).append(lv)
+
+    steps: list[dict] = []
+    for level_no in sorted(groups):
+        group = groups[level_no]
+        rec = approvals.get((BudgetApprovalStepType.LEVEL, level_no))
+        approver_ids = [lv.approver_user_id for lv in group]
         step = {
             "step_type": BudgetApprovalStepType.LEVEL,
-            "level_no": lv.level_no,
-            "level_name": lv.level_name,
-            "approver_user_id": lv.approver_user_id,
-            "approver_name": names.get(lv.approver_user_id),
+            "level_no": level_no,
+            "level_name": group[0].level_name,
+            "approver_user_ids": approver_ids,
+            "approver_names": ", ".join(names.get(uid) or f"#{uid}" for uid in approver_ids),
             "status": "waiting",
             "acted_by_name": None,
             "acted_at": None,
@@ -369,8 +389,8 @@ def build_approval_progress(db: Session, ar: ApprovalRequest) -> list[dict]:
         "step_type": BudgetApprovalStepType.FA_ACKNOWLEDGE,
         "level_no": None,
         "level_name": "FA Acknowledge",
-        "approver_user_id": None,
-        "approver_name": None,
+        "approver_user_ids": [],
+        "approver_names": None,
         "status": "waiting",
         "acted_by_name": None,
         "acted_at": None,

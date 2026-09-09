@@ -135,11 +135,24 @@ class BudgetUploadRowError(Base):
 
 class BudgetApprovalLevel(Base):
     """Level Management — โครงสร้าง Level การอนุมัติของแต่ละแผนก ยืดหยุ่นได้อิสระ
-    (แผนกไหนมีกี่ Level อะไรบ้าง กำหนดเองทั้งหมด) ผู้อนุมัติผูกกับบุคคลเจาะจง"""
+    (แผนกไหนมีกี่ Level อะไรบ้าง กำหนดเองทั้งหมด) ผู้อนุมัติผูกกับบุคคลเจาะจง
+
+    Correction 2026-09-09 (Multi-approver per Level, OR): 1 แถว = 1 คนใน 1 Level ไม่ใช่
+    1 แถว = 1 Level อีกต่อไป — Level เดียวกัน (department+level_no) มีได้หลายแถวหลายคน
+    (เช่น Level "President or Director" มี 3 คน) ใครก็ได้ในกลุ่มอนุมัติ/ปฏิเสธก่อน ถือว่า
+    Level นั้นจบ (OR ไม่ใช่ AND) — ดูตัวอย่าง Approve Flow จริงที่ผู้ใช้ส่งมา 2026-09-09
+    (Level 4 มี Hori/Ochi/Ukai พร้อมกัน) ทุกแถวในกลุ่มเดียวกัน (department+level_no) ต้อง
+    มี level_name ตรงกันเป๊ะเสมอ (บังคับ Sync ที่ Route Layer — ดู budget_levels.py) กัน
+    Audit Trail สับสนว่า Level ไหนชื่ออะไรกันแน่"""
 
     __tablename__ = "budget_approval_levels"
     __table_args__ = (
-        UniqueConstraint("department", "level_no", name="uq_budget_level_dept_level_no"),
+        UniqueConstraint(
+            "department",
+            "level_no",
+            "approver_user_id",
+            name="uq_budget_level_dept_level_no_approver",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
