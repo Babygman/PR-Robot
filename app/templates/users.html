@@ -56,7 +56,7 @@ let USERS_CACHE = [];
 function userRowHtml(u) {
   return `<tr data-id="${u.id}">
     <td>${escapeHtml(u.name)}</td>
-    <td class="mono">${escapeHtml(u.email)}</td>
+    <td><input type="email" class="u-email mono" value="${escapeHtml(u.email)}"></td>
     <td><input type="text" class="u-department" value="${escapeHtml(u.department || "")}" placeholder="(ไม่มี)"></td>
     <td><input type="text" class="u-position" value="${escapeHtml(u.position || "")}" placeholder="(ไม่มี)"></td>
     <td style="text-align:center;"><input type="checkbox" class="u-is-admin" ${u.is_admin ? "checked" : ""}></td>
@@ -81,6 +81,7 @@ async function loadUsers() {
       const id = row.dataset.id;
       btn.disabled = true;
       const payload = {
+        email: row.querySelector(".u-email").value,
         department: row.querySelector(".u-department").value || null,
         position: row.querySelector(".u-position").value || null,
         is_admin: row.querySelector(".u-is-admin").checked,
@@ -90,7 +91,8 @@ async function loadUsers() {
       const r = await apiFetch(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
       btn.disabled = false;
       if (!r.ok) {
-        alert("บันทึกไม่สำเร็จ");
+        const errBody = await r.json().catch(() => ({}));
+        alert(errBody.detail || "บันทึกไม่สำเร็จ");
         return;
       }
       btn.textContent = "บันทึกแล้ว";

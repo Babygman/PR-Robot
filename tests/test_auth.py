@@ -84,3 +84,25 @@ def test_admin_can_list_users(client: TestClient, admin_user: User, plain_user: 
     assert res.status_code == 200
     emails = {u["email"] for u in res.json()}
     assert {"admin@example.com", "plain@example.com"} <= emails
+
+
+# ───────── PATCH /users/{id} email (2026-09-10) — แก้ Email ชั่วคราวเป็น Email จริง ─────────
+def test_admin_can_update_user_email(client: TestClient, admin_user: User, plain_user: User):
+    client.post("/auth/login", json={"email": "admin@example.com", "password": "adminpass123"})
+    res = client.patch(f"/users/{plain_user.id}", json={"email": "plain.real@example.com"})
+    assert res.status_code == 200, res.text
+    assert res.json()["email"] == "plain.real@example.com"
+
+    # Login ด้วย Email ใหม่ได้จริง (ไม่ใช่แค่ค่าใน Response)
+    login = client.post(
+        "/auth/login", json={"email": "plain.real@example.com", "password": "plainpass123"}
+    )
+    assert login.status_code == 200
+
+
+def test_admin_update_user_email_duplicate_rejected(
+    client: TestClient, admin_user: User, plain_user: User
+):
+    client.post("/auth/login", json={"email": "admin@example.com", "password": "adminpass123"})
+    res = client.patch(f"/users/{plain_user.id}", json={"email": "admin@example.com"})
+    assert res.status_code == 409
