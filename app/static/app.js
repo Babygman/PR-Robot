@@ -211,6 +211,150 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+// ───────────────────── Attachment Lightbox (Shared, Comment 4 — 2026-09-10) ─────────────
+// เดิมมีแค่ในหน้า "การอนุมัติของฉัน" (ar_my_approvals.html) — ผู้ใช้แจ้งว่าอยากให้เอกสาร
+// แนบในหน้า "รายละเอียด AR" (ar_detail.html) คลิกแล้ว Float Preview เหมือนกัน จึงย้าย
+// เครื่องยนต์ Lightbox มาไว้ในนี้เป็นฟังก์ชันกลาง เรียกใช้ผ่าน
+// openAttachmentLightbox(arId, attachments, index) — attachments คือ Array ของ
+// ARAttachmentRead ที่โหลดมาแล้ว (ต้องมี id/file_name/content_type/file_size) DOM ของ
+// Lightbox เองถูกสร้างแบบ Lazy (ensureLightboxDom) ตอนเปิดครั้งแรกเท่านั้น ไม่ต้องประกาศ
+// Markup ซ้ำในทุกหน้าที่ใช้
+let LIGHTBOX_AR_ID = null;
+let LIGHTBOX_ATTACHMENTS = [];
+let LIGHTBOX_ZOOM = 100;
+
+function fmtFileSizeLightbox(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isXlsxAttachment(att) {
+  const ct = att.content_type || "";
+  const name = (att.file_name || "").toLowerCase();
+  return (
+    ct.includes("spreadsheetml") || ct === "application/vnd.ms-excel" || name.endsWith(".xlsx") || name.endsWith(".xls")
+  );
+}
+
+function ensureLightboxDom() {
+  if (document.getElementById("shared-lightbox-overlay")) return;
+  const wrap = document.createElement("div");
+  wrap.innerHTML = `<div class="overlay ma-lightbox-overlay" id="shared-lightbox-overlay">
+    <div class="ma-lightbox">
+      <div class="ma-lightbox-head">
+        <div class="ma-lightbox-tabs" id="shared-lightbox-tabs"></div>
+        <div class="ma-lightbox-tools">
+          <span class="ma-lightbox-zoom-group" id="shared-lightbox-zoom-group">
+            <button type="button" class="secondary" id="shared-lightbox-zoom-out">−</button>
+            <span class="mono" id="shared-lightbox-zoom-level">100%</span>
+            <button type="button" class="secondary" id="shared-lightbox-zoom-in">+</button>
+          </span>
+          <button type="button" class="ma-popup-close" id="shared-lightbox-close">✕</button>
+        </div>
+      </div>
+      <div class="ma-lightbox-body" id="shared-lightbox-body"></div>
+    </div>
+  </div>`;
+  document.body.appendChild(wrap.firstElementChild);
+
+  document.getElementById("shared-lightbox-close").addEventListener("click", closeAttachmentLightbox);
+  document.getElementById("shared-lightbox-overlay").addEventListener("click", (e) => {
+    if (e.target.id === "shared-lightbox-overlay") closeAttachmentLightbox();
+  });
+  document.getElementById("shared-lightbox-zoom-in").addEventListener("click", () => {
+    LIGHTBOX_ZOOM = Math.min(LIGHTBOX_ZOOM + 25, 300);
+    applyLightboxZoom();
+  });
+  document.getElementById("shared-lightbox-zoom-out").addEventListener("click", () => {
+    LIGHTBOX_ZOOM = Math.max(LIGHTBOX_ZOOM - 25, 25);
+    applyLightboxZoom();
+  });
+}
+
+function applyLightboxZoom() {
+  document.getElementById("shared-lightbox-zoom-level").textContent = `${LIGHTBOX_ZOOM}%`;
+  const img = document.getElementById("shared-lightbox-img");
+  if (img) img.style.transform = `scale(${LIGHTBOX_ZOOM / 100})`;
+}
+
+function escapeHtmlCell(v) {
+  if (v === null || v === undefined || v === "") return "";
+  return escapeHtml(String(v));
+}
+
+async function renderXlsxAttachmentPreview(att, body, url) {
+  const res = await apiFetch(`/ars/${LIGHTBOX_AR_ID}/attachments/${att.id}/xlsx-preview`);
+  if (!res.ok) {
+    body.innerHTML = `<p class="muted">ไม่สามารถ Preview ไฟล์ Excel นี้ได้ (รองรับเฉพาะ .xlsx)<br><a href="${url}" target="_blank">ดาวน์โหลด ${escapeHtml(att.file_name)} (${fmtFileSizeLightbox(att.file_size)})</a></p>`;
+    return;
+  }
+  const data = await res.json();
+  if (data.rows.length === 0) {
+    body.innerHTML = '<p class="muted">ไฟล์ Excel นี้ไม่มีข้อมูลใน Sheet แรก</p>';
+    return;
+  }
+  const tableRows = data.rows
+    .map(
+      (row, i) =>
+        `<tr>${row.map((cell) => (i === 0 ? `<th>${escapeHtmlCell(cell)}</th>` : `<td>${escapeHtmlCell(cell)}</td>`)).join("")}</tr>`
+    )
+    .join("");
+  body.innerHTML = `
+    <div class="ma-xlsx-preview">
+      <div class="ma-xlsx-sheet-name">Sheet: ${escapeHtml(data.sheet_name)}${data.truncated ? " — แสดงบางส่วน (ดาวน์โหลดเพื่อดูฉบับเต็ม)" : ""}</div>
+      <div class="ma-xlsx-table-wrap"><table class="ma-xlsx-table">${tableRows}</table></div>
+    </div>`;
+}
+
+async function renderAttachmentLightboxDoc(att) {
+  LIGHTBOX_ZOOM = 100;
+  const body = document.getElementById("shared-lightbox-body");
+  const url = `/ars/${LIGHTBOX_AR_ID}/attachments/${att.id}/download`;
+  const ct = att.content_type || "";
+  const isImage = ct.startsWith("image/");
+  document.getElementById("shared-lightbox-zoom-group").classList.toggle("hidden", !isImage);
+
+  const activeIndex = LIGHTBOX_ATTACHMENTS.indexOf(att);
+  document.getElementById("shared-lightbox-tabs").querySelectorAll(".ma-lightbox-tab").forEach((btn) => {
+    btn.classList.toggle("active", Number(btn.dataset.index) === activeIndex);
+  });
+
+  if (ct === "application/pdf") {
+    body.innerHTML = `<iframe src="${url}"></iframe>`;
+  } else if (isImage) {
+    body.innerHTML = `<img id="shared-lightbox-img" src="${url}" alt="${escapeHtml(att.file_name)}">`;
+  } else if (isXlsxAttachment(att)) {
+    body.innerHTML = '<p class="muted">กำลังโหลด Preview...</p>';
+    await renderXlsxAttachmentPreview(att, body, url);
+  } else {
+    body.innerHTML = `<p class="muted">ไม่รองรับ Preview ไฟล์ประเภทนี้ในเบราว์เซอร์<br><a href="${url}" target="_blank">ดาวน์โหลด ${escapeHtml(att.file_name)} (${fmtFileSizeLightbox(att.file_size)})</a></p>`;
+  }
+  applyLightboxZoom();
+}
+
+function openAttachmentLightbox(arId, attachments, index) {
+  ensureLightboxDom();
+  LIGHTBOX_AR_ID = arId;
+  LIGHTBOX_ATTACHMENTS = attachments;
+  const tabsEl = document.getElementById("shared-lightbox-tabs");
+  tabsEl.innerHTML = attachments
+    .map((a, i) => `<button type="button" class="ma-lightbox-tab" data-index="${i}">${escapeHtml(a.file_name)}</button>`)
+    .join("");
+  tabsEl.querySelectorAll(".ma-lightbox-tab").forEach((btn) => {
+    btn.addEventListener("click", () => renderAttachmentLightboxDoc(LIGHTBOX_ATTACHMENTS[Number(btn.dataset.index)]));
+  });
+  renderAttachmentLightboxDoc(attachments[index]);
+  document.getElementById("shared-lightbox-overlay").classList.add("open");
+}
+
+function closeAttachmentLightbox() {
+  const overlay = document.getElementById("shared-lightbox-overlay");
+  if (overlay) overlay.classList.remove("open");
+  const body = document.getElementById("shared-lightbox-body");
+  if (body) body.innerHTML = "";
+}
+
 // แสดงวันที่แบบ dd/mm/yyyy เสมอ (Feedback จริงจากผู้ใช้ 2026-09-03) — รับ Input เป็น
 // "yyyy-mm-dd" (จาก API) หรือ ISO Datetime เต็มก็ได้ ใช้แค่แสดงผลเท่านั้น
 function formatDateDMY(value) {

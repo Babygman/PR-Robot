@@ -49,26 +49,6 @@
     </div>
   </div>
 </div>
-
-<!-- Comment 4 (2026-09-10): Lightbox แยกจาก ma-popup — คลิก Thumbnail เอกสารแล้ว Float
-     ออกมาเกือบเต็มจอทับ ma-popup อีกที พร้อม Blur พื้นหลัง (ดู .ma-lightbox-overlay ใน
-     style.css) รองรับสลับ Tab เอกสารหลายไฟล์ในนี้ได้เลย ไม่ต้องปิดแล้วเปิดใหม่ -->
-<div class="overlay ma-lightbox-overlay" id="ma-lightbox-overlay">
-  <div class="ma-lightbox">
-    <div class="ma-lightbox-head">
-      <div class="ma-lightbox-tabs" id="ma-lightbox-tabs"></div>
-      <div class="ma-lightbox-tools">
-        <span class="ma-lightbox-zoom-group" id="ma-lightbox-zoom-group">
-          <button type="button" class="secondary" id="ma-lightbox-zoom-out">−</button>
-          <span class="mono" id="ma-lightbox-zoom-level">100%</span>
-          <button type="button" class="secondary" id="ma-lightbox-zoom-in">+</button>
-        </span>
-        <button type="button" class="ma-popup-close" id="ma-lightbox-close">✕</button>
-      </div>
-    </div>
-    <div class="ma-lightbox-body" id="ma-lightbox-body"></div>
-  </div>
-</div>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -77,7 +57,6 @@ let CURRENT_TAB = new URLSearchParams(window.location.search).get("tab") || "wai
 let CURRENT_ITEMS = [];
 let POPUP_ITEM = null;
 let POPUP_ATTACHMENTS = [];
-let LIGHTBOX_ZOOM = 100;
 
 const MA_TAB_META = {
   waiting: { title: "📥 กล่องรออนุมัติ", sub: "ทุกรายการ AR ที่คุณเกี่ยวข้อง กำลังดำเนินอยู่ในขั้นตอนใดขั้นตอนหนึ่ง" },
@@ -176,112 +155,9 @@ async function loadPopupAttachments() {
   }
   thumbsEl.innerHTML = POPUP_ATTACHMENTS.map(docThumbHtml).join("");
   thumbsEl.querySelectorAll(".ma-doc-thumb").forEach((el) => {
-    el.addEventListener("click", () => openLightbox(Number(el.dataset.index)));
+    el.addEventListener("click", () => openAttachmentLightbox(POPUP_ITEM.id, POPUP_ATTACHMENTS, Number(el.dataset.index)));
   });
 }
-
-function applyLightboxZoom() {
-  document.getElementById("ma-lightbox-zoom-level").textContent = `${LIGHTBOX_ZOOM}%`;
-  const img = document.getElementById("ma-lightbox-img");
-  if (img) img.style.transform = `scale(${LIGHTBOX_ZOOM / 100})`;
-}
-
-// แก้ไขเพิ่ม (2026-09-10): ผู้ใช้แจ้งว่าไฟล์ Excel (.xlsx) ควรมี Preview ในตัว Lightbox
-// ด้วย (เดิมโชว์แค่ลิงก์ดาวน์โหลดเหมือนไฟล์ที่ไม่รู้จัก) — เบราว์เซอร์ Preview .xlsx เอง
-// ไม่ได้ (ไม่มี Native Viewer เหมือน PDF) จึงเรียก /xlsx-preview ที่ Server อ่านด้วย
-// openpyxl แล้วส่งเป็นตาราง Rows/Cols กลับมา Render เป็น <table> เอง (ยังไม่ใช้ Library
-// แปลง Excel ฝั่ง Browser ตามหลักการของโปรเจกต์นี้) รองรับเฉพาะ .xlsx (ไม่ใช่ .xls แบบ
-// เก่า) ถ้าอ่านไม่ได้ Fallback กลับไปเป็นลิงก์ดาวน์โหลดเหมือนเดิม
-function isXlsxAttachment(att) {
-  const ct = att.content_type || "";
-  const name = (att.file_name || "").toLowerCase();
-  return ct.includes("spreadsheetml") || ct === "application/vnd.ms-excel" || name.endsWith(".xlsx") || name.endsWith(".xls");
-}
-
-function escapeHtmlCell(v) {
-  if (v === null || v === undefined || v === "") return "";
-  return escapeHtml(String(v));
-}
-
-async function renderXlsxPreview(att, body, url) {
-  const res = await apiFetch(`/ars/${POPUP_ITEM.id}/attachments/${att.id}/xlsx-preview`);
-  if (!res.ok) {
-    body.innerHTML = `<p class="muted">ไม่สามารถ Preview ไฟล์ Excel นี้ได้ (รองรับเฉพาะ .xlsx)<br><a href="${url}" target="_blank">ดาวน์โหลด ${escapeHtml(att.file_name)} (${fmtFileSizeMa(att.file_size)})</a></p>`;
-    return;
-  }
-  const data = await res.json();
-  if (data.rows.length === 0) {
-    body.innerHTML = '<p class="muted">ไฟล์ Excel นี้ไม่มีข้อมูลใน Sheet แรก</p>';
-    return;
-  }
-  const tableRows = data.rows
-    .map(
-      (row, i) =>
-        `<tr>${row.map((cell) => (i === 0 ? `<th>${escapeHtmlCell(cell)}</th>` : `<td>${escapeHtmlCell(cell)}</td>`)).join("")}</tr>`
-    )
-    .join("");
-  body.innerHTML = `
-    <div class="ma-xlsx-preview">
-      <div class="ma-xlsx-sheet-name">Sheet: ${escapeHtml(data.sheet_name)}${data.truncated ? " — แสดงบางส่วน (ดาวน์โหลดเพื่อดูฉบับเต็ม)" : ""}</div>
-      <div class="ma-xlsx-table-wrap"><table class="ma-xlsx-table">${tableRows}</table></div>
-    </div>`;
-}
-
-async function renderLightboxDoc(att) {
-  LIGHTBOX_ZOOM = 100;
-  const body = document.getElementById("ma-lightbox-body");
-  const url = `/ars/${POPUP_ITEM.id}/attachments/${att.id}/download`;
-  const ct = att.content_type || "";
-  const isImage = ct.startsWith("image/");
-  document.getElementById("ma-lightbox-zoom-group").classList.toggle("hidden", !isImage);
-
-  const activeIndex = POPUP_ATTACHMENTS.indexOf(att);
-  document.getElementById("ma-lightbox-tabs").querySelectorAll(".ma-lightbox-tab").forEach((btn) => {
-    btn.classList.toggle("active", Number(btn.dataset.index) === activeIndex);
-  });
-
-  if (ct === "application/pdf") {
-    body.innerHTML = `<iframe src="${url}"></iframe>`;
-  } else if (isImage) {
-    body.innerHTML = `<img id="ma-lightbox-img" src="${url}" alt="${escapeHtml(att.file_name)}">`;
-  } else if (isXlsxAttachment(att)) {
-    body.innerHTML = '<p class="muted">กำลังโหลด Preview...</p>';
-    await renderXlsxPreview(att, body, url);
-  } else {
-    body.innerHTML = `<p class="muted">ไม่รองรับ Preview ไฟล์ประเภทนี้ในเบราว์เซอร์<br><a href="${url}" target="_blank">ดาวน์โหลด ${escapeHtml(att.file_name)} (${fmtFileSizeMa(att.file_size)})</a></p>`;
-  }
-  applyLightboxZoom();
-}
-
-function openLightbox(index) {
-  const tabsEl = document.getElementById("ma-lightbox-tabs");
-  tabsEl.innerHTML = POPUP_ATTACHMENTS
-    .map((a, i) => `<button type="button" class="ma-lightbox-tab" data-index="${i}">${escapeHtml(a.file_name)}</button>`)
-    .join("");
-  tabsEl.querySelectorAll(".ma-lightbox-tab").forEach((btn) => {
-    btn.addEventListener("click", () => renderLightboxDoc(POPUP_ATTACHMENTS[Number(btn.dataset.index)]));
-  });
-  renderLightboxDoc(POPUP_ATTACHMENTS[index]);
-  document.getElementById("ma-lightbox-overlay").classList.add("open");
-}
-
-function closeLightbox() {
-  document.getElementById("ma-lightbox-overlay").classList.remove("open");
-  document.getElementById("ma-lightbox-body").innerHTML = "";
-}
-
-document.getElementById("ma-lightbox-close").addEventListener("click", closeLightbox);
-document.getElementById("ma-lightbox-overlay").addEventListener("click", (e) => {
-  if (e.target.id === "ma-lightbox-overlay") closeLightbox();
-});
-document.getElementById("ma-lightbox-zoom-in").addEventListener("click", () => {
-  LIGHTBOX_ZOOM = Math.min(LIGHTBOX_ZOOM + 25, 300);
-  applyLightboxZoom();
-});
-document.getElementById("ma-lightbox-zoom-out").addEventListener("click", () => {
-  LIGHTBOX_ZOOM = Math.max(LIGHTBOX_ZOOM - 25, 25);
-  applyLightboxZoom();
-});
 
 function renderActionArea() {
   const area = document.getElementById("ma-action-area");
@@ -373,7 +249,7 @@ async function openPopup(id) {
 
 function closePopup() {
   document.getElementById("ma-overlay").classList.remove("open");
-  closeLightbox();
+  closeAttachmentLightbox();
   POPUP_ITEM = null;
 }
 

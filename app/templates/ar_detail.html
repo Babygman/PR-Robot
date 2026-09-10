@@ -269,13 +269,20 @@ function fmtFileSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function attachmentHtml(a, ar) {
+// Correction 2026-09-10 (My Approvals เพิ่ม Lightbox แล้ว): ผู้ใช้แจ้งว่าอยากให้คลิก
+// เอกสารแนบในการ์ด "เอกสารแนบ" ของหน้ารายละเอียดนี้ Float Preview เหมือนกัน (เดิมเปิด
+// Tab ใหม่ไปที่ URL Download ตรงๆ) — เปลี่ยนเป็นเรียก openAttachmentLightbox() ที่ย้ายมา
+// ไว้เป็นฟังก์ชันกลางใน app.js แล้ว (ดู ar_my_approvals.html เดิม) ไม่ Navigate ออกจาก
+// หน้านี้อีกต่อไป
+let CURRENT_ATTACHMENTS = [];
+
+function attachmentHtml(a, ar, index) {
   const canDelete = ME && (ME.id === a.uploaded_by_id || ME.id === ar.requested_by_id || ME.is_admin);
   const delBtn = canDelete
     ? ` <button type="button" class="secondary att-del-btn" data-id="${a.id}" style="padding:1px 8px; font-size:12px;">ลบ</button>`
     : "";
   return `<li>
-    <a href="/ars/${AR_ID}/attachments/${a.id}/download" target="_blank">${escapeHtml(a.file_name)}</a>
+    <a href="#" class="att-preview-link" data-index="${index}">${escapeHtml(a.file_name)}</a>
     (${fmtFileSize(a.file_size)})${delBtn}
     <br><span class="muted">โดย ${escapeHtml(a.uploaded_by_name || "-")} — ${formatDateTimeDMY(a.uploaded_at)}</span>
   </li>`;
@@ -300,11 +307,18 @@ async function loadAttachments(ar) {
     return;
   }
   const attachments = await res.json();
+  CURRENT_ATTACHMENTS = attachments;
   listEl.innerHTML = attachments.length
-    ? attachments.map((a) => attachmentHtml(a, ar)).join("")
+    ? attachments.map((a, i) => attachmentHtml(a, ar, i)).join("")
     : '<li class="muted">ยังไม่มีเอกสารแนบ</li>';
   listEl.querySelectorAll(".att-del-btn").forEach((btn) => {
     btn.addEventListener("click", () => deleteAttachment(Number(btn.dataset.id)));
+  });
+  listEl.querySelectorAll(".att-preview-link").forEach((link) => {
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      openAttachmentLightbox(AR_ID, CURRENT_ATTACHMENTS, Number(link.dataset.index));
+    });
   });
 
   // เจ้าของ AR/Admin แนบได้เสมอ — ผู้อนุมัติ Level ปัจจุบัน/FA แนบได้เฉพาะช่วงที่กำลังรอ
