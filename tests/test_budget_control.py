@@ -25,6 +25,11 @@ _PASSWORD = "password123456"
 
 def _make_user(db_session: Session, **kwargs) -> User:
     kwargs.setdefault("password_hash", hash_password(_PASSWORD))
+    # Full RBAC (Correction 2026-09-10): Default can_view_pr/can_view_ar = True ให้ Fixture
+    # นี้ (เหมือน conftest.plain_user — ผู้ใช้ทั่วไปในระบบมีสิทธิ์ PR/AR ของตัวเองอยู่แล้ว)
+    # Test ที่ต้องการยืนยัน Permission Gate เอง (403 กรณีไม่มีสิทธิ์) Override ผ่าน kwargs
+    kwargs.setdefault("can_view_pr", True)
+    kwargs.setdefault("can_view_ar", True)
     user = User(**kwargs)
     db_session.add(user)
     db_session.commit()

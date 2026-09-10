@@ -40,7 +40,9 @@ def create_user(
         is_admin=body.is_admin,
         is_fa=body.is_fa,
         can_view_approvals=body.can_view_approvals,
-        approver_only=body.approver_only,
+        can_view_pr=body.can_view_pr,
+        can_view_ar=body.can_view_ar,
+        can_view_all=body.can_view_all,
     )
     db.add(user)
     db.commit()

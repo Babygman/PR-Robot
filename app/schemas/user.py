@@ -22,7 +22,9 @@ class UserCreate(BaseModel):
     is_admin: bool = False
     is_fa: bool = False
     can_view_approvals: bool = False
-    approver_only: bool = False
+    can_view_pr: bool = False
+    can_view_ar: bool = False
+    can_view_all: bool = False
 
 
 class UserUpdate(BaseModel):
@@ -34,8 +36,9 @@ class UserUpdate(BaseModel):
     app/api/routes/users.py) — ยังไม่มี password ในนี้โดยเจตนา (เปลี่ยนรหัสผ่านเป็นคนละ
     Flow ยังไม่ทำ Phase นี้)
 
-    เพิ่ม `can_view_approvals`/`approver_only` (My Approvals, Phase B/2, 2026-09-10) — ดู
-    Docstring app/models/user.py สำหรับความหมายแต่ละ Field
+    เพิ่ม `can_view_approvals`/`can_view_pr`/`can_view_ar`/`can_view_all` (Full RBAC,
+    2026-09-10 — ตัด `approver_only` ออกแล้ว) — ดู Docstring app/models/user.py สำหรับ
+    ความหมายแต่ละ Field
     """
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
@@ -46,7 +49,9 @@ class UserUpdate(BaseModel):
     is_admin: bool | None = None
     is_fa: bool | None = None
     can_view_approvals: bool | None = None
-    approver_only: bool | None = None
+    can_view_pr: bool | None = None
+    can_view_ar: bool | None = None
+    can_view_all: bool | None = None
 
 
 class UserRead(BaseModel):
@@ -59,7 +64,9 @@ class UserRead(BaseModel):
     is_admin: bool
     is_fa: bool
     can_view_approvals: bool
-    approver_only: bool
+    can_view_pr: bool
+    can_view_ar: bool
+    can_view_all: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}

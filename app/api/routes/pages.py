@@ -92,6 +92,12 @@ def page_ai_usage(request: Request):
     return templates.TemplateResponse(request=request, name="ai_usage.html", context={})
 
 
+# Log (Full RBAC, 2026-09-10)
+@router.get("/log")
+def page_audit_log(request: Request):
+    return templates.TemplateResponse(request=request, name="audit_log.html", context={})
+
+
 # ───────────────────────── Budget Control (Phase 10, 2026-09-09) ─────────────────────────
 @router.get("/users")
 def page_users(request: Request):

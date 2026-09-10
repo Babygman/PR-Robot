@@ -19,6 +19,17 @@ Flow (Correction 2026-09-10 — ผู้ใช้แจ้งว่าพิม
    rejected) แล้วเท่านั้น ไม่เกี่ยวกับว่า Finalized ไปแล้วหรือยัง (คัดลอกข้อมูลเป็นฉบับ
    Draft ใหม่)
 7. GET /ars/{id}/history -> ประวัติการกระทำทั้งหมดของ AR นี้จาก audit_log
+
+Full RBAC (Correction 2026-09-10): ต่างจาก PR — AR มีผู้อนุมัติ Level ตามแผนก (ตั้งใน
+BudgetApprovalLevel.approver_user_id ไม่ใช่ Flag บน User) ที่ต้องเปิดดู/พิมพ์/ดูประวัติ/
+อนุมัติ AR ของคนอื่นที่รอตัวเองอยู่ได้โดยชอบธรรม โดยไม่จำเป็นต้องเปิด can_view_approvals
+(Flag นั้นมีไว้แค่สำหรับสิทธิ์เข้าเมนู "My Approvals" ที่เป็น UI ทางลัดเท่านั้น) ดังนั้น:
+- list_ars/create_ar เท่านั้นที่ Gate ด้วย require_can_view_ar (เมนู "Approval Request")
+  list_ars บังคับกรองเห็นเฉพาะของตัวเอง เว้นแต่ Admin/can_view_all
+- get_ar/update_ar/revise_ar/submit_ar_for_approval/get_ar_pdf/get_ar_approval_progress/
+  get_ar_history/approve-level/reject-level/fa-acknowledge/reject-fa ไม่แตะ (เปิดให้ Login
+  แล้วเรียกได้เหมือนเดิมทั้งหมด — Authorization ของแต่ละ Action มีอยู่แล้วลึกใน
+  app/services/budget_workflow.py — _approver_departments/_check_fa_actor)
 """
 
 from __future__ import annotations
@@ -29,7 +40,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.deps import get_current_user, require_can_view_approvals
+from app.core.deps import get_current_user, require_can_view_approvals, require_can_view_ar
 from app.db.session import get_db
 from app.models import (
     ApprovalRequest,
@@ -121,8 +132,12 @@ def _to_ar_read(db: Session, ar: ApprovalRequest) -> ARRead:
 def create_ar(
     body: ARCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_can_view_ar),
 ) -> ARRead:
+    # can_view_all คือสิทธิ์ดูภาพรวมอย่างเดียว ไม่ได้แปลว่าสร้าง AR แทนคนอื่นได้ — ต้องมี
+    # can_view_ar (หรือ Admin) จริงๆ เท่านั้นถึงจะสร้างได้ (ดู Docstring บนสุดของไฟล์นี้)
+    if not (current_user.is_admin or current_user.can_view_ar):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "ต้องมีสิทธิ์ AR ถึงจะสร้าง Approval Request ใหม่ได้")
     # Budget Control (2026-09-09, Design §2.1): ผู้สร้าง AR ต้องมี Department เสมอ —
     # Validate ที่นี่ (Application-level) ไม่ใช่ DB Constraint เพราะผู้อนุมัติบาง Level
     # ไม่มี Department ได้ (Cross-department) — กฎนี้บังคับเฉพาะตอน "สร้าง AR" เท่านั้น
@@ -164,7 +179,7 @@ def list_ars(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_can_view_ar),
 ) -> list[ARListItem]:
     query = db.query(ApprovalRequest)
     if status_filter is not None:
@@ -178,6 +193,12 @@ def list_ars(
     if app_date_to is not None:
         query = query.filter(ApprovalRequest.application_date <= app_date_to)
     if requested_by_me:
+        query = query.filter(ApprovalRequest.requested_by_id == current_user.id)
+
+    # Full RBAC (Correction 2026-09-10): บังคับเห็นเฉพาะ AR ของตัวเอง เว้นแต่ Admin หรือ
+    # can_view_all (เห็นภาพรวม) — ไม่ใช่แค่ requested_by_me แบบ Opt-in อีกต่อไป (เมนูนี้คือ
+    # "Approval Request" List ทั่วไป ต่างจาก My Approvals ที่กรองตามบทบาทอนุมัติ)
+    if not (current_user.is_admin or current_user.can_view_all):
         query = query.filter(ApprovalRequest.requested_by_id == current_user.id)
 
     ars = (

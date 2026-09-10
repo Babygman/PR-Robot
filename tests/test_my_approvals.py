@@ -45,14 +45,18 @@ def test_plain_user_without_flag_forbidden(client: TestClient, plain_user: User)
     assert client.get("/ars/my-approvals?bucket=waiting").status_code == 403
 
 
-def test_admin_and_fa_always_allowed_without_flag(
+def test_admin_allowed_fa_alone_denied_without_flag(
     client: TestClient, admin_user: User, db_session: Session
 ):
+    """Correction (Full RBAC, 2026-09-10): Admin เห็นเมนู My Approvals เสมอ แต่ FA เฉยๆ
+    (ไม่ได้ติ๊ก can_view_approvals ด้วย) ไม่มีสิทธิ์เข้าเมนูนี้อีกต่อไป — ผู้ใช้ยืนยันว่า
+    FA หมายถึงแค่สิทธิ์ทำ FA Acknowledge เท่านั้น ไม่ได้แปลว่าเห็นเมนู My Approvals ด้วย
+    อัตโนมัติ (ดู app/core/deps.py: require_can_view_approvals)"""
     fa = _make_user(db_session, name="FA MA", email="fama@example.com", is_fa=True)
     _login_as(client, admin_user.email, "adminpass123")
     assert client.get("/ars/my-approvals/counts").status_code == 200
     _login_as(client, fa.email)
-    assert client.get("/ars/my-approvals/counts").status_code == 200
+    assert client.get("/ars/my-approvals/counts").status_code == 403
 
 
 def test_can_view_approvals_flag_grants_access(client: TestClient, db_session: Session):
@@ -215,7 +219,11 @@ def test_admin_history_is_personal_not_system_wide(
 def test_fa_waiting_only_when_reached_fa_stage(
     client: TestClient, plain_user: User, db_session: Session
 ):
-    fa = _make_user(db_session, name="FA2", email="fa2@example.com", is_fa=True)
+    # Correction (Full RBAC, 2026-09-10): FA ต้องเปิด can_view_approvals ด้วยถึงจะเข้าเมนู
+    # My Approvals ได้ (FA เฉยๆ ไม่พอแล้ว — ดู test_admin_allowed_fa_alone_denied_without_flag)
+    fa = _make_user(
+        db_session, name="FA2", email="fa2@example.com", is_fa=True, can_view_approvals=True
+    )
 
     _login(client)
     ar_id = _create_ar(client)
@@ -233,7 +241,11 @@ def test_fa_returned_excludes_rejected_before_reaching_fa(
     client: TestClient, plain_user: User, db_session: Session
 ):
     manager = _make_user(db_session, name="Mgr4", email="mgr4@example.com", department="Production")
-    fa = _make_user(db_session, name="FA3", email="fa3@example.com", is_fa=True)
+    # Correction (Full RBAC, 2026-09-10): FA ต้องเปิด can_view_approvals ด้วยถึงจะเข้าเมนู
+    # My Approvals ได้ (FA เฉยๆ ไม่พอแล้ว)
+    fa = _make_user(
+        db_session, name="FA3", email="fa3@example.com", is_fa=True, can_view_approvals=True
+    )
     _make_level(
         db_session,
         department="Production",

@@ -56,29 +56,45 @@ async function requireLogin() {
       .toUpperCase();
     avatarEl.textContent = initials;
   }
-  // Budget Control (2026-09-09) — เมนู "จัดการ User" (Admin เท่านั้น) / "Level อนุมัติ"
-  // (Admin เท่านั้น) / "Budget Control" (FA หรือ Admin) โชว์เฉพาะคนมีสิทธิ์
-  const navUsers = document.getElementById("nav-users");
-  if (navUsers && me.is_admin) navUsers.classList.remove("hidden");
-  const navLevels = document.getElementById("nav-budget-levels");
-  if (navLevels && me.is_admin) navLevels.classList.remove("hidden");
-  const navBudget = document.getElementById("nav-budget");
-  if (navBudget && (me.is_admin || me.is_fa)) navBudget.classList.remove("hidden");
+  // Full RBAC (Correction 2026-09-10) — ทุกเมนูซ่อนเป็น Default ใน base.html (class
+  // "hidden") เปิดให้เฉพาะคนมีสิทธิ์ตรงนี้ที่เดียว ดู Docstring app/models/user.py และ
+  // app/core/deps.py สำหรับความหมายของแต่ละ Field/เงื่อนไขแต่ละเมนู
+  const canViewPr = me.is_admin || me.can_view_pr || me.can_view_all;
+  ["nav-pr-list", "nav-pr-new", "nav-doc-upload"].forEach((id) => {
+    if (canViewPr) document.getElementById(id)?.classList.remove("hidden");
+  });
 
-  // My Approvals (Phase B/2, 2026-09-10) — เมนู "การอนุมัติของฉัน" (Submenu ขยายลง 4
-  // หมวด) โชว์ให้ Admin/FA เสมอ (เป็นผู้มีสิทธิ์อนุมัติอยู่แล้วโดยนิยาม) หรือ User ที่ถูก
-  // Admin เปิด can_view_approvals ให้จากหน้า "จัดการ User" — approver_only ซ่อนเมนูอื่น
-  // ทั้งหมด เหลือแค่เมนูนี้เมนูเดียว (ดู Docstring app/models/user.py)
-  const canSeeApprovals = me.is_admin || me.is_fa || me.can_view_approvals;
+  const canViewAr = me.is_admin || me.can_view_ar || me.can_view_all;
+  const navAr = document.getElementById("nav-ar");
+  if (canViewAr) navAr?.classList.remove("hidden");
+
+  const canViewAiUsage = me.is_admin || me.is_fa;
+  const navAiUsage = document.getElementById("nav-ai-usage");
+  if (canViewAiUsage) navAiUsage?.classList.remove("hidden");
+
+  const canViewBudget = me.is_admin || me.is_fa;
+  const navBudget = document.getElementById("nav-budget");
+  if (canViewBudget) navBudget?.classList.remove("hidden");
+
+  const navLevels = document.getElementById("nav-budget-levels");
+  if (me.is_admin) navLevels?.classList.remove("hidden");
+
+  const navUsers = document.getElementById("nav-users");
+  if (me.is_admin) navUsers?.classList.remove("hidden");
+
+  const canViewLog = me.is_admin || me.is_fa || me.can_view_all;
+  const navLog = document.getElementById("nav-log");
+  if (canViewLog) navLog?.classList.remove("hidden");
+
+  // My Approvals (Phase B/2, 2026-09-10; Correction — Full RBAC, 2026-09-10) — เมนู
+  // "การอนุมัติของฉัน" โชว์ให้ Admin เสมอ หรือ User ที่ถูก Admin เปิด can_view_approvals
+  // ให้จากหน้า "จัดการ User" — ตัด is_fa ออกจากเงื่อนไขนี้แล้ว (FA หมายถึงแค่สิทธิ์ทำ FA
+  // Acknowledge เท่านั้น ไม่ได้แปลว่าเห็นเมนูนี้ด้วยอัตโนมัติ — ดู app/core/deps.py)
+  const canSeeApprovals = me.is_admin || me.can_view_approvals;
   const navApprovalsToggle = document.getElementById("nav-approvals-toggle");
-  const approvalsSubmenu = document.getElementById("approvals-submenu");
   if (canSeeApprovals) {
-    if (navApprovalsToggle) navApprovalsToggle.classList.remove("hidden");
+    navApprovalsToggle?.classList.remove("hidden");
     await setupMyApprovalsNav();
-  }
-  if (me.approver_only) {
-    ["nav-pr-list", "nav-pr-new", "nav-doc-upload", "nav-ar", "nav-ai-usage", "nav-budget", "nav-budget-levels", "nav-users"]
-      .forEach((id) => document.getElementById(id)?.classList.add("hidden"));
   }
   return me;
 }
