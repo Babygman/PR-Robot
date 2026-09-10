@@ -331,7 +331,7 @@
         {% set sig = authority_signatures.get(rank) %}
         <tr>
           <td class="a-name">{{ rank }}</td>
-          <td></td>
+          <td class="a-comment">{{ sig.comment if sig else "" }}</td>
           <td class="a-sig">{% if sig %}{{ sig.name }}<div class="a-sig-date">{{ sig.date }}</div>{% endif %}</td>
         </tr>
         {% endfor %}

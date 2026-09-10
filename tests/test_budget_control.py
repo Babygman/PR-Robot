@@ -881,3 +881,77 @@ def test_excel_upload_duplicate_budget_no_in_same_file_rejected(
     assert body["success_rows"] == 1
     assert body["error_rows"] == 1
     assert "ซ้ำ" in [r["message"] for r in body["rows"] if not r["ok"]][0]
+
+
+# ───────────────────────── Comment ตอนอนุมัติ (Phase A, 2026-09-10) ─────────────────────────
+def test_approve_level_comment_is_optional_and_shown_in_progress_and_pdf(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    """Correction 2026-09-10 (Phase A): approve-level รับ comment ไม่บังคับแล้ว — เก็บลง
+    คอลัมน์ reason เดิม (Reuse ร่วมกับเหตุผลปฏิเสธ) โชว์ทั้งใน approval-progress และตาราง
+    Authority ของ PDF"""
+    manager = _make_user(
+        db_session, name="Manager Cmt", email="mgrcmt@example.com", department="Production"
+    )
+    _make_level(
+        db_session,
+        department="Production",
+        level_no=1,
+        level_name="Manager",
+        approver_user_id=manager.id,
+    )
+    _make_budget_master(db_session)
+
+    _login_as(client, plain_user.email, "plainpass123")
+    ar_id = client.post("/ars", json=_sample_ar_body()).json()["id"]
+    _submit_for_approval(client, ar_id)
+
+    _login_as(client, manager.email)
+    # ไม่ใส่ Comment เลย (Body ว่างเปล่าได้) — ยังทำงานได้ปกติเหมือนเดิมก่อน Phase A
+    no_comment = client.post(f"/ars/{ar_id}/approve-level", json={})
+    assert no_comment.status_code == 200, no_comment.text
+
+    progress = client.get(f"/ars/{ar_id}/approval-progress").json()
+    assert progress[0]["reason"] is None
+
+
+def test_approve_level_with_comment_stored(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    manager = _make_user(
+        db_session, name="Manager Note", email="mgrnote@example.com", department="Production"
+    )
+    _make_level(
+        db_session,
+        department="Production",
+        level_no=1,
+        level_name="Manager",
+        approver_user_id=manager.id,
+    )
+    fa = _make_user(db_session, name="FA Note", email="fanote@example.com", is_fa=True)
+    _make_budget_master(db_session)
+
+    _login_as(client, plain_user.email, "plainpass123")
+    ar_id = client.post("/ars", json=_sample_ar_body()).json()["id"]
+    _submit_for_approval(client, ar_id)
+
+    _login_as(client, manager.email)
+    approved = client.post(f"/ars/{ar_id}/approve-level", json={"comment": "เร่งด่วน อนุมัติให้เลย"})
+    assert approved.status_code == 200, approved.text
+
+    progress = client.get(f"/ars/{ar_id}/approval-progress").json()
+    assert progress[0]["reason"] == "เร่งด่วน อนุมัติให้เลย"
+
+    _login_as(client, fa.email)
+    ack = client.post(
+        f"/ars/{ar_id}/fa-acknowledge", json={"force": False, "comment": "หักงบเรียบร้อย"}
+    )
+    assert ack.status_code == 200, ack.text
+
+    progress2 = client.get(f"/ars/{ar_id}/approval-progress").json()
+    assert progress2[-1]["reason"] == "หักงบเรียบร้อย"
+
+    # PDF Auto-fill: Comment ตอนอนุมัติต้องโผล่ในช่อง Comments ของตาราง Authority
+    ar_obj = db_session.get(ApprovalRequest, ar_id)
+    html = render_ar_html(db_session, ar_obj)
+    assert "เร่งด่วน อนุมัติให้เลย" in html

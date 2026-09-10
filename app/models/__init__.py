@@ -1,4 +1,5 @@
 """Import ทุก Model ที่นี่ ให้ Base.metadata เห็นครบสำหรับ Alembic"""
+
 from app.models.ai_usage_log import AiUsageLog
 from app.models.approval_request import (
     ApprovalRequest,
@@ -7,6 +8,7 @@ from app.models.approval_request import (
     ARBudgetType,
     ARStatus,
 )
+from app.models.ar_attachment import ARAttachment
 from app.models.ar_number_counter import ARNumberCounter
 from app.models.audit_log import AuditLog
 from app.models.budget import (
@@ -31,6 +33,7 @@ from app.models.user import User
 __all__ = [
     "AiUsageLog",
     "ARAmountItem",
+    "ARAttachment",
     "ARBudgetApproval",
     "ARBudgetApprovalStatus",
     "ARBudgetType",

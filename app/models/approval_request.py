@@ -65,6 +65,7 @@ if TYPE_CHECKING:
     # หลีกเลี่ยง Circular Import จริง (budget.py Import ARBudgetType จากไฟล์นี้อยู่แล้ว)
     # — Import แค่ตอน Type-check เท่านั้น ตอน Runtime ใช้ String Forward-ref ในตัว
     # relationship() ข้างล่างแทน (SQLAlchemy Resolve ผ่าน Registry ตอน Mapper Configure)
+    from app.models.ar_attachment import ARAttachment
     from app.models.budget import ARBudgetApproval
 
 
@@ -208,6 +209,13 @@ class ApprovalRequest(Base):
         cascade="all, delete-orphan",
         order_by="ARBudgetApproval.acted_at",
         viewonly=False,
+    )
+    # AR Attachments (Phase A, 2026-09-10) — ดู Docstring บนสุดของ app/models/ar_attachment.py
+    attachments: Mapped[list[ARAttachment]] = relationship(
+        "ARAttachment",
+        back_populates="ar",
+        cascade="all, delete-orphan",
+        order_by="ARAttachment.uploaded_at",
     )
 
 

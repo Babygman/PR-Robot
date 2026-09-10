@@ -7,6 +7,7 @@ Client — ช่องลายเซ็น/อนุมัติทั้ง 5
 Senior Manager, Manager, F&A) ก็ไม่มีในนี้เช่นกัน เพราะเป็นลายเซ็นสดบนกระดาษล้วนๆ
 ไม่ผูกกับข้อมูลในระบบ (ดู ar_form.html)
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -132,6 +133,9 @@ class ARListItem(BaseModel):
     subject: str
     application_date: date
     status: ARStatus
+    # Correction 2026-09-10 (Phase A): เพิ่มให้หน้า AR List โชว์คอลัมน์ FA (Checked เมื่อ
+    # FA Acknowledge แล้ว คือ budget_approval_status == approved) โดยไม่ต้อง Fetch แยก
+    budget_approval_status: ARBudgetApprovalStatus
     requested_by_id: int
     created_at: datetime
 

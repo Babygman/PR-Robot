@@ -1,4 +1,5 @@
 """PR-Robot — FastAPI entrypoint."""
+
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -8,6 +9,7 @@ from sqlalchemy import text
 
 from app.api.routes.ai_usage import router as ai_usage_router
 from app.api.routes.approval_requests import router as ars_router
+from app.api.routes.ar_attachments import router as ar_attachments_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.budget import router as budget_router
 from app.api.routes.budget_levels import router as budget_levels_router
@@ -26,6 +28,7 @@ app.include_router(users_router)
 app.include_router(documents_router)
 app.include_router(prs_router)
 app.include_router(ars_router)
+app.include_router(ar_attachments_router)
 app.include_router(ai_usage_router)
 app.include_router(budget_router)
 app.include_router(budget_levels_router)

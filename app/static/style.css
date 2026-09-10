@@ -259,14 +259,25 @@ td a { color: var(--color-primary); font-weight: 600; }
 }
 .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .badge-draft { background: var(--color-brass-tint); color: var(--color-brass); }
-.badge-finalized { background: var(--color-success-tint); color: var(--color-success); }
+/* Correction 2026-09-10 (Phase A): Finalized ยังเป็นแค่ "ล็อกแก้ไขแล้ว" ไม่ใช่ "ปิดงบ
+   จริง" (ต้องผ่าน FA Acknowledge ก่อน) — เปลี่ยนจากเขียวเป็นเหลืองเหมือน Draft ตามคำขอ
+   ผู้ใช้ กันเข้าใจผิดว่าเสร็จสมบูรณ์แล้วทั้งที่ยังไม่ได้หักงบจริง */
+.badge-finalized { background: var(--color-brass-tint); color: var(--color-brass); }
 
 /* Budget Control (Phase 10) — สถานะ Workflow อนุมัติงบประมาณ แยกจาก Draft/Finalized */
 .badge-budget-not_submitted { background: var(--color-surface-2); color: var(--color-text-faint); }
-.badge-budget-pending,
-.badge-budget-pending_fa_acknowledge { background: var(--color-brass-tint); color: var(--color-brass); }
+.badge-budget-pending { background: var(--color-brass-tint); color: var(--color-brass); }
+/* Correction 2026-09-10 (Phase A): Level สุดท้ายอนุมัติผ่านแล้ว (แค่รอ FA Acknowledge
+   ซึ่งเป็นขั้นตอนบัญชีเบื้องหลัง ไม่ใช่สายอนุมัติที่ผู้ใช้มองว่าเป็น "รอ" อีกต่อไป) —
+   เปลี่ยนเป็นเขียว "Approved" ตามคำขอผู้ใช้ (Label เปลี่ยนใน ar_detail.html) */
+.badge-budget-pending_fa_acknowledge,
 .badge-budget-approved { background: var(--color-success-tint); color: var(--color-success); }
 .badge-budget-rejected { background: var(--color-danger-tint); color: var(--color-danger); }
+
+/* Correction 2026-09-10 (Phase A): คอลัมน์ "FA" ใน AR List — ✓ สีเขียวเมื่อ
+   FA Acknowledge แล้ว (budget_approval_status == approved) */
+td.center { text-align: center; }
+.fa-check { color: var(--color-success); font-weight: 700; }
 
 .history-list li.step-approved::before { background: var(--color-success); }
 .history-list li.step-rejected::before { background: var(--color-danger); }

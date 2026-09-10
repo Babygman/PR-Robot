@@ -52,15 +52,16 @@
   <table>
     <thead>
       <tr>
-        <th>เลขที่ AR</th>
+        <th>AR No.</th>
         <th>Subject</th>
-        <th>วันที่</th>
-        <th>สถานะ</th>
+        <th>Date</th>
+        <th>Status</th>
+        <th>FA</th>
         <th></th>
       </tr>
     </thead>
     <tbody id="ar-table-body">
-      <tr><td colspan="5" class="muted">กำลังโหลด...</td></tr>
+      <tr><td colspan="6" class="muted">กำลังโหลด...</td></tr>
     </tbody>
   </table>
 </div>
@@ -85,12 +86,12 @@ async function loadArs() {
   const res = await apiFetch("/ars?" + params.toString());
   const tbody = document.getElementById("ar-table-body");
   if (!res.ok) {
-    tbody.innerHTML = '<tr><td colspan="5" class="error">โหลดรายการไม่สำเร็จ</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="error">โหลดรายการไม่สำเร็จ</td></tr>';
     return;
   }
   const ars = await res.json();
   if (ars.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="muted">ไม่พบ Approval Request</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="muted">ไม่พบ Approval Request</td></tr>';
     return;
   }
   tbody.innerHTML = ars
@@ -101,6 +102,7 @@ async function loadArs() {
       <td>${escapeHtml(ar.subject)}</td>
       <td>${formatDateDMY(ar.application_date)}</td>
       <td>${statusBadge(ar.status)}</td>
+      <td class="center">${ar.budget_approval_status === "approved" ? '<span class="fa-check" title="FA Acknowledge แล้ว">✓</span>' : ""}</td>
       <td><a href="/app/ars/${ar.id}">ดูรายละเอียด →</a></td>
     </tr>`
     )

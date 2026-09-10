@@ -47,6 +47,7 @@ from app.schemas.approval_request import (
 )
 from app.schemas.budget import (
     ARApprovalProgressStep,
+    BudgetApproveLevelBody,
     BudgetFaAcknowledgeBody,
     BudgetRejectBody,
 )
@@ -422,19 +423,20 @@ def get_ar_approval_progress(
 @router.post("/{ar_id}/approve-level", response_model=ARRead)
 def approve_ar_level(
     ar_id: int,
+    body: BudgetApproveLevelBody = BudgetApproveLevelBody(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ARRead:
     ar = _get_ar_or_404(db, ar_id)
     level_before = ar.current_approval_level
     was_draft = ar.status == ARStatus.DRAFT
-    budget_workflow.approve_level(db, ar, current_user)
+    budget_workflow.approve_level(db, ar, current_user, comment=body.comment)
     db.add(
         AuditLog(
             ar_id=ar.id,
             action="ar.budget_level_approved",
             actor_id=current_user.id,
-            detail={"level_no": level_before},
+            detail={"level_no": level_before, "comment": body.comment},
         )
     )
     if was_draft and ar.status == ARStatus.FINALIZED:
@@ -484,7 +486,7 @@ def fa_acknowledge_ar(
     current_user: User = Depends(get_current_user),
 ) -> ARRead:
     ar = _get_ar_or_404(db, ar_id)
-    budget_workflow.fa_acknowledge(db, ar, current_user, force=body.force)
+    budget_workflow.fa_acknowledge(db, ar, current_user, force=body.force, comment=body.comment)
     db.add(
         AuditLog(
             ar_id=ar.id,
@@ -495,6 +497,7 @@ def fa_acknowledge_ar(
                 if ar.budget_deducted_amount
                 else None,
                 "overridden": ar.budget_overridden,
+                "comment": body.comment,
             },
         )
     )

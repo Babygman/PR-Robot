@@ -135,10 +135,13 @@ class BudgetRejectBody(BaseModel):
 
 
 class BudgetApproveLevelBody(BaseModel):
-    """Body ว่างเปล่าได้ (ไม่มี Field บังคับ) — เผื่ออนาคตอยากแนบ Comment ก็ขยายตรงนี้"""
+    """Correction 2026-09-10 (Phase A): เพิ่ม Comment ไม่บังคับตามที่ Docstring เดิมของ
+    Field นี้เตรียมไว้ — เก็บลงคอลัมน์ ARBudgetApproval.reason เดิม (Reuse เดียวกับที่ใช้
+    เก็บเหตุผลตอนปฏิเสธ) ไม่ต้องเพิ่มคอลัมน์ใหม่"""
 
-    pass
+    comment: str | None = Field(default=None, max_length=2000)
 
 
 class BudgetFaAcknowledgeBody(BaseModel):
     force: bool = False
+    comment: str | None = Field(default=None, max_length=2000)

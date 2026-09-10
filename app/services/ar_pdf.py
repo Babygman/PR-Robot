@@ -126,7 +126,15 @@ def render_ar_html(db: Session, ar: ApprovalRequest) -> str:
         for step in budget_workflow.build_approval_progress(db, ar):
             if step["status"] != "approved":
                 continue
-            signed = {"name": step["acted_by_name"] or "", "date": _fmt_date(step["acted_at"])}
+            # Correction 2026-09-10 (Phase A): เติม Comment ที่ผู้อนุมัติกรอกตอนกด
+            # "อนุมัติ" (ไม่บังคับ) ลงช่อง Comments ในตาราง Authority ของ PDF ด้วย —
+            # ใช้คอลัมน์ reason เดิม (เดิมใช้เก็บเหตุผลปฏิเสธเท่านั้น ตอนนี้ใช้ร่วมกับ
+            # Comment ตอนอนุมัติด้วย ดู budget_workflow.approve_level/fa_acknowledge)
+            signed = {
+                "name": step["acted_by_name"] or "",
+                "date": _fmt_date(step["acted_at"]),
+                "comment": step["reason"] or "",
+            }
             if step["step_type"].value == "level" and step["level_name"] in _AUTHORITY_RANKS:
                 authority_signatures[step["level_name"]] = signed
             elif step["step_type"].value == "fa_acknowledge":

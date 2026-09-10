@@ -57,7 +57,7 @@
       <div class="card">
         <h2>Amount &amp; Quantity</h2>
         <table>
-          <thead><tr><th>รายการ</th><th>จำนวนเงิน (Baht)</th></tr></thead>
+          <thead><tr><th>Item</th><th>Amount (Baht)</th></tr></thead>
           <tbody id="items-body"></tbody>
         </table>
         <table style="margin-top:8px;">
@@ -94,6 +94,16 @@
       </div>
 
       <div class="card">
+        <h2>เอกสารแนบ</h2>
+        <ul class="history-list" id="attachment-list"></ul>
+        <div class="row hidden" id="attachment-upload-row" style="margin-top:8px; gap:8px; align-items:center;">
+          <input type="file" id="attachment-file-input" multiple accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg,.webp" style="flex:1;">
+          <button type="button" class="secondary" id="attachment-upload-btn">แนบเอกสาร</button>
+        </div>
+        <div class="error hidden" id="attachment-error"></div>
+      </div>
+
+      <div class="card">
         <h2>ประวัติ</h2>
         <ul class="history-list" id="history-list"></ul>
       </div>
@@ -121,11 +131,15 @@ function fmtMoney(v) {
 const BUDGET_TYPE_LABEL = { expenses: "Expenses", assets: "Assets" };
 
 // สถานะ Workflow อนุมัติ Budget (Phase 10) — แยกจาก ar-status-badge (draft/finalized)
+// Correction 2026-09-10 (Phase A): pending_fa_acknowledge เปลี่ยนป้ายเป็น "Approved"
+// (เขียว) ตามคำขอผู้ใช้ — Level ทุกคนอนุมัติผ่านหมดแล้ว ถือว่า "อนุมัติแล้ว" จากมุมมอง
+// สายอนุมัติจริง ส่วน FA Acknowledge เป็นขั้นตอนบัญชีหักงบเบื้องหลัง ไม่ถือเป็น "รอ"
+// อีกต่อไป (ปุ่ม FA Acknowledge ใน approval-actions ยังโชว์ให้ FA กดตามปกติ)
 const BUDGET_STATUS_LABEL = {
   not_submitted: "ยังไม่เข้าสู่ Workflow",
   pending: "รออนุมัติ Level",
-  pending_fa_acknowledge: "รอ FA Acknowledge",
-  approved: "อนุมัติแล้ว (หักงบแล้ว)",
+  pending_fa_acknowledge: "Approved",
+  approved: "Approved (หักงบแล้ว)",
   rejected: "ถูกปฏิเสธ",
 };
 const STEP_STATUS_LABEL = { waiting: "รอดำเนินการ", approved: "อนุมัติแล้ว", rejected: "ปฏิเสธ" };
@@ -143,26 +157,36 @@ function approvalStepHtml(step) {
     html += `<br><span class="muted">โดย ${escapeHtml(step.acted_by_name)} — ${formatDateTimeDMY(step.acted_at)}${step.acted_as_override ? " (Admin Override)" : ""}</span>`;
   }
   if (step.reason) {
-    html += `<br><span class="error">เหตุผล: ${escapeHtml(step.reason)}</span>`;
+    // Correction 2026-09-10 (Phase A): reason ใช้ร่วมกัน 2 ความหมายแล้ว — เหตุผลตอน
+    // ปฏิเสธ (สีแดง เหมือนเดิม) กับ Comment ไม่บังคับตอนอนุมัติ (สีเทาปกติ)
+    html +=
+      step.status === "rejected"
+        ? `<br><span class="error">เหตุผล: ${escapeHtml(step.reason)}</span>`
+        : `<br><span class="muted">Comment: ${escapeHtml(step.reason)}</span>`;
   }
   return `<li class="step-${step.status}">${html}</li>`;
 }
 
-async function submitApprovalAction(kind, force = false) {
+async function submitApprovalAction(kind, force = false, comment = undefined) {
   const errEl = document.getElementById("approval-action-error");
   errEl.classList.add("hidden");
   let path = "";
   let body = {};
   if (kind === "approve-level") {
+    // Correction 2026-09-10 (Phase A): ถามหา Comment ไม่บังคับทุกครั้งที่อนุมัติ — ไม่ถาม
+    // ซ้ำถ้าเป็นการเรียกซ้ำจาก Force-retry (comment ถูกส่งมาจากรอบแรกแล้ว)
+    if (comment === undefined) comment = prompt("Comment (ถ้ามี — ไม่บังคับ):") || "";
     path = `/ars/${AR_ID}/approve-level`;
+    body = { comment: comment || null };
   } else if (kind === "reject-level" || kind === "reject-fa") {
     const reason = prompt("เหตุผลที่ปฏิเสธ:");
     if (!reason) return;
     path = `/ars/${AR_ID}/${kind}`;
     body = { reason };
   } else if (kind === "fa-acknowledge") {
+    if (comment === undefined) comment = prompt("Comment (ถ้ามี — ไม่บังคับ):") || "";
     path = `/ars/${AR_ID}/fa-acknowledge`;
-    body = { force };
+    body = { force, comment: comment || null };
   }
 
   const res = await apiFetch(path, { method: "POST", body: JSON.stringify(body) });
@@ -174,7 +198,7 @@ async function submitApprovalAction(kind, force = false) {
         `${d.message}\n\nงบประมาณ: ${d.budgeted_amount}  ใช้ไปแล้ว: ${d.used_amount}  คงเหลือ: ${d.balance}\n` +
           `ยอดที่ขอ: ${d.requested_amount}  เกินไป: ${d.shortfall}\n\nยืนยันอนุมัติทั้งที่เกินงบ?`
       );
-      if (confirmForce) await submitApprovalAction("fa-acknowledge", true);
+      if (confirmForce) await submitApprovalAction("fa-acknowledge", true, comment);
       return;
     }
     errEl.textContent =
@@ -233,6 +257,105 @@ async function loadApprovalProgress(ar) {
   stepsEl.innerHTML = steps.map(approvalStepHtml).join("");
   renderApprovalActions(ar, steps);
 }
+
+// ───────────────────────── เอกสารแนบ (Phase A, 2026-09-10) ─────────────────────────
+// Feedback จริงจากผู้ใช้: ต้อง Upload เอกสารแนบได้ตอนสร้าง AR (PDF/Excel/รูปภาพ) และ
+// แนบเพิ่มได้ระหว่างขั้นตอนอนุมัติด้วย — Permission จริงบังคับที่ Server เสมอ (ดู
+// budget_workflow.can_upload_attachment) ฝั่งนี้แค่ซ่อน/โชว์ปุ่มให้ตรงกับ Logic เดียวกัน
+// เพื่อ UX ที่ดี ไม่ใช่กลไกความปลอดภัยจริง
+function fmtFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function attachmentHtml(a, ar) {
+  const canDelete = ME && (ME.id === a.uploaded_by_id || ME.id === ar.requested_by_id || ME.is_admin);
+  const delBtn = canDelete
+    ? ` <button type="button" class="secondary att-del-btn" data-id="${a.id}" style="padding:1px 8px; font-size:12px;">ลบ</button>`
+    : "";
+  return `<li>
+    <a href="/ars/${AR_ID}/attachments/${a.id}/download" target="_blank">${escapeHtml(a.file_name)}</a>
+    (${fmtFileSize(a.file_size)})${delBtn}
+    <br><span class="muted">โดย ${escapeHtml(a.uploaded_by_name || "-")} — ${formatDateTimeDMY(a.uploaded_at)}</span>
+  </li>`;
+}
+
+async function deleteAttachment(attachmentId) {
+  if (!confirm("ลบเอกสารแนบนี้?")) return;
+  const res = await apiFetch(`/ars/${AR_ID}/attachments/${attachmentId}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    alert(typeof body.detail === "string" ? body.detail : "ลบไม่สำเร็จ");
+    return;
+  }
+  await loadDetail();
+}
+
+async function loadAttachments(ar) {
+  const listEl = document.getElementById("attachment-list");
+  const res = await apiFetch(`/ars/${AR_ID}/attachments`);
+  if (!res.ok) {
+    listEl.innerHTML = '<li class="error">โหลดเอกสารแนบไม่สำเร็จ</li>';
+    return;
+  }
+  const attachments = await res.json();
+  listEl.innerHTML = attachments.length
+    ? attachments.map((a) => attachmentHtml(a, ar)).join("")
+    : '<li class="muted">ยังไม่มีเอกสารแนบ</li>';
+  listEl.querySelectorAll(".att-del-btn").forEach((btn) => {
+    btn.addEventListener("click", () => deleteAttachment(Number(btn.dataset.id)));
+  });
+
+  // เจ้าของ AR/Admin แนบได้เสมอ — ผู้อนุมัติ Level ปัจจุบัน/FA แนบได้เฉพาะช่วงที่กำลังรอ
+  // ตัดสินใจอยู่จริง (ต้องเช็คเพิ่มจาก approval-progress เฉพาะกรณี Level เท่านั้น)
+  let canUpload = !!ME && (ME.id === ar.requested_by_id || ME.is_admin);
+  if (!canUpload && ME && ar.budget_approval_status === "pending_fa_acknowledge" && ME.is_fa) {
+    canUpload = true;
+  }
+  if (!canUpload && ME && ar.budget_approval_status === "pending") {
+    const stepsRes = await apiFetch(`/ars/${AR_ID}/approval-progress`);
+    if (stepsRes.ok) {
+      const steps = await stepsRes.json();
+      const step = steps.find((s) => s.step_type === "level" && s.level_no === ar.current_approval_level);
+      if (step && (step.approver_user_ids || []).includes(ME.id)) canUpload = true;
+    }
+  }
+  document.getElementById("attachment-upload-row").classList.toggle("hidden", !canUpload);
+}
+
+async function uploadAttachmentFile(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await apiFetch(`/ars/${AR_ID}/attachments`, { method: "POST", body: formData });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    return { ok: false, fileName: file.name, error: body.detail || "อัปโหลดไม่สำเร็จ" };
+  }
+  return { ok: true };
+}
+
+document.getElementById("attachment-upload-btn").addEventListener("click", async () => {
+  const input = document.getElementById("attachment-file-input");
+  const errEl = document.getElementById("attachment-error");
+  errEl.classList.add("hidden");
+  const files = Array.from(input.files || []);
+  if (files.length === 0) return;
+  const btn = document.getElementById("attachment-upload-btn");
+  btn.disabled = true;
+  const errors = [];
+  for (const file of files) {
+    const result = await uploadAttachmentFile(file);
+    if (!result.ok) errors.push(`${result.fileName}: ${result.error}`);
+  }
+  btn.disabled = false;
+  input.value = "";
+  if (errors.length) {
+    errEl.textContent = errors.join(" / ");
+    errEl.classList.remove("hidden");
+  }
+  await loadDetail();
+});
 
 async function loadDetail() {
   const res = await apiFetch(`/ars/${AR_ID}`);
@@ -326,6 +449,7 @@ async function loadDetail() {
   }
 
   await loadApprovalProgress(ar);
+  await loadAttachments(ar);
 
   document.getElementById("loading").classList.add("hidden");
   document.getElementById("ar-content").classList.remove("hidden");

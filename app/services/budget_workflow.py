@@ -170,11 +170,17 @@ def _check_fa_actor(actor: User) -> _ActorCheck:
 
 
 # ───────────────────────── Level ปกติ ─────────────────────────
-def approve_level(db: Session, ar: ApprovalRequest, actor: User) -> ApprovalRequest:
+def approve_level(
+    db: Session, ar: ApprovalRequest, actor: User, *, comment: str | None = None
+) -> ApprovalRequest:
     """Correction 2026-09-10: การอนุมัติ Level ครั้งแรกของ AR ใบนี้ (ไม่ว่าจะเป็น Level
     เลขอะไร) คือจุดที่ทำให้ AR เปลี่ยนจาก Draft -> Finalized (ล็อกแก้ไขไม่ได้อีก) — เดิม
     Lock ผูกกับการพิมพ์/ดาวน์โหลด PDF ครั้งแรก ย้ายมาผูกกับจุดนี้แทนตามคำขอ (ดู
-    app/api/routes/approval_requests.py: submit_ar_for_approval/update_ar/get_ar_pdf)"""
+    app/api/routes/approval_requests.py: submit_ar_for_approval/update_ar/get_ar_pdf)
+
+    comment (Phase A, 2026-09-10): Comment ไม่บังคับที่ผู้อนุมัติกรอกตอนกด "อนุมัติ" —
+    เก็บลงคอลัมน์ reason เดิม (Reuse ร่วมกับเหตุผลปฏิเสธ) โชว์ทั้งในตาราง Authority ของ
+    PDF (ดู ar_pdf.py) และในหน้า AR Detail/ประวัติ"""
     if ar.budget_approval_status != ARBudgetApprovalStatus.PENDING:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "Approval Request นี้ไม่ได้อยู่ในสถานะรอ Level อนุมัติ"
@@ -196,6 +202,7 @@ def approve_level(db: Session, ar: ApprovalRequest, actor: User) -> ApprovalRequ
             action=BudgetApprovalAction.APPROVED,
             acted_by_id=actor.id,
             acted_as_override=check.is_override,
+            reason=comment or None,
         )
     )
 
@@ -242,7 +249,7 @@ def reject_level(db: Session, ar: ApprovalRequest, actor: User, reason: str) -> 
 
 # ───────────────────────── FA Acknowledge (จุดหักยอดจริง) ─────────────────────────
 def fa_acknowledge(
-    db: Session, ar: ApprovalRequest, actor: User, *, force: bool
+    db: Session, ar: ApprovalRequest, actor: User, *, force: bool, comment: str | None = None
 ) -> ApprovalRequest:
     if ar.budget_approval_status != ARBudgetApprovalStatus.PENDING_FA_ACKNOWLEDGE:
         raise HTTPException(
@@ -291,6 +298,7 @@ def fa_acknowledge(
             action=BudgetApprovalAction.APPROVED,
             acted_by_id=actor.id,
             acted_as_override=check.is_override,
+            reason=comment or None,
         )
     )
     ar.budget_approval_status = ARBudgetApprovalStatus.APPROVED
@@ -413,6 +421,31 @@ def build_approval_progress(db: Session, ar: ApprovalRequest) -> list[dict]:
         fa_step["acted_as_override"] = fa_rec.acted_as_override
     steps.append(fa_step)
     return steps
+
+
+# ───────────────────────── AR Attachments (Phase A, 2026-09-10) ─────────────────────────
+def can_upload_attachment(db: Session, ar: ApprovalRequest, actor: User) -> bool:
+    """ใครแนบเอกสารเพิ่มได้บ้าง — Feedback จริงจากผู้ใช้: ต้อง Upload ได้ตอนสร้าง AR
+    (เจ้าของ) และ "แทรกเอกสารเพิ่มเติมได้ระหว่าง Approval" (ผู้อนุมัติ Level ปัจจุบัน/FA
+    ที่กำลังรอตัดสินใจอยู่ ณ ขณะนั้น) — Admin Override ได้เสมอเหมือน Action อื่นในไฟล์นี้
+
+    ใช้ตัดสินทั้งตอน Upload และ Delete ที่ Route Layer (Delete เพิ่มเงื่อนไขว่าต้องเป็น
+    คนอัปโหลดเองด้วย ไม่ใช่แค่มีสิทธิ์จัดการ AR ใบนี้ กันผู้อนุมัติคนอื่นลบเอกสารของคน
+    อื่นในกลุ่มเดียวกันโดยไม่ตั้งใจ — ดู app/api/routes/ar_attachments.py)"""
+    if actor.id == ar.requested_by_id or actor.is_admin:
+        return True
+    if (
+        ar.budget_approval_status == ARBudgetApprovalStatus.PENDING
+        and ar.current_approval_level is not None
+        and ar.budget_department
+    ):
+        levels = get_department_levels(db, ar.budget_department)
+        current_group = [lv for lv in levels if lv.level_no == ar.current_approval_level]
+        if any(lv.approver_user_id == actor.id for lv in current_group):
+            return True
+    if ar.budget_approval_status == ARBudgetApprovalStatus.PENDING_FA_ACKNOWLEDGE and actor.is_fa:
+        return True
+    return False
 
 
 def reset_for_new_draft(ar: ApprovalRequest) -> None:

@@ -34,7 +34,7 @@
     <div class="field" style="display:flex; align-items:flex-end;"><button type="button" id="search-btn" class="secondary">ค้นหา</button></div>
   </div>
   <table>
-    <thead><tr><th>Budget No.</th><th>Department</th><th>Type</th><th>Account Code</th><th>ชื่อ</th><th>ช่วงเวลา</th><th>งบ</th><th>ใช้ไป</th><th>คงเหลือ</th></tr></thead>
+    <thead><tr><th>Budget No.</th><th>Department</th><th>Type</th><th>Account Code</th><th>Name</th><th>Period</th><th>Budget</th><th>Used</th><th>Balance</th></tr></thead>
     <tbody id="budget-body"><tr><td colspan="9" class="muted">ค้นหาเพื่อแสดงผล</td></tr></tbody>
   </table>
 </div>
@@ -42,7 +42,7 @@
 <div class="card">
   <h2>ประวัติการ Upload</h2>
   <table>
-    <thead><tr><th>เวลา</th><th>ไฟล์</th><th>ผู้ Upload</th><th>ทั้งหมด</th><th>สำเร็จ</th><th>Error</th></tr></thead>
+    <thead><tr><th>Time</th><th>File</th><th>Uploaded By</th><th>Total</th><th>Success</th><th>Error</th></tr></thead>
     <tbody id="history-body"><tr><td colspan="6" class="muted">กำลังโหลด...</td></tr></tbody>
   </table>
 </div>
@@ -136,7 +136,7 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
   resultEl.innerHTML = `
     <p>ทั้งหมด ${result.total_rows} แถว — สำเร็จ ${result.success_rows} — Error ${result.error_rows}</p>
     ${errorRows.length
-      ? `<table><thead><tr><th>แถว</th><th>ข้อความ</th></tr></thead><tbody>${errorRows
+      ? `<table><thead><tr><th>Row</th><th>Message</th></tr></thead><tbody>${errorRows
           .map((r) => `<tr><td class="mono">${r.row_no}</td><td>${escapeHtml(r.message)}</td></tr>`)
           .join("")}</tbody></table>`
       : ""}
