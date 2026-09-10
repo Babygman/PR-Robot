@@ -95,13 +95,20 @@ def list_levels(
 def list_departments_with_levels(
     db: Session = Depends(get_db), _admin: User = Depends(require_admin)
 ) -> list[str]:
-    rows = (
-        db.query(BudgetApprovalLevel.department)
+    """คืนชื่อแผนกทั้งหมดให้เลือกในหน้านี้ — ไม่มีตาราง "แผนก" แยกต่างหากในระบบ
+    (department เป็น Free-text ทั้งใน User/BudgetApprovalLevel/BudgetMaster) จึงรวมจาก
+    2 แหล่ง: (1) แผนกที่มี Level ตั้งไว้แล้ว (2) แผนกของ User ทุกคนในระบบ (มาจาก User
+    Register จริงของบริษัท — ครอบคลุมแผนกที่ยังไม่เคยตั้ง Level เลยด้วย) เพื่อให้ Admin
+    เห็นแผนกทั้งหมดพร้อมกันโดยไม่ต้องพิมพ์เดา (ขอตามคำขอ 2026-09-10)"""
+    level_depts = {r[0] for r in db.query(BudgetApprovalLevel.department).distinct().all()}
+    user_depts = {
+        r[0]
+        for r in db.query(User.department)
+        .filter(User.department.isnot(None), User.department != "")
         .distinct()
-        .order_by(BudgetApprovalLevel.department)
         .all()
-    )
-    return [r[0] for r in rows]
+    }
+    return sorted(level_depts | user_depts)
 
 
 @router.post("", response_model=BudgetApprovalLevelRead, status_code=status.HTTP_201_CREATED)

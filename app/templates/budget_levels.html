@@ -19,8 +19,9 @@
   <div class="row">
     <div class="field">
       <label for="dept-select">แผนก</label>
-      <input type="text" id="dept-select" list="dept-list" placeholder="พิมพ์ชื่อแผนก แล้วกด Enter">
-      <datalist id="dept-list"></datalist>
+      <select id="dept-select">
+        <option value="">-- เลือกแผนก --</option>
+      </select>
     </div>
   </div>
 </div>
@@ -108,7 +109,11 @@ async function loadDeptList() {
   const res = await apiFetch("/budget-approval-levels/departments");
   if (!res.ok) return;
   const depts = await res.json();
-  document.getElementById("dept-list").innerHTML = depts.map((d) => `<option value="${escapeHtml(d)}">`).join("");
+  const sel = document.getElementById("dept-select");
+  const prev = currentDept || sel.value;
+  sel.innerHTML =
+    '<option value="">-- เลือกแผนก --</option>' +
+    depts.map((d) => `<option value="${escapeHtml(d)}" ${d === prev ? "selected" : ""}>${escapeHtml(d)}</option>`).join("");
 }
 
 function wireApproverRow(row, department, levelNo, group) {

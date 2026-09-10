@@ -135,6 +135,34 @@ def test_level_management_crud(client: TestClient, admin_user: User, db_session:
     assert listed[0]["is_active"] is False
 
 
+# ───────────────── /departments แสดงแผนกทั้งหมด ไม่ใช่แค่แผนกที่ตั้ง Level ไว้แล้ว ─────────────────
+# (2026-09-10) แก้ตามคำขอ: หน้า จัดการ Level ต้องโชว์แผนกทั้งหมดให้เลือกทันที ไม่ต้องพิมพ์
+# เดา — รวมแผนกที่ "มีแค่ User" แต่ยังไม่เคยตั้ง Level เลยด้วย ไม่ใช่รวมแค่แผนกที่มี Level
+def test_departments_endpoint_includes_depts_with_users_but_no_levels(
+    client: TestClient, admin_user: User, db_session: Session
+):
+    _make_user(db_session, name="Only User", email="onlyuser@example.com", department="Warehouse")
+    manager = _make_user(
+        db_session, name="Manager Dept", email="mgrdept@example.com", department="Production"
+    )
+    _login_as(client, admin_user.email, "adminpass123")
+    client.post(
+        "/budget-approval-levels",
+        json={
+            "department": "Production",
+            "level_no": 1,
+            "level_name": "Manager",
+            "approver_user_id": manager.id,
+        },
+    )
+
+    res = client.get("/budget-approval-levels/departments")
+    assert res.status_code == 200
+    depts = res.json()
+    assert "Production" in depts  # มี Level ตั้งไว้แล้ว
+    assert "Warehouse" in depts  # ยังไม่มี Level เลย แต่มี User สังกัดแผนกนี้ ต้องโชว์ด้วย
+
+
 # ───────────────── Multi-approver per Level (OR) — Correction 2026-09-09 ─────────────────
 def test_level_management_multiple_approvers_same_level(
     client: TestClient, admin_user: User, db_session: Session
