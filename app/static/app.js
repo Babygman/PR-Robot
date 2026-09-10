@@ -59,12 +59,12 @@ async function requireLogin() {
   // Full RBAC (Correction 2026-09-10) — ทุกเมนูซ่อนเป็น Default ใน base.html (class
   // "hidden") เปิดให้เฉพาะคนมีสิทธิ์ตรงนี้ที่เดียว ดู Docstring app/models/user.py และ
   // app/core/deps.py สำหรับความหมายของแต่ละ Field/เงื่อนไขแต่ละเมนู
-  const canViewPr = me.is_admin || me.can_view_pr || me.can_view_all;
+  const canViewPr = me.is_admin || me.can_view_pr || me.can_view_all_pr;
   ["nav-pr-list", "nav-pr-new", "nav-doc-upload"].forEach((id) => {
     if (canViewPr) document.getElementById(id)?.classList.remove("hidden");
   });
 
-  const canViewAr = me.is_admin || me.can_view_ar || me.can_view_all;
+  const canViewAr = me.is_admin || me.can_view_ar || me.can_view_all_ar;
   const navAr = document.getElementById("nav-ar");
   if (canViewAr) navAr?.classList.remove("hidden");
 
@@ -82,9 +82,14 @@ async function requireLogin() {
   const navUsers = document.getElementById("nav-users");
   if (me.is_admin) navUsers?.classList.remove("hidden");
 
-  const canViewLog = me.is_admin || me.is_fa || me.can_view_all;
-  const navLog = document.getElementById("nav-log");
-  if (canViewLog) navLog?.classList.remove("hidden");
+  // Log PR / Log AR (Correction 3 — แยก Log ออกเป็น 2 เมนูอิสระ, 2026-09-10)
+  const canViewLogPr = me.is_admin || me.can_view_all_pr;
+  const navLogPr = document.getElementById("nav-log-pr");
+  if (canViewLogPr) navLogPr?.classList.remove("hidden");
+
+  const canViewLogAr = me.is_admin || me.is_fa || me.can_view_all_ar;
+  const navLogAr = document.getElementById("nav-log-ar");
+  if (canViewLogAr) navLogAr?.classList.remove("hidden");
 
   // My Approvals (Phase B/2, 2026-09-10; Correction — Full RBAC, 2026-09-10) — เมนู
   // "การอนุมัติของฉัน" โชว์ให้ Admin เสมอ หรือ User ที่ถูก Admin เปิด can_view_approvals

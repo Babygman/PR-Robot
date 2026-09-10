@@ -92,10 +92,15 @@ def page_ai_usage(request: Request):
     return templates.TemplateResponse(request=request, name="ai_usage.html", context={})
 
 
-# Log (Full RBAC, 2026-09-10)
-@router.get("/log")
-def page_audit_log(request: Request):
-    return templates.TemplateResponse(request=request, name="audit_log.html", context={})
+# Log PR / Log AR (Full RBAC, 2026-09-10; แยกเป็น 2 เมนูอิสระ — Correction 3, 2026-09-10)
+@router.get("/log-pr")
+def page_audit_log_pr(request: Request):
+    return templates.TemplateResponse(request=request, name="audit_log_pr.html", context={})
+
+
+@router.get("/log-ar")
+def page_audit_log_ar(request: Request):
+    return templates.TemplateResponse(request=request, name="audit_log_ar.html", context={})
 
 
 # ───────────────────────── Budget Control (Phase 10, 2026-09-09) ─────────────────────────

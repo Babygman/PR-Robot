@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Log — PR-Robot{% endblock %}
+{% block title %}Log PR — PR-Robot{% endblock %}
 {% block content %}
 <div class="topbar">
   <div>
-    <h1>Log กิจกรรม</h1>
-    <p class="muted" style="margin-top:-10px;">ประวัติกิจกรรมทั้งหมดในระบบ (PR + AR รวมกัน) — Admin / FA / เห็นทั้งหมด เท่านั้น</p>
+    <h1>Log PR</h1>
+    <p class="muted" style="margin-top:-10px;">ประวัติกิจกรรมทั้งหมดของ PR ในระบบ — Admin หรือผู้มีสิทธิ์ "เห็น PR ทั้งหมด" เท่านั้น</p>
   </div>
 </div>
 
@@ -15,14 +15,6 @@
     <div class="field">
       <label for="f-q">ค้นหา (Action)</label>
       <input type="text" id="f-q">
-    </div>
-    <div class="field">
-      <label for="f-doc-type">ประเภทเอกสาร</label>
-      <select id="f-doc-type">
-        <option value="">ทั้งหมด</option>
-        <option value="pr">PR</option>
-        <option value="ar">AR</option>
-      </select>
     </div>
     <div class="field">
       <label for="f-date-from">วันที่ (จาก)</label>
@@ -41,15 +33,14 @@
     <thead>
       <tr>
         <th>วันที่/เวลา</th>
-        <th>ประเภท</th>
-        <th>เลขที่เอกสาร</th>
+        <th>เลขที่ PR</th>
         <th>เรื่อง</th>
         <th>Action</th>
         <th>ผู้กระทำ</th>
       </tr>
     </thead>
     <tbody id="log-table-body">
-      <tr><td colspan="6" class="muted">กำลังโหลด...</td></tr>
+      <tr><td colspan="5" class="muted">กำลังโหลด...</td></tr>
     </tbody>
   </table>
 </div>
@@ -59,39 +50,36 @@
 async function loadLogs() {
   const params = new URLSearchParams();
   const q = document.getElementById("f-q").value.trim();
-  const docType = document.getElementById("f-doc-type").value;
   const from = getDateFieldIso(document.getElementById("f-date-from"));
   const to = getDateFieldIso(document.getElementById("f-date-to"));
   if (q) params.set("q", q);
-  if (docType) params.set("doc_type", docType);
   if (from) params.set("date_from", from);
   if (to) params.set("date_to", to);
   params.set("limit", "200");
 
   const tbody = document.getElementById("log-table-body");
-  const res = await apiFetch("/audit-logs?" + params.toString());
+  const res = await apiFetch("/audit-logs/pr?" + params.toString());
   if (!res.ok) {
     if (res.status === 403) {
-      tbody.innerHTML = '<tr><td colspan="6" class="error">หน้านี้สำหรับ Admin/FA/ผู้มีสิทธิ์เห็นทั้งหมดเท่านั้น</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="error">หน้านี้สำหรับ Admin หรือผู้มีสิทธิ์ "เห็น PR ทั้งหมด" เท่านั้น</td></tr>';
     } else {
-      tbody.innerHTML = '<tr><td colspan="6" class="error">โหลด Log ไม่สำเร็จ</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="error">โหลด Log ไม่สำเร็จ</td></tr>';
     }
     return;
   }
   const logs = await res.json();
   if (logs.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="muted">ไม่พบกิจกรรม</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="muted">ไม่พบกิจกรรม</td></tr>';
     return;
   }
   tbody.innerHTML = logs
     .map((log) => {
       const docLink = log.doc_id
-        ? `<a href="/app/${log.doc_type === "pr" ? "prs" : "ars"}/${log.doc_id}">${escapeHtml(log.doc_no_display || "-")}</a>`
+        ? `<a href="/app/prs/${log.doc_id}">${escapeHtml(log.doc_no_display || "-")}</a>`
         : escapeHtml(log.doc_no_display || "-");
       return `
     <tr>
       <td class="mono">${formatDateTimeDMY(log.timestamp)}</td>
-      <td>${log.doc_type === "pr" ? "PR" : log.doc_type === "ar" ? "AR" : "-"}</td>
       <td class="mono">${docLink}</td>
       <td>${escapeHtml(log.doc_subject || "")}</td>
       <td class="mono">${escapeHtml(log.action)}</td>
@@ -111,8 +99,8 @@ bindDateFieldsIn(document);
 (async () => {
   const me = await requireLogin();
   if (!me) return;
-  if (!(me.is_admin || me.is_fa || me.can_view_all)) {
-    document.getElementById("page-error").textContent = "หน้านี้สำหรับ Admin/FA/ผู้มีสิทธิ์เห็นทั้งหมดเท่านั้น";
+  if (!(me.is_admin || me.can_view_all_pr)) {
+    document.getElementById("page-error").textContent = 'หน้านี้สำหรับ Admin หรือผู้มีสิทธิ์ "เห็น PR ทั้งหมด" เท่านั้น';
     document.getElementById("page-error").classList.remove("hidden");
     return;
   }

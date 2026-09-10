@@ -59,27 +59,34 @@ def require_can_view_approvals(user: User = Depends(get_current_user)) -> User:
 
 
 # Full RBAC (Correction 2026-09-10): เมนู "รายการ PR"/"สร้าง PR ใหม่" — Admin, can_view_pr,
-# หรือ can_view_all (เห็นภาพรวม) เท่านั้นที่เข้าเมนูนี้ได้ — ขอบเขตเห็น PR ของใครบ้าง (แค่
-# ของตัวเอง หรือทั้งหมด) enforce แยกอีกชั้นที่ app/api/routes/purchasing_requisitions.py
+# หรือ can_view_all_pr (เห็น PR ทั้งหมด) เท่านั้นที่เข้าเมนูนี้ได้ — ขอบเขตเห็น PR ของใครบ้าง
+# (แค่ของตัวเอง หรือทั้งหมด) enforce แยกอีกชั้นที่ app/api/routes/purchasing_requisitions.py
 def require_can_view_pr(user: User = Depends(get_current_user)) -> User:
-    if not (user.is_admin or user.can_view_pr or user.can_view_all):
+    if not (user.is_admin or user.can_view_pr or user.can_view_all_pr):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "ไม่มีสิทธิ์เข้าถึงเมนู PR")
     return user
 
 
 # Full RBAC (Correction 2026-09-10): เมนู "Approval Request" — Admin, can_view_ar, หรือ
-# can_view_all เท่านั้นที่เข้าเมนูนี้ได้ — ขอบเขตเห็น AR ของใครบ้าง enforce แยกอีกชั้นที่
-# app/api/routes/approval_requests.py (ผู้มีบทบาทอนุมัติ/FA ยังเห็น AR ที่รอตนเองอนุมัติ
-# ผ่านเมนู My Approvals ได้เสมอ ไม่เกี่ยวกับ Dependency ตัวนี้)
+# can_view_all_ar (เห็น AR ทั้งหมด) เท่านั้นที่เข้าเมนูนี้ได้ — ขอบเขตเห็น AR ของใครบ้าง
+# enforce แยกอีกชั้นที่ app/api/routes/approval_requests.py (ผู้มีบทบาทอนุมัติ/FA ยังเห็น
+# AR ที่รอตนเองอนุมัติผ่านเมนู My Approvals ได้เสมอ ไม่เกี่ยวกับ Dependency ตัวนี้)
 def require_can_view_ar(user: User = Depends(get_current_user)) -> User:
-    if not (user.is_admin or user.can_view_ar or user.can_view_all):
+    if not (user.is_admin or user.can_view_ar or user.can_view_all_ar):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "ไม่มีสิทธิ์เข้าถึงเมนู Approval Request")
     return user
 
 
-# Full RBAC (Correction 2026-09-10): เมนู "Log" — Admin, FA, หรือ can_view_all เท่านั้นที่
-# เห็นได้ (Log รวมกิจกรรม PR+AR ทั้งหมดในระบบ)
-def require_can_view_log(user: User = Depends(get_current_user)) -> User:
-    if not (user.is_admin or user.is_fa or user.can_view_all):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "ไม่มีสิทธิ์เข้าถึงเมนู Log")
+# Full RBAC (Correction 3 — แยก Log PR/Log AR, 2026-09-10): เดิมเมนู "Log" รวมเดียว แยกเป็น
+# 2 เมนูอิสระกัน ตาม Matrix ที่ผู้ใช้ Confirm — Log PR ไม่มี FA (PR ไม่มี Workflow อนุมัติ/
+# FA เกี่ยวข้องเลย) ส่วน Log AR มี FA เพราะเป็นผู้ทำ FA Acknowledge ในขั้นตอนอนุมัติงบของ AR
+def require_can_view_log_pr(user: User = Depends(get_current_user)) -> User:
+    if not (user.is_admin or user.can_view_all_pr):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "ไม่มีสิทธิ์เข้าถึงเมนู Log PR")
+    return user
+
+
+def require_can_view_log_ar(user: User = Depends(get_current_user)) -> User:
+    if not (user.is_admin or user.is_fa or user.can_view_all_ar):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "ไม่มีสิทธิ์เข้าถึงเมนู Log AR")
     return user

@@ -25,7 +25,8 @@ BudgetApprovalLevel.approver_user_id ไม่ใช่ Flag บน User) ที
 อนุมัติ AR ของคนอื่นที่รอตัวเองอยู่ได้โดยชอบธรรม โดยไม่จำเป็นต้องเปิด can_view_approvals
 (Flag นั้นมีไว้แค่สำหรับสิทธิ์เข้าเมนู "My Approvals" ที่เป็น UI ทางลัดเท่านั้น) ดังนั้น:
 - list_ars/create_ar เท่านั้นที่ Gate ด้วย require_can_view_ar (เมนู "Approval Request")
-  list_ars บังคับกรองเห็นเฉพาะของตัวเอง เว้นแต่ Admin/can_view_all
+  list_ars บังคับกรองเห็นเฉพาะของตัวเอง เว้นแต่ Admin/can_view_all_ar (Correction 2 —
+  แยก can_view_all เดิมเป็น can_view_all_pr/can_view_all_ar, 2026-09-10)
 - get_ar/update_ar/revise_ar/submit_ar_for_approval/get_ar_pdf/get_ar_approval_progress/
   get_ar_history/approve-level/reject-level/fa-acknowledge/reject-fa ไม่แตะ (เปิดให้ Login
   แล้วเรียกได้เหมือนเดิมทั้งหมด — Authorization ของแต่ละ Action มีอยู่แล้วลึกใน
@@ -196,9 +197,9 @@ def list_ars(
         query = query.filter(ApprovalRequest.requested_by_id == current_user.id)
 
     # Full RBAC (Correction 2026-09-10): บังคับเห็นเฉพาะ AR ของตัวเอง เว้นแต่ Admin หรือ
-    # can_view_all (เห็นภาพรวม) — ไม่ใช่แค่ requested_by_me แบบ Opt-in อีกต่อไป (เมนูนี้คือ
+    # can_view_all_ar (เห็นภาพรวม) — ไม่ใช่แค่ requested_by_me แบบ Opt-in อีกต่อไป (เมนูนี้คือ
     # "Approval Request" List ทั่วไป ต่างจาก My Approvals ที่กรองตามบทบาทอนุมัติ)
-    if not (current_user.is_admin or current_user.can_view_all):
+    if not (current_user.is_admin or current_user.can_view_all_ar):
         query = query.filter(ApprovalRequest.requested_by_id == current_user.id)
 
     ars = (

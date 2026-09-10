@@ -42,7 +42,8 @@ def create_user(
         can_view_approvals=body.can_view_approvals,
         can_view_pr=body.can_view_pr,
         can_view_ar=body.can_view_ar,
-        can_view_all=body.can_view_all,
+        can_view_all_pr=body.can_view_all_pr,
+        can_view_all_ar=body.can_view_all_ar,
     )
     db.add(user)
     db.commit()

@@ -20,10 +20,18 @@ Flow:
 
 Full RBAC (Correction 2026-09-10): PR ไม่มี Workflow อนุมัติในระบบ (ดู Scope Revision
 Phase 9 ด้านบน) จึงไม่มีผู้ใช้อื่นที่มีเหตุผลอันชอบธรรมต้องดู PR ของคนอื่น นอกจาก Admin/
-can_view_all — ทุก Route ที่รับ pr_id จึงบังคับ _check_pr_access เหมือนกันหมด (ต่างจาก AR
+can_view_all_pr — ทุก Route ที่รับ pr_id จึงบังคับเช็ค Access เหมือนกันหมด (ต่างจาก AR
 ที่มีผู้อนุมัติต้องดู AR ของคนอื่นได้) ผู้ใช้ที่ติ๊ก can_view_pr เห็น/แก้ไข/พิมพ์ได้เฉพาะ PR
-ที่ตัวเองสร้าง (requested_by_id ตรงกับตัวเอง) เท่านั้น — can_view_all ขยายให้เห็นทั้งหมด
+ที่ตัวเองสร้าง (requested_by_id ตรงกับตัวเอง) เท่านั้น — can_view_all_pr ขยายให้เห็นทั้งหมด
 แต่ไม่ได้แปลว่าสร้าง PR ใหม่ได้ (create_pr ต้อง is_admin หรือ can_view_pr เท่านั้น)
+
+Correction 2 (แยก ALL ตาม PR/AR, 2026-09-10): "เห็นทั้งหมด" ไม่ได้แปลว่า "แก้ไขทั้งหมด" —
+แยก Access เป็น 2 ระดับ:
+- _check_pr_view_access: Admin, can_view_all_pr, หรือเจ้าของ — ใช้กับ get_pr/get_pr_history
+  (แค่ "ดู" อย่างเดียว)
+- _check_pr_edit_access: Admin หรือเจ้าของเท่านั้น (ไม่รวม can_view_all_pr) — ใช้กับ
+  update_pr/revise_pr/get_pr_pdf (แก้ไข/สร้าง Revision/พิมพ์ ซึ่งพิมพ์ครั้งแรก = Finalize
+  ล็อกเอกสาร ถือเป็นการกระทำต่อ PR โดยตรง ไม่ใช่แค่ดูเฉยๆ)
 """
 
 from __future__ import annotations
@@ -112,15 +120,27 @@ def _get_pr_or_404(db: Session, pr_id: int) -> PurchasingRequisition:
     return pr
 
 
-def _check_pr_access(pr: PurchasingRequisition, user: User) -> None:
-    """Full RBAC (Correction 2026-09-10) — PR ไม่มีผู้อนุมัติในระบบ (ดู Docstring บนสุด
-    ของไฟล์นี้) จึงเช็คง่ายๆ: เห็น/แก้ไขได้เฉพาะ PR ของตัวเอง เว้นแต่ Admin หรือ can_view_all"""
-    if user.is_admin or user.can_view_all:
+def _check_pr_view_access(pr: PurchasingRequisition, user: User) -> None:
+    """ดู PR ได้ — Admin, can_view_all_pr (เห็น PR ทั้งหมด), หรือเจ้าของ (ดู Docstring
+    บนสุดของไฟล์นี้: Correction 2 — "เห็นทั้งหมด" ครอบคลุมแค่การ "ดู" เท่านั้น)"""
+    if user.is_admin or user.can_view_all_pr:
         return
     if pr.requested_by_id != user.id:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "คุณไม่มีสิทธิ์เข้าถึง PR ฉบับนี้ (เห็นได้เฉพาะ PR ที่ตัวเองสร้าง)",
+        )
+
+
+def _check_pr_edit_access(pr: PurchasingRequisition, user: User) -> None:
+    """แก้ไข/Revise/พิมพ์ PR ได้ — Admin หรือเจ้าของเท่านั้น (ไม่รวม can_view_all_pr — ดู
+    Docstring บนสุดของไฟล์นี้: Correction 2 — เห็นทั้งหมด ไม่ได้แปลว่าแก้ไขทั้งหมด)"""
+    if user.is_admin:
+        return
+    if pr.requested_by_id != user.id:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "คุณไม่มีสิทธิ์แก้ไข PR ฉบับนี้ (แก้ไข/พิมพ์ได้เฉพาะ PR ที่ตัวเองสร้าง)",
         )
 
 
@@ -228,8 +248,8 @@ def list_prs(
         query = query.filter(PurchasingRequisition.requested_by_id == current_user.id)
 
     # Full RBAC (Correction 2026-09-10): บังคับเห็นเฉพาะ PR ของตัวเอง เว้นแต่ Admin หรือ
-    # can_view_all (เห็นภาพรวม) — ไม่ใช่แค่ requested_by_me แบบ Opt-in อีกต่อไป
-    if not (current_user.is_admin or current_user.can_view_all):
+    # can_view_all_pr (เห็นภาพรวม) — ไม่ใช่แค่ requested_by_me แบบ Opt-in อีกต่อไป
+    if not (current_user.is_admin or current_user.can_view_all_pr):
         query = query.filter(PurchasingRequisition.requested_by_id == current_user.id)
 
     return (
@@ -245,7 +265,7 @@ def get_pr(
     pr_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_can_view_pr)
 ) -> PRRead:
     pr = _get_pr_or_404(db, pr_id)
-    _check_pr_access(pr, current_user)
+    _check_pr_view_access(pr, current_user)
     return _to_pr_read(db, pr)
 
 
@@ -257,7 +277,7 @@ def update_pr(
     current_user: User = Depends(require_can_view_pr),
 ) -> PRRead:
     pr = _get_pr_or_404(db, pr_id)
-    _check_pr_access(pr, current_user)
+    _check_pr_edit_access(pr, current_user)
     if pr.status != PRStatus.DRAFT:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "แก้ไขได้เฉพาะ PR ที่ยังเป็นสถานะ Draft เท่านั้น (Finalized แล้วแก้ไม่ได้)"
@@ -284,7 +304,7 @@ def revise_pr(
     ใหม่) ส่วนคนที่กด Revise จริงบันทึกแยกไว้ใน Audit Log (actor_id)
     """
     original = _get_pr_or_404(db, pr_id)
-    _check_pr_access(original, current_user)
+    _check_pr_edit_access(original, current_user)
     if original.status != PRStatus.FINALIZED:
         raise HTTPException(status.HTTP_409_CONFLICT, "Revise ได้เฉพาะ PR ที่ Finalized แล้วเท่านั้น")
 
@@ -375,7 +395,7 @@ def get_pr_pdf(
     current_user: User = Depends(require_can_view_pr),
 ) -> Response:
     pr = _get_pr_or_404(db, pr_id)
-    _check_pr_access(pr, current_user)
+    _check_pr_edit_access(pr, current_user)
     pdf_bytes = render_pr_pdf(db, pr)
 
     # Scope Revision (Phase 9, 2026-09-03): กดพิมพ์/ดาวน์โหลด PDF ครั้งแรกคือจุดที่
@@ -406,7 +426,7 @@ def get_pr_history(
     pr_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_can_view_pr)
 ) -> list[AuditLogRead]:
     pr = _get_pr_or_404(db, pr_id)  # 404 ถ้าไม่มี PR นี้จริง
-    _check_pr_access(pr, current_user)
+    _check_pr_view_access(pr, current_user)
     logs = (
         db.query(AuditLog).filter(AuditLog.pr_id == pr_id).order_by(AuditLog.timestamp.asc()).all()
     )

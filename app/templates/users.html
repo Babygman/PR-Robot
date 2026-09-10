@@ -41,7 +41,10 @@
           <input type="checkbox" id="c-can-view-ar" style="width:auto;"> AR
         </label>
         <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
-          <input type="checkbox" id="c-can-view-all" style="width:auto;"> เห็นทั้งหมด
+          <input type="checkbox" id="c-can-view-all-pr" style="width:auto;"> เห็น PR ทั้งหมด
+        </label>
+        <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
+          <input type="checkbox" id="c-can-view-all-ar" style="width:auto;"> เห็น AR ทั้งหมด
         </label>
       </div>
     </div>
@@ -53,16 +56,16 @@
 <div class="card">
   <h2>รายชื่อ User ทั้งหมด</h2>
   <p class="muted" style="margin-top:-6px;">
-    Admin = จัดการระบบทั้งหมด เห็นทั้งหมด | FA = FA Acknowledge + Budget Control + AI Costs + Log |
+    Admin = จัดการระบบทั้งหมด เห็น/แก้ไขได้ทุกอย่าง | FA = FA Acknowledge + Budget Control + AI Costs + Log AR |
     Approve = เมนู "การอนุมัติของฉัน" | PR = เมนู PR List/New PR (เห็นเฉพาะของตัวเอง) |
     AR = เมนู Approval Request (เห็นเฉพาะของตัวเอง) |
-    เห็นทั้งหมด = ขยายขอบเขต PR/AR ให้เห็นทั้งหมด + เห็นเมนู Log (สิทธิ์ดูภาพรวม ไม่ใช่ Admin)
+    เห็น PR/AR ทั้งหมด = เห็นได้ทุกใบ + เห็นเมนู Log PR/Log AR (แต่แก้ไข/พิมพ์/ลบได้เฉพาะของตัวเองเสมอ)
   </p>
   <table>
     <thead>
-      <tr><th>Name</th><th>Email</th><th>Department</th><th>Position</th><th>Admin</th><th>FA</th><th>Approve</th><th>PR</th><th>AR</th><th>เห็นทั้งหมด</th><th>Active</th><th></th></tr>
+      <tr><th>Name</th><th>Email</th><th>Department</th><th>Position</th><th>Admin</th><th>FA</th><th>Approve</th><th>PR</th><th>AR</th><th>เห็น PR<br>ทั้งหมด</th><th>เห็น AR<br>ทั้งหมด</th><th>Active</th><th></th></tr>
     </thead>
-    <tbody id="users-body"><tr><td colspan="12" class="muted">กำลังโหลด...</td></tr></tbody>
+    <tbody id="users-body"><tr><td colspan="13" class="muted">กำลังโหลด...</td></tr></tbody>
   </table>
 </div>
 {% endblock %}
@@ -81,7 +84,8 @@ function userRowHtml(u) {
     <td style="text-align:center;"><input type="checkbox" class="u-can-view-approvals" ${u.can_view_approvals ? "checked" : ""}></td>
     <td style="text-align:center;"><input type="checkbox" class="u-can-view-pr" ${u.can_view_pr ? "checked" : ""}></td>
     <td style="text-align:center;"><input type="checkbox" class="u-can-view-ar" ${u.can_view_ar ? "checked" : ""}></td>
-    <td style="text-align:center;"><input type="checkbox" class="u-can-view-all" ${u.can_view_all ? "checked" : ""}></td>
+    <td style="text-align:center;"><input type="checkbox" class="u-can-view-all-pr" ${u.can_view_all_pr ? "checked" : ""}></td>
+    <td style="text-align:center;"><input type="checkbox" class="u-can-view-all-ar" ${u.can_view_all_ar ? "checked" : ""}></td>
     <td style="text-align:center;"><input type="checkbox" class="u-is-active" ${u.is_active ? "checked" : ""}></td>
     <td><button type="button" class="secondary save-user-btn">บันทึก</button></td>
   </tr>`;
@@ -91,11 +95,11 @@ async function loadUsers() {
   const res = await apiFetch("/users");
   const body = document.getElementById("users-body");
   if (!res.ok) {
-    body.innerHTML = '<tr><td colspan="12" class="error">โหลดรายชื่อไม่สำเร็จ (ต้องเป็น Admin เท่านั้น)</td></tr>';
+    body.innerHTML = '<tr><td colspan="13" class="error">โหลดรายชื่อไม่สำเร็จ (ต้องเป็น Admin เท่านั้น)</td></tr>';
     return;
   }
   USERS_CACHE = await res.json();
-  body.innerHTML = USERS_CACHE.map(userRowHtml).join("") || '<tr><td colspan="12" class="muted">ยังไม่มี User</td></tr>';
+  body.innerHTML = USERS_CACHE.map(userRowHtml).join("") || '<tr><td colspan="13" class="muted">ยังไม่มี User</td></tr>';
   body.querySelectorAll(".save-user-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const row = btn.closest("tr");
@@ -110,7 +114,8 @@ async function loadUsers() {
         can_view_approvals: row.querySelector(".u-can-view-approvals").checked,
         can_view_pr: row.querySelector(".u-can-view-pr").checked,
         can_view_ar: row.querySelector(".u-can-view-ar").checked,
-        can_view_all: row.querySelector(".u-can-view-all").checked,
+        can_view_all_pr: row.querySelector(".u-can-view-all-pr").checked,
+        can_view_all_ar: row.querySelector(".u-can-view-all-ar").checked,
         is_active: row.querySelector(".u-is-active").checked,
       };
       const r = await apiFetch(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
@@ -141,7 +146,8 @@ document.getElementById("create-form").addEventListener("submit", async (e) => {
     can_view_approvals: document.getElementById("c-can-view-approvals").checked,
     can_view_pr: document.getElementById("c-can-view-pr").checked,
     can_view_ar: document.getElementById("c-can-view-ar").checked,
-    can_view_all: document.getElementById("c-can-view-all").checked,
+    can_view_all_pr: document.getElementById("c-can-view-all-pr").checked,
+    can_view_all_ar: document.getElementById("c-can-view-all-ar").checked,
   };
   const res = await apiFetch("/users", { method: "POST", body: JSON.stringify(payload) });
   if (!res.ok) {

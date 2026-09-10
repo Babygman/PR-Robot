@@ -29,26 +29,43 @@ My Approvals (Phase B/2, 2026-09-10, ตาม Mockup v4 ที่ผู้ใ�
   ต้องติ๊กทั้ง FA และ "Approve" (can_view_approvals) ให้ 2 อันแยกกัน)
 
 Full RBAC — 9 เมนู (Correction 2026-09-10, ตาม Matrix Admin/FA/Approve/PR/AR/ALL ที่ผู้ใช้
-ยืนยัน): ตัด `approver_only` ออก (ไม่ได้ใช้แล้ว — Mockup ล่าสุดไม่มีคอลัมน์นี้) เพิ่ม 3 Field
+ยืนยัน): ตัด `approver_only` ออก (ไม่ได้ใช้แล้ว — Mockup ล่าสุดไม่มีคอลัมน์นี้) เพิ่ม 4 Field
 ใหม่:
 - `can_view_pr`: เปิดเมนู "รายการ PR"/"สร้าง PR ใหม่" ให้เห็น — ขอบเขตจำกัดเฉพาะ PR ที่
-  ตัวเองสร้างเท่านั้น (requested_by_id ตรงกับตัวเอง) เว้นแต่ is_admin หรือ can_view_all
-  ดู Enforcement จริงที่ app/api/routes/purchasing_requisitions.py (_check_pr_access)
+  ตัวเองสร้างเท่านั้น (requested_by_id ตรงกับตัวเอง) เว้นแต่ is_admin หรือ can_view_all_pr
+  ดู Enforcement จริงที่ app/api/routes/purchasing_requisitions.py
 - `can_view_ar`: เปิดเมนู "Approval Request" ให้เห็น — ขอบเขตจำกัดเฉพาะ AR ที่ตัวเองสร้าง
-  เท่านั้น เว้นแต่ is_admin/can_view_all หรือเป็นผู้มีบทบาทอนุมัติ (can_view_approvals/
-  is_fa — ต้องเห็น AR ของคนอื่นที่รอตัวเองอนุมัติผ่านเมนู My Approvals ได้) ดู Enforcement
-  จริงที่ app/api/routes/approval_requests.py (_check_ar_access)
-- `can_view_all`: ขยายขอบเขต PR/AR ข้างต้นให้เห็น "ทั้งหมด" แทนที่จะเห็นเฉพาะของตัวเอง
-  (สิทธิ์ดูภาพรวมล้วนๆ ไม่ใช่ Admin — ไม่มีสิทธิ์จัดการ User/Budget Level/FA Acknowledge)
-  และเปิดเมนู "Log" ให้เห็นด้วย (เห็นได้เหมือน is_admin/is_fa) — ไม่ได้แปลว่ามีสิทธิ์สร้าง
-  PR/AR ใหม่ (การสร้างยังต้องติ๊ก can_view_pr/can_view_ar เองตามปกติ — ดู Docstring
-  app/api/routes/purchasing_requisitions.py และ approval_requests.py)
+  เท่านั้น (ที่หน้า List) เว้นแต่ is_admin/can_view_all_ar — ส่วนหน้ารายละเอียด/แก้ไข/พิมพ์/
+  ประวัติของ AR แต่ละใบเปิดให้ทุกคนที่ Login เข้าถึงได้เสมอไม่ว่าจะมี Flag นี้หรือไม่ เพราะ
+  AR มีผู้อนุมัติ Level ตามแผนกที่ต้องเข้าถึง AR คนอื่นได้โดยชอบธรรม ดู Enforcement จริงที่
+  app/api/routes/approval_requests.py
 
-Migration Default (b6a1... my_approvals_full_rbac): User Active เดิมทุกคนตอน Migrate จะได้
-can_view_pr/can_view_ar/can_view_all = True ให้อัตโนมัติทั้งหมด เพราะระบบเดิมไม่เคยมีการ
-จำกัดขอบเขตเลย (ทุกคนเห็น PR/AR ของทุกคนอยู่แล้ว) — ป้องกันไม่ให้ Deploy ครั้งนี้ตัดสิทธิ์ที่
-ทุกคนใช้งานอยู่ทันที Admin ไปติ๊กเอาออกทีหลังสำหรับคนที่ต้องการจำกัดให้เห็นแค่ของตัวเอง
-User ใหม่ที่สร้างหลังจากนี้ Default เป็น False ทั้งหมด (ต้องติ๊กเปิดเอง)
+Correction 2 (แยก ALL ตาม PR/AR, 2026-09-10 — ผู้ใช้แจ้งว่า Field เดียวรวมกันสับสน "ต้องแยก
+PR และ AR ออกจากกันด้วย"): ตัด `can_view_all` (Field เดียวรวม PR+AR) ออก แทนที่ด้วย 2 Field
+แยกกันชัดเจน — กฎเดียวกันทั้งคู่: "เห็นได้ทุกใบ แต่แก้ไข/พิมพ์/ลบได้เฉพาะของตัวเอง" (เหมือน
+Admin ฝั่งเห็น แต่ไม่มีสิทธิ์ไปแก้ไขของคนอื่น และไม่ได้แปลว่าสร้างใหม่ได้ — การสร้างยังต้อง
+ติ๊ก can_view_pr/can_view_ar ตามปกติ):
+- `can_view_all_pr`: เห็น PR ของทุกคนในระบบ (ไม่ใช่แค่ของตัวเอง) — แก้ไข/พิมพ์/ Revise
+  PR ของคนอื่นไม่ได้ (ทำได้เฉพาะของตัวเอง เหมือนเดิม) ดู _check_pr_view_access ที่
+  app/api/routes/purchasing_requisitions.py
+- `can_view_all_ar`: เห็น AR List ของทุกคน (ไม่ใช่แค่ของตัวเอง) — มีผลแค่ที่หน้า List
+  เพราะหน้ารายละเอียด/แก้ไข AR เปิดให้ทุกคนเข้าถึงได้อยู่แล้วตามที่อธิบายข้างต้น
+
+Correction 3 (แยกเมนู Log PR/Log AR, 2026-09-10 — ผู้ใช้แจ้งว่าต้องการแยก Log ตาม PR/AR
+เหมือนเมนูอื่น): เดิมเมนู "Log" รวมเดียวเปิดด้วย is_admin/is_fa/can_view_all_pr/
+can_view_all_ar (มีอันใดอันหนึ่งก็พอ) แยกเป็น 2 เมนูอิสระ:
+- เมนู "Log PR": is_admin หรือ can_view_all_pr เท่านั้น (ไม่มี is_fa — PR ไม่มี FA/Workflow
+  อนุมัติเกี่ยวข้องเลย)
+- เมนู "Log AR": is_admin, is_fa, หรือ can_view_all_ar (FA ยังอยู่เพราะมีบทบาทใน FA
+  Acknowledge ของ Workflow อนุมัติงบ AR)
+ดู app/core/deps.py: require_can_view_log_pr / require_can_view_log_ar
+
+Migration Default (c3d7f1a9e4b2 -> รุ่นถัดไปที่แยก ALL): User Active เดิมทุกคนตอน Migrate
+จะได้ can_view_pr/can_view_ar/can_view_all_pr/can_view_all_ar = True ให้อัตโนมัติทั้งหมด
+เพราะระบบเดิมไม่เคยมีการจำกัดขอบเขตเลย (ทุกคนเห็น PR/AR ของทุกคนอยู่แล้ว) — ป้องกันไม่ให้
+Deploy ครั้งนี้ตัดสิทธิ์ที่ทุกคนใช้งานอยู่ทันที Admin ไปติ๊กเอาออกทีหลังสำหรับคนที่ต้องการ
+จำกัดให้เห็นแค่ของตัวเอง User ใหม่ที่สร้างหลังจากนี้ Default เป็น False ทั้งหมด (ต้องติ๊ก
+เปิดเอง)
 """
 
 from __future__ import annotations
@@ -77,7 +94,8 @@ class User(Base):
     can_view_approvals: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     can_view_pr: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     can_view_ar: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    can_view_all: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    can_view_all_pr: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    can_view_all_ar: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
