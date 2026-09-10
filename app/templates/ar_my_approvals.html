@@ -186,25 +186,71 @@ function applyLightboxZoom() {
   if (img) img.style.transform = `scale(${LIGHTBOX_ZOOM / 100})`;
 }
 
-function renderLightboxDoc(att) {
+// แก้ไขเพิ่ม (2026-09-10): ผู้ใช้แจ้งว่าไฟล์ Excel (.xlsx) ควรมี Preview ในตัว Lightbox
+// ด้วย (เดิมโชว์แค่ลิงก์ดาวน์โหลดเหมือนไฟล์ที่ไม่รู้จัก) — เบราว์เซอร์ Preview .xlsx เอง
+// ไม่ได้ (ไม่มี Native Viewer เหมือน PDF) จึงเรียก /xlsx-preview ที่ Server อ่านด้วย
+// openpyxl แล้วส่งเป็นตาราง Rows/Cols กลับมา Render เป็น <table> เอง (ยังไม่ใช้ Library
+// แปลง Excel ฝั่ง Browser ตามหลักการของโปรเจกต์นี้) รองรับเฉพาะ .xlsx (ไม่ใช่ .xls แบบ
+// เก่า) ถ้าอ่านไม่ได้ Fallback กลับไปเป็นลิงก์ดาวน์โหลดเหมือนเดิม
+function isXlsxAttachment(att) {
+  const ct = att.content_type || "";
+  const name = (att.file_name || "").toLowerCase();
+  return ct.includes("spreadsheetml") || ct === "application/vnd.ms-excel" || name.endsWith(".xlsx") || name.endsWith(".xls");
+}
+
+function escapeHtmlCell(v) {
+  if (v === null || v === undefined || v === "") return "";
+  return escapeHtml(String(v));
+}
+
+async function renderXlsxPreview(att, body, url) {
+  const res = await apiFetch(`/ars/${POPUP_ITEM.id}/attachments/${att.id}/xlsx-preview`);
+  if (!res.ok) {
+    body.innerHTML = `<p class="muted">ไม่สามารถ Preview ไฟล์ Excel นี้ได้ (รองรับเฉพาะ .xlsx)<br><a href="${url}" target="_blank">ดาวน์โหลด ${escapeHtml(att.file_name)} (${fmtFileSizeMa(att.file_size)})</a></p>`;
+    return;
+  }
+  const data = await res.json();
+  if (data.rows.length === 0) {
+    body.innerHTML = '<p class="muted">ไฟล์ Excel นี้ไม่มีข้อมูลใน Sheet แรก</p>';
+    return;
+  }
+  const tableRows = data.rows
+    .map(
+      (row, i) =>
+        `<tr>${row.map((cell) => (i === 0 ? `<th>${escapeHtmlCell(cell)}</th>` : `<td>${escapeHtmlCell(cell)}</td>`)).join("")}</tr>`
+    )
+    .join("");
+  body.innerHTML = `
+    <div class="ma-xlsx-preview">
+      <div class="ma-xlsx-sheet-name">Sheet: ${escapeHtml(data.sheet_name)}${data.truncated ? " — แสดงบางส่วน (ดาวน์โหลดเพื่อดูฉบับเต็ม)" : ""}</div>
+      <div class="ma-xlsx-table-wrap"><table class="ma-xlsx-table">${tableRows}</table></div>
+    </div>`;
+}
+
+async function renderLightboxDoc(att) {
   LIGHTBOX_ZOOM = 100;
   const body = document.getElementById("ma-lightbox-body");
   const url = `/ars/${POPUP_ITEM.id}/attachments/${att.id}/download`;
   const ct = att.content_type || "";
   const isImage = ct.startsWith("image/");
   document.getElementById("ma-lightbox-zoom-group").classList.toggle("hidden", !isImage);
-  if (ct === "application/pdf") {
-    body.innerHTML = `<iframe src="${url}"></iframe>`;
-  } else if (isImage) {
-    body.innerHTML = `<img id="ma-lightbox-img" src="${url}" alt="${escapeHtml(att.file_name)}">`;
-  } else {
-    body.innerHTML = `<p class="muted">ไม่รองรับ Preview ไฟล์ประเภทนี้ในเบราว์เซอร์<br><a href="${url}" target="_blank">ดาวน์โหลด ${escapeHtml(att.file_name)} (${fmtFileSizeMa(att.file_size)})</a></p>`;
-  }
-  applyLightboxZoom();
+
   const activeIndex = POPUP_ATTACHMENTS.indexOf(att);
   document.getElementById("ma-lightbox-tabs").querySelectorAll(".ma-lightbox-tab").forEach((btn) => {
     btn.classList.toggle("active", Number(btn.dataset.index) === activeIndex);
   });
+
+  if (ct === "application/pdf") {
+    body.innerHTML = `<iframe src="${url}"></iframe>`;
+  } else if (isImage) {
+    body.innerHTML = `<img id="ma-lightbox-img" src="${url}" alt="${escapeHtml(att.file_name)}">`;
+  } else if (isXlsxAttachment(att)) {
+    body.innerHTML = '<p class="muted">กำลังโหลด Preview...</p>';
+    await renderXlsxPreview(att, body, url);
+  } else {
+    body.innerHTML = `<p class="muted">ไม่รองรับ Preview ไฟล์ประเภทนี้ในเบราว์เซอร์<br><a href="${url}" target="_blank">ดาวน์โหลด ${escapeHtml(att.file_name)} (${fmtFileSizeMa(att.file_size)})</a></p>`;
+  }
+  applyLightboxZoom();
 }
 
 function openLightbox(index) {

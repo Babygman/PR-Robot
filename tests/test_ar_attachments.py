@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 
 from fastapi.testclient import TestClient
+from openpyxl import Workbook
 from sqlalchemy.orm import Session
 
 from app.models import User
@@ -18,6 +19,21 @@ from tests.test_approval_requests import _sample_ar_body
 from tests.test_budget_control import _login_as, _make_level, _make_user, _submit_for_approval
 
 _FAKE_PDF = b"%PDF-1.4 fake content for testing\n"
+
+
+def _make_real_xlsx_bytes() -> bytes:
+    """Comment 4 (2026-09-10 — xlsx-preview): ต้องเป็นไฟล์ .xlsx จริง (ไม่ใช่ Bytes ปลอม
+    เหมือน test_upload_accepts_excel_and_image) เพราะ Endpoint นี้เปิดอ่านด้วย openpyxl
+    จริงๆ ไม่ได้แค่เช็ค Content-Type ตอน Upload เท่านั้น"""
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Budget"
+    sheet.append(["Item", "Qty", "Amount"])
+    sheet.append(["pc", 1, 44040])
+    sheet.append(["mouse", 2, 250])
+    buf = io.BytesIO()
+    workbook.save(buf)
+    return buf.getvalue()
 
 
 def _login(client: TestClient) -> None:
@@ -114,6 +130,52 @@ def test_delete_by_uploader_ok_by_unrelated_user_forbidden_by_admin_ok(
 
     _login(client)
     assert client.get(f"/ars/{ar_id}/attachments").json() == []
+
+
+def test_xlsx_preview_returns_rows_for_real_xlsx(client: TestClient, plain_user: User):
+    _login(client)
+    ar_id = client.post("/ars", json=_sample_ar_body()).json()["id"]
+
+    att_id = client.post(
+        f"/ars/{ar_id}/attachments",
+        files={
+            "file": (
+                "budget.xlsx",
+                io.BytesIO(_make_real_xlsx_bytes()),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    ).json()["id"]
+
+    res = client.get(f"/ars/{ar_id}/attachments/{att_id}/xlsx-preview")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["sheet_name"] == "Budget"
+    assert body["truncated"] is False
+    assert body["rows"] == [
+        ["Item", "Qty", "Amount"],
+        ["pc", 1, 44040],
+        ["mouse", 2, 250],
+    ]
+
+
+def test_xlsx_preview_rejects_unreadable_file(client: TestClient, plain_user: User):
+    _login(client)
+    ar_id = client.post("/ars", json=_sample_ar_body()).json()["id"]
+
+    att_id = client.post(
+        f"/ars/{ar_id}/attachments",
+        files={
+            "file": (
+                "budget.xlsx",
+                io.BytesIO(b"not actually a real xlsx file"),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    ).json()["id"]
+
+    res = client.get(f"/ars/{ar_id}/attachments/{att_id}/xlsx-preview")
+    assert res.status_code == 422
 
 
 def test_current_level_approver_can_upload_while_pending_other_approver_cannot(

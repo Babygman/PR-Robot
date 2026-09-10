@@ -534,3 +534,15 @@ td.center { text-align: center; }
 .ma-lightbox-body iframe { width: 100%; height: 100%; border: none; }
 .ma-lightbox-body img { max-width: none; transition: transform 0.15s; }
 .ma-lightbox-body .muted { padding: 20px; text-align: center; }
+
+/* Comment 4 (แก้ไขเพิ่ม 2026-09-10): ผู้ใช้แจ้งว่าอยากให้ไฟล์ Excel (.xlsx) มี Preview
+   ในตัว Lightbox ด้วย (เดิมมีแค่ลิงก์ดาวน์โหลด) — Render เป็นตาราง HTML จากข้อมูลที่
+   Server อ่านด้วย openpyxl ส่งมาให้ (ดู ar_attachments.py: /xlsx-preview, ar.js: doc
+   thumbs/lightbox) ถือว่าแถวแรกเป็น Header เสมอ (Assume ตามรูปแบบ Excel ทั่วไปที่ใช้จริง
+   ในโปรเจกต์นี้ — ไม่ใช่กติกาตายตัว) */
+.ma-xlsx-preview { width: 100%; height: 100%; overflow: auto; background: #fff; padding: 16px; box-sizing: border-box; }
+.ma-xlsx-sheet-name { font-size: 12px; color: var(--color-text-faint); margin-bottom: 10px; }
+.ma-xlsx-table-wrap { overflow: auto; }
+.ma-xlsx-table { border-collapse: collapse; font-size: 12.5px; white-space: nowrap; }
+.ma-xlsx-table th, .ma-xlsx-table td { border: 1px solid var(--color-border); padding: 4px 8px; text-align: left; }
+.ma-xlsx-table th { background: var(--color-surface-2); font-weight: 600; position: sticky; top: 0; }

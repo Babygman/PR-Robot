@@ -23,6 +23,7 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
+import openpyxl
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -31,9 +32,14 @@ from app.core.config import settings
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models import ApprovalRequest, ARAttachment, AuditLog, User
-from app.schemas.ar_attachment import ARAttachmentRead
+from app.schemas.ar_attachment import ARAttachmentRead, ARAttachmentXlsxPreview
 from app.services import budget_workflow
 from app.services.user_lookup import resolve_user_names
+
+# Comment 4 (2026-09-10 — xlsx-preview): จำกัดขนาดตารางที่ส่งกลับให้ Preview กันไฟล์ใหญ่
+# เกินไปทำหน้าเว็บค้าง — พอสำหรับดูเนื้อหาคร่าวๆ ถ้าต้องการดูฉบับเต็มยังกดดาวน์โหลดได้
+_XLSX_PREVIEW_MAX_ROWS = 300
+_XLSX_PREVIEW_MAX_COLS = 40
 
 router = APIRouter(prefix="/ars/{ar_id}/attachments", tags=["ar-attachments"])
 
@@ -169,6 +175,53 @@ def download_ar_attachment(
         filename=attachment.file_name,
         content_disposition_type="inline",
     )
+
+
+@router.get("/{attachment_id}/xlsx-preview", response_model=ARAttachmentXlsxPreview)
+def preview_ar_attachment_xlsx(
+    ar_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> ARAttachmentXlsxPreview:
+    """Comment 4 (2026-09-10): Preview เนื้อหาไฟล์ Excel (.xlsx เท่านั้น — .xls รูปแบบเก่า
+    openpyxl อ่านไม่ได้ จะโดน 422 กลับไป ฝั่งหน้าเว็บ Fallback เป็นลิงก์ดาวน์โหลดแทน) อ่าน
+    เฉพาะ Sheet แรก จำกัดจำนวนแถว/คอลัมน์กันไฟล์ใหญ่เกินไป"""
+    _get_ar_or_404(db, ar_id)
+    attachment = _get_attachment_or_404(db, ar_id, attachment_id)
+    file_path = Path(attachment.stored_path)
+    if not file_path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "ไฟล์เอกสารแนบนี้หายไปจาก Server แล้ว")
+
+    try:
+        workbook = openpyxl.load_workbook(str(file_path), read_only=True, data_only=True)
+    except Exception as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "ไม่สามารถอ่านไฟล์นี้เพื่อ Preview ได้ (รองรับเฉพาะ .xlsx — ไฟล์ .xls แบบเก่ายังใช้ไม่ได้)",
+        ) from exc
+
+    try:
+        sheet = workbook.worksheets[0]
+        rows: list[list[str | float | int | None]] = []
+        truncated = False
+        for row_index, row in enumerate(sheet.iter_rows(values_only=True)):
+            if row_index >= _XLSX_PREVIEW_MAX_ROWS:
+                truncated = True
+                break
+            row_values = list(row[:_XLSX_PREVIEW_MAX_COLS])
+            if len(row) > _XLSX_PREVIEW_MAX_COLS:
+                truncated = True
+            cleaned_row = [
+                None if v is None else (v if isinstance(v, str | int | float) else str(v))
+                for v in row_values
+            ]
+            rows.append(cleaned_row)
+        sheet_name = sheet.title
+    finally:
+        workbook.close()
+
+    return ARAttachmentXlsxPreview(sheet_name=sheet_name, rows=rows, truncated=truncated)
 
 
 @router.delete("/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)
