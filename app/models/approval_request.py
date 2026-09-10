@@ -3,17 +3,27 @@
 2026-09-08 ตามที่ผู้ใช้อนุมัติ Design ไว้)
 
 หน้าที่ของระบบคือ "ให้ User Key ข้อมูลทุกอย่างที่จำเป็นในแต่ละช่องเพื่อปริ้น เอาไป
-ใช้งานการเซ็นภายนอก" ล้วนๆ — ไม่มี Workflow อนุมัติในระบบ, ไม่มี AI Autofill,
-ไม่มีการคำนวณอัตโนมัติ (Total/VAT/Grand Total/Balance ผู้ใช้กรอกเองทุกช่อง — ผู้ใช้
-เลือก Trade-off นี้เองตอนอนุมัติ Design แม้จะเสี่ยงคำนวณผิดโดยไม่มี Safeguard ในระบบ
-ก็ตาม) — ช่องลายเซ็น 5 ช่อง (President/Director, General Manager, Senior Manager,
-Manager, F&A) ว่างเสมอในระบบ เซ็น/กรอกสดบนกระดาษหลังพิมพ์ทั้งหมด (รวมถึง F&A ที่ใน
-ตัวอย่างจริงมีชื่อคนพิมพ์ไว้ล่วงหน้า แต่ผู้ใช้ยืนยันให้ปฏิบัติเหมือนช่องเซ็นสดอื่นๆ)
+ใช้งานการเซ็นภายนอก" ล้วนๆ — ไม่มี Workflow อนุมัติในระบบ (จนถึง Budget Control
+Phase 10 ด้านล่าง), ไม่มี AI Autofill — เดิม Total/VAT/Grand Total/Balance ผู้ใช้
+กรอกเองทุกช่อง (Business Decision 2026-09-08) แต่ถูกย้อนกลับบางส่วนแล้วโดย
+Correction 2026-09-10 (ดู app/templates/ar_edit.html): Total ยังกรอกเองเหมือนเดิม
+แต่ VAT เปลี่ยนเป็นเลือก % (7/3/0/กรอกเอง) คำนวณ VAT Amount ให้, Grand Total คำนวณ
+Auto จาก Total+VAT เสมอ (Readonly), This Application คำนวณ Auto = Grand Total
+เสมอ (Readonly — กันพิมพ์เลขไม่ตรงกับที่หักงบจริงตอน FA Acknowledge), Balance
+Simulate Auto จาก Budget for the Year − Amount Used Before − This Application แต่
+ยังแก้ไขเองได้ (เป็นแค่ Field แสดงผล Preview ไม่ได้ใช้หักงบจริง) — ช่องลายเซ็น 5 ช่อง
+(President/Director, General Manager, Senior Manager, Manager, F&A) ว่างเสมอใน
+ระบบเดิม เซ็น/กรอกสดบนกระดาษหลังพิมพ์ทั้งหมด (รวมถึง F&A ที่ในตัวอย่างจริงมีชื่อคน
+พิมพ์ไว้ล่วงหน้า แต่ผู้ใช้ยืนยันให้ปฏิบัติเหมือนช่องเซ็นสดอื่นๆ) — จนกระทั่ง Budget
+Control Phase 10 ด้านล่างเปลี่ยนให้ Auto-fill จริงตอน Level อนุมัติผ่าน
 
-Pattern เดียวกับ PurchasingRequisition (purchasing_requisition.py) ทุกประการ:
-สถานะ 2 ค่า (draft/finalized, ล็อกอัตโนมัติตอนพิมพ์/ดาวน์โหลด PDF ครั้งแรก) และ
-revision/revised_from_id (Revise ได้เฉพาะฉบับ Finalized สร้างฉบับ Draft ใหม่คัดลอก
-ข้อมูลมาแก้ไขต่อ ไม่แตะต้นฉบับเดิม)
+Pattern เดียวกับ PurchasingRequisition (purchasing_requisition.py) เกือบทุกประการ:
+สถานะ 2 ค่า (draft/finalized) และ revision/revised_from_id (สร้างฉบับ Draft ใหม่
+คัดลอกข้อมูลมาแก้ไขต่อ ไม่แตะต้นฉบับเดิม) — ยกเว้น "จุด Trigger Finalize" กับ "เงื่อนไข
+Revise" ที่ Correction 2026-09-10 แก้ใหม่เฉพาะ AR แล้ว (ดู Docstring ของ ARStatus
+ด้านล่าง): ไม่ใช่พิมพ์/ดาวน์โหลด PDF ครั้งแรกอีกต่อไป (เหมือน PR เดิม) แต่เป็น Level
+แรกอนุมัติผ่าน และ Revise ได้เฉพาะฉบับที่ถูก Reject มาเท่านั้น ไม่ใช่ฉบับ Finalized
+ทุกฉบับเหมือน PR
 
 ตารางอ้างอิงสถิต (Limit of Authority, EVENTS Example, Flowchart, ชื่อบริษัท) ไม่มี
 คอลัมน์ในนี้เลย — พิมพ์ตายตัวเหมือนกันทุกฉบับใน Print Template (ar_form.html)
@@ -26,6 +36,7 @@ Manager, Manager, F&A) ไม่ได้ว่างเปล่ารอเซ
 ประมาณนี้ (แยกจาก `status` Draft/Finalized เดิมโดยสิ้นเชิง — เอกสารยัง Lock ตอน
 Finalize/พิมพ์ครั้งแรกเหมือนเดิมทุกประการ ไม่เกี่ยวกับ Workflow อนุมัติหักงบเลย)
 """
+
 from __future__ import annotations
 
 import enum
@@ -58,8 +69,13 @@ if TYPE_CHECKING:
 
 
 class ARStatus(str, enum.Enum):
-    """เหมือน PRStatus ทุกประการ — DRAFT = แก้ไขได้, FINALIZED = ล็อกแล้ว (Trigger
-    อัตโนมัติตอนกดพิมพ์/ดาวน์โหลด PDF ครั้งแรก)"""
+    """DRAFT = แก้ไขได้, FINALIZED = ล็อกแล้ว — Correction 2026-09-10 (เฉพาะ AR, PR ยัง
+    เหมือน PRStatus เดิมทุกประการคือ Trigger ตอนพิมพ์/ดาวน์โหลด PDF ครั้งแรก): AR ไม่ใช้
+    Pattern นั้นอีกต่อไป พิมพ์/ดาวน์โหลด PDF ไม่มีผลข้างเคียงแล้ว (ดู
+    app/api/routes/approval_requests.py: get_ar_pdf) Trigger จริงคือ Level แรกของ
+    Workflow อนุมัติหักงบอนุมัติผ่าน (ดู app/services/budget_workflow.py:
+    approve_level) — ยกเว้นแผนกไม่มี Level อนุมัติเลยจะ Finalized ทันทีตอนกด "ส่งขอ
+    อนุมัติ" (ดู submit_ar_for_approval) เพราะไม่มี Level ให้รอ"""
 
     DRAFT = "draft"
     FINALIZED = "finalized"

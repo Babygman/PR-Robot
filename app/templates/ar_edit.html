@@ -3,7 +3,7 @@
 {% block content %}
 <h1 id="page-title">{% if ar_id %}แก้ไข Approval Request{% else %}สร้าง Approval Request ใหม่{% endif %}</h1>
 <p class="muted" style="margin-top:-10px;">
-  กรอกข้อมูลทุกช่องที่จำเป็นเพื่อพิมพ์เอกสารไปขอลายเซ็นอนุมัติสดนอกระบบ — ระบบไม่คำนวณ Total/VAT/Grand Total/Balance ให้อัตโนมัติ กรุณาตรวจสอบตัวเลขก่อนพิมพ์ทุกครั้ง
+  กรอกข้อมูลทุกช่องที่จำเป็นเพื่อพิมพ์เอกสารไปขอลายเซ็นอนุมัติสดนอกระบบ — Total กรอกเอง ส่วน VAT/Grand Total/This Application/Balance ระบบคำนวณให้อัตโนมัติ กรุณาตรวจสอบตัวเลขก่อนส่งขออนุมัติทุกครั้ง
 </p>
 
 <div class="error hidden" id="load-error"></div>
@@ -35,11 +35,6 @@
         <select id="f-budget-select"><option value="">— เลือก หรือกรอก Budget No. เองด้านล่าง —</option></select>
       </div>
     </div>
-    <div class="row hidden" id="budget-readout">
-      <div class="field"><label>Budget for Period</label><input type="text" class="mono" id="ro-budget-amount" readonly></div>
-      <div class="field"><label>Used Amount (สะสมทั้งแผนก)</label><input type="text" class="mono" id="ro-used-amount" readonly></div>
-      <div class="field"><label>Balance คงเหลือ</label><input type="text" class="mono" id="ro-balance" readonly></div>
-    </div>
     <div class="row">
       <div class="field"><label for="f-budget-no">Budget No. (รหัส/เลขที่บัญชีงบประมาณ)</label><input type="text" id="f-budget-no" placeholder="เช่น 5100-01"></div>
       <div class="field"><label for="f-budget-sub">หมวดย่อย (เช่น Mnt. Motor)</label><input type="text" id="f-budget-sub"></div>
@@ -48,9 +43,16 @@
     <div class="row">
       <div class="field"><label for="f-budget-year">Budget for the Year</label><input type="text" id="f-budget-year"></div>
       <div class="field"><label for="f-used-before">Amount Used Before</label><input type="text" id="f-used-before"></div>
-      <div class="field"><label for="f-this-app">This Application</label><input type="text" id="f-this-app"></div>
+      <div class="field"><label for="f-this-app">This Application</label><input type="text" class="mono" id="f-this-app" readonly></div>
       <div class="field"><label for="f-balance">Balance</label><input type="text" id="f-balance"></div>
     </div>
+    <p class="muted" style="font-size:12px;">
+      เลือก Budget No. จาก Dropdown ด้านบนจะ Auto-fill "Budget for the Year" (Budgeted Amount ของงวดนั้น)
+      และ "Amount Used Before" (ยอดที่ใช้ไปแล้วจริงสะสมจากระบบ) ให้ — ยังแก้ไขเองทับได้ "This Application"
+      คำนวณเท่ากับ Grand Total ให้อัตโนมัติเสมอ (แก้เองไม่ได้ เพราะเป็นยอดที่ระบบใช้หักงบจริงตอน FA
+      Acknowledge) "Balance" คำนวณ Simulate ให้อัตโนมัติ (Budget for the Year − Amount Used Before −
+      This Application) — ยังแก้ไขเองทับได้เพราะเป็นแค่ตัวเลขแสดงผลเฉยๆ
+    </p>
   </div>
 
   <div class="card">
@@ -63,8 +65,16 @@
     <button type="button" class="secondary" id="add-item-btn">+ เพิ่มรายการ</button>
     <div class="row" style="margin-top:14px;">
       <div class="field"><label for="f-total">Total</label><input type="text" id="f-total"></div>
-      <div class="field"><label for="f-vat">Vat</label><input type="text" id="f-vat"></div>
-      <div class="field"><label for="f-grand-total">Grand Total</label><input type="text" id="f-grand-total"></div>
+      <div class="field"><label for="f-vat-rate">Vat %</label>
+        <select id="f-vat-rate">
+          <option value="7">7%</option>
+          <option value="3">3%</option>
+          <option value="0">0%</option>
+          <option value="custom">กรอกเอง</option>
+        </select>
+      </div>
+      <div class="field"><label for="f-vat">Vat (บาท)</label><input type="text" id="f-vat"></div>
+      <div class="field"><label for="f-grand-total">Grand Total</label><input type="text" class="mono" id="f-grand-total" readonly></div>
     </div>
   </div>
 
@@ -120,10 +130,70 @@ function fmtMoney(v) {
   return Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// เก็บใน Input Field เป็นตัวเลขธรรมดา (ไม่มี , คั่นหลักพัน) เสมอ เพราะ Field พวกนี้ถูก
+// เอาไปคำนวณต่อ (toNum) และส่งตรงเป็น Payload ด้วย — ต่างจาก fmtMoney ที่ใช้แสดงผล
+// อย่างเดียว (เช่นใน Dropdown เลือกงบ) ห้ามสลับกันใช้
+function plainMoney(v) {
+  if (v === null || v === undefined || v === "") return "";
+  return Number(v).toFixed(2);
+}
+
+// แปลง Input เป็นตัวเลขสำหรับคำนวณ — ทน , ที่ผู้ใช้อาจพิมพ์เอง (Total เป็นช่องกรอกเอง)
+function toNum(v) {
+  const n = parseFloat(String(v ?? "").replace(/,/g, ""));
+  return isNaN(n) ? 0 : n;
+}
+
+// Correction 2026-09-10 (Comment 1-3 หน้าสร้าง AR): เดิม Total/VAT/Grand Total/
+// Balance/This Application กรอกเองทั้งหมด (Business Decision 2026-09-08) — กลับคำ
+// ตัดสินใจนั้นเฉพาะ VAT/Grand Total/This Application/Balance ให้คำนวณอัตโนมัติ Total
+// ยังกรอกเองเหมือนเดิม (ไม่ Auto-sum จากรายการ Amount & Quantity)
+function recalcVatAndGrandTotal() {
+  const rate = document.getElementById("f-vat-rate").value;
+  const vatInput = document.getElementById("f-vat");
+  if (rate !== "custom") {
+    const total = toNum(document.getElementById("f-total").value);
+    vatInput.value = plainMoney((total * Number(rate)) / 100);
+    vatInput.readOnly = true;
+  } else {
+    vatInput.readOnly = false;
+  }
+  recalcGrandTotal();
+}
+
+function recalcGrandTotal() {
+  const total = toNum(document.getElementById("f-total").value);
+  const vat = toNum(document.getElementById("f-vat").value);
+  document.getElementById("f-grand-total").value = plainMoney(total + vat);
+  recalcThisApplication();
+}
+
+function recalcThisApplication() {
+  // This Application = Grand Total เสมอ (ดู Docstring app/services/budget_workflow.py:
+  // fa_acknowledge — ค่านี้คือยอดที่ระบบเอาไปหักงบจริง ห้ามให้พิมพ์เองเพื่อกันเลข
+  // ไม่ตรงกับ Grand Total จากการพิมพ์ผิด)
+  document.getElementById("f-this-app").value = document.getElementById("f-grand-total").value;
+  recalcBalance();
+}
+
+function recalcBalance() {
+  const year = toNum(document.getElementById("f-budget-year").value);
+  const usedBefore = toNum(document.getElementById("f-used-before").value);
+  const thisApp = toNum(document.getElementById("f-this-app").value);
+  document.getElementById("f-balance").value = plainMoney(year - usedBefore - thisApp);
+}
+
+document.getElementById("f-total").addEventListener("input", recalcVatAndGrandTotal);
+document.getElementById("f-vat-rate").addEventListener("change", recalcVatAndGrandTotal);
+document.getElementById("f-vat").addEventListener("input", () => {
+  if (document.getElementById("f-vat-rate").value === "custom") recalcGrandTotal();
+});
+document.getElementById("f-budget-year").addEventListener("input", recalcBalance);
+document.getElementById("f-used-before").addEventListener("input", recalcBalance);
+
 async function loadBudgetOptions(department, budgetType) {
   const select = document.getElementById("f-budget-select");
   select.innerHTML = '<option value="">— เลือก หรือกรอก Budget No. เองด้านล่าง —</option>';
-  document.getElementById("budget-readout").classList.add("hidden");
   if (!department) return;
   const params = new URLSearchParams({ department, budget_type: budgetType });
   const res = await apiFetch("/budget?" + params.toString());
@@ -137,19 +207,18 @@ async function loadBudgetOptions(department, budgetType) {
   });
 }
 
+// Correction 2026-09-10 (Comment 1 หน้าสร้าง AR): เดิมมี Row แยก "Budget for Period /
+// Used Amount / Balance คงเหลือ" (Readout อย่างเดียว ไม่ถูกบันทึก) วางซ้อนอยู่เหนือ
+// "Budget for the Year" ของจริงที่ใช้งานจริง ทำให้งง — เอา Row ซ้ำออก แล้ว Auto-fill
+// ตรงเข้า Budget for the Year/Amount Used Before เลยแทน (ยังแก้เองทับได้)
 document.getElementById("f-budget-select").addEventListener("change", (e) => {
   const chosen = BUDGET_OPTIONS.find((b) => String(b.id) === e.target.value);
-  const readout = document.getElementById("budget-readout");
-  if (!chosen) {
-    readout.classList.add("hidden");
-    return;
-  }
+  if (!chosen) return;
   document.getElementById("f-budget-no").value = chosen.budget_no;
   if (chosen.budget_name) document.getElementById("f-budget-name").value = chosen.budget_name;
-  document.getElementById("ro-budget-amount").value = fmtMoney(chosen.budgeted_amount);
-  document.getElementById("ro-used-amount").value = fmtMoney(chosen.used_amount);
-  document.getElementById("ro-balance").value = fmtMoney(chosen.balance);
-  readout.classList.remove("hidden");
+  document.getElementById("f-budget-year").value = plainMoney(chosen.budgeted_amount);
+  document.getElementById("f-used-before").value = plainMoney(chosen.used_amount);
+  recalcBalance();
 });
 
 let CURRENT_USER_DEPARTMENT = null;
@@ -165,11 +234,24 @@ async function loadForEdit() {
     return false;
   }
   const ar = await res.json();
-  if (ar.status !== "draft") {
+  if (ar.budget_approval_status === "rejected") {
     document.getElementById("load-error").textContent =
-      "แก้ไขไม่ได้ — Approval Request นี้ถูกสรุป (Finalized) ไปแล้วตอนพิมพ์/ดาวน์โหลด PDF";
+      'แก้ไขไม่ได้ — Approval Request นี้ถูกปฏิเสธไปแล้ว กรุณากลับไปหน้ารายละเอียดแล้วกด "สร้าง Revision" แทน';
     document.getElementById("load-error").classList.remove("hidden");
     return false;
+  }
+  if (ar.status !== "draft") {
+    document.getElementById("load-error").textContent =
+      "แก้ไขไม่ได้ — Approval Request นี้ถูกสรุป (Finalized) ไปแล้ว (Level แรกอนุมัติผ่านแล้ว)";
+    document.getElementById("load-error").classList.remove("hidden");
+    return false;
+  }
+  if (ar.budget_approval_status === "pending") {
+    document.getElementById("load-error").textContent =
+      'กำลังรอ Level อนุมัติอยู่ — ถ้าบันทึกการแก้ไขนี้ คำขออนุมัติที่ค้างอยู่จะถูกยกเลิกอัตโนมัติ ต้องกด "ส่งขออนุมัติ" ใหม่หลังแก้เสร็จ';
+    document.getElementById("load-error").classList.remove("hidden");
+    document.getElementById("load-error").classList.remove("error");
+    document.getElementById("load-error").classList.add("muted");
   }
   if (ar.revision) {
     document.getElementById("page-title").textContent = `แก้ไข ${ar.ar_no_display} Rev.${ar.revision}`;
@@ -180,14 +262,29 @@ async function loadForEdit() {
   document.getElementById("f-budget-no").value = ar.budget_no || "";
   document.getElementById("f-budget-sub").value = ar.budget_sub_category || "";
   document.getElementById("f-budget-name").value = ar.budget_name || "";
-  document.getElementById("f-budget-year").value = ar.budget_for_year ?? "";
-  document.getElementById("f-used-before").value = ar.amount_used_before ?? "";
-  document.getElementById("f-this-app").value = ar.this_application ?? "";
-  document.getElementById("f-balance").value = ar.balance ?? "";
+  document.getElementById("f-budget-year").value = plainMoney(ar.budget_for_year);
+  document.getElementById("f-used-before").value = plainMoney(ar.amount_used_before);
+  document.getElementById("f-this-app").value = plainMoney(ar.this_application);
+  document.getElementById("f-balance").value = plainMoney(ar.balance);
   document.getElementById("f-description").value = ar.description || "";
-  document.getElementById("f-total").value = ar.total ?? "";
-  document.getElementById("f-vat").value = ar.vat_amount ?? "";
-  document.getElementById("f-grand-total").value = ar.grand_total ?? "";
+  document.getElementById("f-total").value = plainMoney(ar.total);
+  document.getElementById("f-vat").value = plainMoney(ar.vat_amount);
+  document.getElementById("f-grand-total").value = plainMoney(ar.grand_total);
+  // เดา % VAT จากตัวเลขที่บันทึกไว้เดิม (ย้อนกลับมาโหลดแก้ AR เก่า) — ถ้าไม่ตรงกับ
+  // 7/3/0% เป๊ะ ถือว่าเป็น "กรอกเอง" (ไม่ Auto คำนวณทับค่าที่เคยกรอกไว้)
+  const totalNum = toNum(ar.total);
+  const vatNum = toNum(ar.vat_amount);
+  const vatRateSelect = document.getElementById("f-vat-rate");
+  if (totalNum > 0 && Math.abs(vatNum - totalNum * 0.07) < 0.01) {
+    vatRateSelect.value = "7";
+  } else if (totalNum > 0 && Math.abs(vatNum - totalNum * 0.03) < 0.01) {
+    vatRateSelect.value = "3";
+  } else if (vatNum === 0) {
+    vatRateSelect.value = "0";
+  } else {
+    vatRateSelect.value = "custom";
+  }
+  document.getElementById("f-vat").readOnly = vatRateSelect.value !== "custom";
   document.getElementById("f-suppliers").value = ar.suppliers || "";
   document.getElementById("f-term").value = ar.term_of_payment || "";
   setDateFieldIso(document.getElementById("f-schedule-start"), ar.schedule_start || "");
@@ -266,6 +363,7 @@ bindDateFieldsIn(document);
   } else {
     setDateFieldIso(document.getElementById("f-appdate"), new Date().toISOString().slice(0, 10));
     addAmountItemRow();
+    recalcVatAndGrandTotal(); // ตั้งค่าเริ่มต้น VAT 7% + Grand Total/This Application/Balance = 0.00
   }
 
   const checkedType = document.querySelector('input[name="budget-type"]:checked').value;

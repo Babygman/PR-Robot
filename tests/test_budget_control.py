@@ -69,9 +69,14 @@ def _make_level(db_session: Session, **kwargs) -> BudgetApprovalLevel:
     return row
 
 
-def _finalize(client: TestClient, ar_id: int) -> dict:
-    res = client.get(f"/ars/{ar_id}/pdf")
-    assert res.status_code == 200
+def _submit_for_approval(client: TestClient, ar_id: int) -> dict:
+    """Correction 2026-09-10: เดิมพิมพ์/ดาวน์โหลด PDF ครั้งแรกคือจุด Finalize+เริ่ม
+    Workflow (ตั้งชื่อ Helper เดิมว่า _finalize) เปลี่ยนมาเป็น Endpoint แยก
+    submit-for-approval แล้ว — AR อาจยังเป็น Draft อยู่หลังเรียก Helper นี้ก็ได้ถ้า
+    แผนกมี Level ให้รอ (จะ Finalize จริงก็ต่อเมื่อ Level แรกอนุมัติผ่าน หรือแผนกไม่มี
+    Level เลย) ดู Docstring submit_ar_for_approval ใน approval_requests.py"""
+    res = client.post(f"/ars/{ar_id}/submit-for-approval")
+    assert res.status_code == 200, res.text
     return client.get(f"/ars/{ar_id}").json()
 
 
@@ -300,7 +305,7 @@ def test_multi_approver_level_any_one_can_approve(
 
     _login_as(client, plain_user.email, "plainpass123")
     ar_id = client.post("/ars", json=_sample_ar_body()).json()["id"]
-    _finalize(client, ar_id)
+    _submit_for_approval(client, ar_id)
 
     # ก่อนมีใครกด — Progress ต้องโชว์ทั้งคู่เป็นผู้มีสิทธิ์ Level นี้
     progress_before = client.get(f"/ars/{ar_id}/approval-progress").json()
@@ -366,7 +371,7 @@ def test_two_level_then_fa_acknowledge_deducts_budget_once(
     created = client.post("/ars", json=_sample_ar_body()).json()
     ar_id = created["id"]
 
-    ar_after_finalize = _finalize(client, ar_id)
+    ar_after_finalize = _submit_for_approval(client, ar_id)
     assert ar_after_finalize["budget_approval_status"] == "pending"
     assert ar_after_finalize["current_approval_level"] == 1
     assert ar_after_finalize["budget_master_id"] == master.id
@@ -438,7 +443,7 @@ def test_admin_can_override_level_approval(
 
     _login_as(client, plain_user.email, "plainpass123")
     ar_id = client.post("/ars", json=_sample_ar_body()).json()["id"]
-    _finalize(client, ar_id)
+    _submit_for_approval(client, ar_id)
 
     _login_as(client, admin_user.email, "adminpass123")
     res = client.post(f"/ars/{ar_id}/approve-level")
@@ -475,7 +480,7 @@ def test_reject_then_revise_resets_to_level_one(
 
     _login_as(client, plain_user.email, "plainpass123")
     ar_id = client.post("/ars", json=_sample_ar_body()).json()["id"]
-    _finalize(client, ar_id)
+    _submit_for_approval(client, ar_id)
 
     _login_as(client, manager.email)
     client.post(f"/ars/{ar_id}/approve-level")
@@ -494,7 +499,7 @@ def test_reject_then_revise_resets_to_level_one(
 
     # Finalize ฉบับ Revise แล้ว — ต้องเริ่มที่ Level 1 ใหม่ (ไม่ข้ามไป Level 2 เพราะ
     # Level 1 เคยผ่านมาก่อนหน้า Reject)
-    ar_after = _finalize(client, revised_body["id"])
+    ar_after = _submit_for_approval(client, revised_body["id"])
     assert ar_after["budget_approval_status"] == "pending"
     assert ar_after["current_approval_level"] == 1
 
@@ -509,7 +514,7 @@ def test_department_with_no_levels_skips_straight_to_fa(client: TestClient, db_s
 
     _login_as(client, requester.email)
     ar_id = client.post("/ars", json=_sample_ar_body(budget_no="6100-01")).json()["id"]
-    ar_after = _finalize(client, ar_id)
+    ar_after = _submit_for_approval(client, ar_id)
     assert ar_after["budget_approval_status"] == "pending_fa_acknowledge"
     assert ar_after["current_approval_level"] is None
 
@@ -537,7 +542,7 @@ def test_fa_acknowledge_over_budget_blocked_unless_forced(client: TestClient, db
     ar_id = client.post(
         "/ars", json=_sample_ar_body(budget_no="7100-01", this_application="9327.10")
     ).json()["id"]
-    _finalize(client, ar_id)
+    _submit_for_approval(client, ar_id)
 
     _login_as(client, fa.email)
     blocked = client.post(f"/ars/{ar_id}/fa-acknowledge", json={"force": False})
@@ -550,8 +555,14 @@ def test_fa_acknowledge_over_budget_blocked_unless_forced(client: TestClient, db
     assert Decimal(str(body["budget_deducted_amount"])) == Decimal("9327.10")
 
 
-# ───────────────────────── Revise หลัง Approved -> คืนยอดจริง ─────────────────────────
-def test_revise_after_approved_refunds_budget(
+# ───────── Revise ถูกจำกัดเฉพาะ Rejected เท่านั้น (Correction 2026-09-10) ─────────
+# เดิม "Revise เมื่อไหร่ก็ได้หลัง Finalized" (แม้ Approved+หักงบไปแล้วจริง) — ผู้ใช้แจ้ง
+# Business Rule ใหม่ 2026-09-10 ว่า Revise ได้เฉพาะฉบับที่ถูก Reject มาเท่านั้น จึงต้อง
+# บล็อก AR ที่ Approved+FA Acknowledge แล้วไม่ให้ Revise อีกต่อไป (ไม่มี Endpoint ไหน
+# Reject AR ที่ Approved ไปแล้วได้อีก — budget_workflow.refund_on_revise() จึงกลาย
+# เป็น Path ที่ Route Layer ปัจจุบันเรียกไม่ถึงอีกแล้ว แต่ยังเก็บไว้เผื่อมี Endpoint
+# "Reopen" ในอนาคต — ไม่ใช่ Bug ของ Revise Gate ปัจจุบัน)
+def test_revise_blocked_after_approved_and_fa_acknowledged(
     client: TestClient, plain_user: User, db_session: Session
 ):
     fa = _make_user(db_session, name="FA Refund", email="farefund@example.com", is_fa=True)
@@ -559,19 +570,94 @@ def test_revise_after_approved_refunds_budget(
 
     _login_as(client, plain_user.email, "plainpass123")
     ar_id = client.post("/ars", json=_sample_ar_body()).json()["id"]
-    _finalize(client, ar_id)  # ไม่มี Level Setup ให้ Production ในเทสนี้ -> ตรงไป FA เลย
+    _submit_for_approval(client, ar_id)  # ไม่มี Level Setup ให้ Production ในเทสนี้ -> ตรงไป FA เลย
 
     _login_as(client, fa.email)
-    client.post(f"/ars/{ar_id}/fa-acknowledge", json={"force": False})
+    ack = client.post(f"/ars/{ar_id}/fa-acknowledge", json={"force": False})
+    assert ack.status_code == 200
+    assert ack.json()["budget_approval_status"] == "approved"
     db_session.refresh(master)
     assert master.used_amount == Decimal("9327.10")
 
+    # Approved แล้ว (ไม่ใช่ Rejected) -> Revise ต้องถูกบล็อก ยอดงบไม่ถูกคืนเพราะไม่ได้ Revise
     _login_as(client, plain_user.email, "plainpass123")
     revised = client.post(f"/ars/{ar_id}/revise")
-    assert revised.status_code == 201
+    assert revised.status_code == 409
 
     db_session.refresh(master)
-    assert master.used_amount == Decimal("0.00")
+    assert master.used_amount == Decimal("9327.10")  # ยอดยังไม่ถูกคืน
+
+
+# ───────── PATCH ระหว่างรออนุมัติ -> ยกเลิกคำขออัตโนมัติ (Correction 2026-09-10) ─────────
+def test_patch_while_pending_cancels_approval_and_requires_resubmit(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    manager = _make_user(
+        db_session, name="Manager Edit", email="mgredit@example.com", department="Production"
+    )
+    _make_level(
+        db_session,
+        department="Production",
+        level_no=1,
+        level_name="Manager",
+        approver_user_id=manager.id,
+    )
+
+    _login_as(client, plain_user.email, "plainpass123")
+    ar_id = client.post("/ars", json=_sample_ar_body()).json()["id"]
+    submitted = _submit_for_approval(client, ar_id)
+    assert submitted["status"] == "draft"  # มี Level ให้รอ -> ยังไม่ Finalize
+    assert submitted["budget_approval_status"] == "pending"
+
+    # แก้ไขระหว่างรออนุมัติ Level 1 อยู่ -> ต้องแก้ได้ (ยัง Draft) แต่ยกเลิกคำขอที่ค้างอยู่
+    edited = client.patch(f"/ars/{ar_id}", json=_sample_ar_body(subject="แก้ไขยอดแล้ว"))
+    assert edited.status_code == 200, edited.text
+    body = edited.json()
+    assert body["subject"] == "แก้ไขยอดแล้ว"
+    assert body["budget_approval_status"] == "not_submitted"
+    assert body["current_approval_level"] is None
+
+    history = client.get(f"/ars/{ar_id}/history").json()
+    actions = [log["action"] for log in history]
+    assert "ar.approval_cancelled_by_edit" in actions
+
+    # Level 1 เดิมกดอนุมัติไม่ได้อีกแล้วเพราะ current_approval_level ถูกล้างไปแล้ว
+    _login_as(client, manager.email)
+    stale = client.post(f"/ars/{ar_id}/approve-level")
+    assert stale.status_code == 409
+
+    # ต้องกด "ส่งขออนุมัติ" ใหม่ถึงจะเข้าคิว Level 1 อีกครั้ง
+    _login_as(client, plain_user.email, "plainpass123")
+    resubmitted = _submit_for_approval(client, ar_id)
+    assert resubmitted["budget_approval_status"] == "pending"
+    assert resubmitted["current_approval_level"] == 1
+
+
+def test_submit_for_approval_already_pending_rejected(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    manager = _make_user(
+        db_session, name="Manager Dup", email="mgrdup@example.com", department="Production"
+    )
+    _make_level(
+        db_session,
+        department="Production",
+        level_no=1,
+        level_name="Manager",
+        approver_user_id=manager.id,
+    )
+
+    _login_as(client, plain_user.email, "plainpass123")
+    ar_id = client.post("/ars", json=_sample_ar_body()).json()["id"]
+    first = client.post(f"/ars/{ar_id}/submit-for-approval")
+    assert first.status_code == 200
+    assert first.json()["status"] == "draft"  # มี Level ให้รอ -> ยังไม่ Finalize
+
+    # ยังเป็น Draft อยู่ (ไม่โดน Gate สถานะ) แต่ถูก Gate สถานะ Not Submitted แทน เพราะส่ง
+    # ขออนุมัติไปแล้วครั้งนึง (Pending) — กด "ส่งขออนุมัติ" ซ้ำไม่ได้จนกว่าจะจบ Level หรือ
+    # ถูก Reject/แก้ไข (ยกเลิกคำขอ) ก่อน
+    second = client.post(f"/ars/{ar_id}/submit-for-approval")
+    assert second.status_code == 409
 
 
 # ───────────────────────── Excel Upload ─────────────────────────

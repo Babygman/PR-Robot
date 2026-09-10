@@ -1,18 +1,24 @@
-"""บันทึก Approval Request (AR) + Generate PDF + ประวัติ/ค้นหา — Pattern เดียวกับ
+"""บันทึก Approval Request (AR) + Generate PDF + ประวัติ/ค้นหา — เดิม Pattern เดียวกับ
 app/api/routes/purchasing_requisitions.py ทุกประการ (Business Decision 2026-09-08)
+แต่ Flow Finalize/Revise ถูกแก้ใหม่เฉพาะ AR แล้ว (Correction 2026-09-10 — ดูด้านล่าง
+PR ยังคงใช้ Pattern เดิม พิมพ์/ดาวน์โหลดครั้งแรก = Finalize ทันที ไม่ได้แก้)
 
-Requested by = ผู้ใช้ที่ Login ตอนสร้าง AR เสมอ ไม่มี Workflow อนุมัติในระบบเลย
-(ลายเซ็นสดบนกระดาษล้วนๆ ทั้ง 5 ช่อง: President/Director, General Manager, Senior
-Manager, Manager, F&A) ไม่มี AI Autofill (ผู้ใช้กรอกเองทุกช่องตามที่อนุมัติ Design)
+Requested by = ผู้ใช้ที่ Login ตอนสร้าง AR เสมอ
 
-Flow:
+Flow (Correction 2026-09-10 — ผู้ใช้แจ้งว่าพิมพ์/ดาวน์โหลด PDF ต้องไม่มีผลข้างเคียง
+อีกต่อไป แยก "เริ่ม Workflow อนุมัติ" ออกจาก "พิมพ์ดูเอกสาร" เป็นคนละ Action กัน):
 1. POST /ars -> สร้าง AR ใหม่ (Status = draft)
 2. GET /ars (รองรับค้นหา/กรอง), GET /ars/{id} -> ดูรายการ/รายละเอียด AR
-3. PATCH /ars/{id} -> แก้ไขได้เฉพาะตอน Status = draft เท่านั้น
-4. POST /ars/{id}/revise -> Revise AR ที่ Finalized แล้ว (คัดลอกข้อมูลเป็นฉบับ Draft ใหม่)
-5. GET /ars/{id}/pdf -> Generate PDF ตาม Template จริงของฟอร์ม Approval Request —
-   เปลี่ยน Status เป็น finalized อัตโนมัติถ้ายังเป็น draft (ล็อกแก้ไขไม่ได้อีกหลังจากนี้)
-6. GET /ars/{id}/history -> ประวัติการกระทำทั้งหมดของ AR นี้จาก audit_log
+3. PATCH /ars/{id} -> แก้ไขได้เฉพาะตอน Status = draft และไม่ได้ถูก Reject มา — ถ้ากำลัง
+   รอ Level อนุมัติอยู่ (pending) การแก้ไขจะยกเลิกคำขออนุมัติที่ค้างอยู่อัตโนมัติ
+4. POST /ars/{id}/submit-for-approval -> เริ่ม Workflow อนุมัติหักงบ (Resolve Level 1)
+   AR ยังเป็น Draft แก้ไขได้อยู่ — จะ Finalized (ล็อก) ก็ต่อเมื่อ Level แรกอนุมัติผ่าน
+   จริง (ดู budget_workflow.approve_level) ยกเว้นแผนกไม่มี Level เลยจะ Finalized ทันที
+5. GET /ars/{id}/pdf -> Generate PDF อย่างเดียว ไม่มีผลข้างเคียงใดๆ พิมพ์ดูกี่ครั้งก็ได้
+6. POST /ars/{id}/revise -> Revise ได้เฉพาะ AR ที่ถูกปฏิเสธ (budget_approval_status ==
+   rejected) แล้วเท่านั้น ไม่เกี่ยวกับว่า Finalized ไปแล้วหรือยัง (คัดลอกข้อมูลเป็นฉบับ
+   Draft ใหม่)
+7. GET /ars/{id}/history -> ประวัติการกระทำทั้งหมดของ AR นี้จาก audit_log
 """
 
 from __future__ import annotations
@@ -28,6 +34,7 @@ from app.db.session import get_db
 from app.models import (
     ApprovalRequest,
     ARAmountItem,
+    ARBudgetApprovalStatus,
     ARStatus,
     AuditLog,
     User,
@@ -198,15 +205,38 @@ def update_ar(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ARRead:
+    """แก้ไข AR — Correction 2026-09-10: พิมพ์/ดาวน์โหลด PDF ไม่ Lock อีกต่อไป (ดู
+    get_ar_pdf) เอกสารจึงแก้ได้ตราบใดที่ยังเป็น Draft และไม่ได้ถูก Reject มา (Reject
+    แล้วต้องผ่าน Revise เท่านั้น — ดู revise_ar) ถ้ากำลังรอ Level อนุมัติอยู่ตอนแก้
+    (budget_approval_status == pending) ถือว่ายกเลิกคำขออนุมัติที่ค้างอยู่โดยอัตโนมัติ
+    กัน Level เห็นข้อมูลเก่าที่ถูกแก้ไปแล้วโดยไม่รู้ตัว — ต้องกด "ส่งขออนุมัติ" ใหม่"""
     ar = _get_ar_or_404(db, ar_id)
     if ar.status != ARStatus.DRAFT:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "แก้ไขได้เฉพาะ Approval Request ที่ยังเป็นสถานะ Draft เท่านั้น (Finalized แล้วแก้ไม่ได้)",
         )
+    if ar.budget_approval_status == ARBudgetApprovalStatus.REJECTED:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            'Approval Request นี้ถูกปฏิเสธไปแล้ว แก้ไขตรงๆ ไม่ได้ — กรุณาใช้ปุ่ม "สร้าง Revision" แทน',
+        )
+
+    approval_cancelled = ar.budget_approval_status == ARBudgetApprovalStatus.PENDING
+    if approval_cancelled:
+        budget_workflow.reset_for_new_draft(ar)
 
     _apply_items(ar, body)
     db.add(AuditLog(ar_id=ar.id, action="ar.updated", actor_id=current_user.id, detail=None))
+    if approval_cancelled:
+        db.add(
+            AuditLog(
+                ar_id=ar.id,
+                action="ar.approval_cancelled_by_edit",
+                actor_id=current_user.id,
+                detail={"reason": "แก้ไข AR ระหว่างรอ Level อนุมัติ — ยกเลิกคำขออนุมัติที่ค้างอยู่อัตโนมัติ"},
+            )
+        )
     db.commit()
     db.refresh(ar)
     return _to_ar_read(db, ar)
@@ -218,12 +248,14 @@ def revise_ar(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ARRead:
-    """สร้าง AR ใหม่สถานะ Draft คัดลอกข้อมูลจาก AR ต้นฉบับที่ Finalized แล้ว — Pattern
-    เดียวกับ revise_pr ใน purchasing_requisitions.py ทุกประการ"""
+    """สร้าง AR ใหม่สถานะ Draft คัดลอกข้อมูลจาก AR ต้นฉบับ — Correction 2026-09-10: เดิม
+    Gate ด้วย status == Finalized (พิมพ์แล้ว) เปลี่ยนเป็น Gate ด้วย budget_approval_status
+    == Rejected แทน (ตาม Business Rule ใหม่: Revise ได้ก็ต่อเมื่อถูก Level ใดก็ได้ Reject
+    มาเท่านั้น ไม่เกี่ยวกับว่าพิมพ์/ดาวน์โหลด PDF ไปแล้วหรือยัง — ดู update_ar/get_ar_pdf)"""
     original = _get_ar_or_404(db, ar_id)
-    if original.status != ARStatus.FINALIZED:
+    if original.budget_approval_status != ARBudgetApprovalStatus.REJECTED:
         raise HTTPException(
-            status.HTTP_409_CONFLICT, "Revise ได้เฉพาะ Approval Request ที่ Finalized แล้วเท่านั้น"
+            status.HTTP_409_CONFLICT, "Revise ได้เฉพาะ Approval Request ที่ถูกปฏิเสธ (Rejected) แล้วเท่านั้น"
         )
 
     already_superseded = (
@@ -305,32 +337,68 @@ def revise_ar(
     return _to_ar_read(db, new_ar)
 
 
-@router.get("/{ar_id}/pdf")
-def get_ar_pdf(
+@router.post("/{ar_id}/submit-for-approval", response_model=ARRead)
+def submit_ar_for_approval(
     ar_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> Response:
+) -> ARRead:
+    """Correction 2026-09-10: จุดเริ่ม Workflow อนุมัติหักงบ — เดิมผูกกับการพิมพ์/
+    ดาวน์โหลด PDF ครั้งแรก (ดู get_ar_pdf เดิม) ผู้ใช้แจ้งว่าพิมพ์/ดาวน์โหลดต้องไม่มีผล
+    ข้างเคียงอีกต่อไป (พิมพ์ดูกี่ครั้งก็ได้ตราบใดที่ยังไม่ Finalized) จึงแยก Endpoint
+    ใหม่นี้ออกมาเป็นจุดเริ่ม Workflow แทน — AR ยังเป็น Draft แก้ไขได้อยู่หลังกดปุ่มนี้
+    (ดู update_ar สำหรับ Logic ยกเลิกคำขออนุมัติอัตโนมัติถ้าแก้ระหว่างรออยู่) จะ
+    Finalized (ล็อกแก้ไข) ก็ต่อเมื่อ Level แรกอนุมัติผ่านจริง (ดู budget_workflow.
+    approve_level) — ยกเว้นแผนกยังไม่ได้ตั้ง Level อนุมัติเลยสักคน (ข้ามตรงไป FA
+    Acknowledge ทันที) กรณีนี้ไม่มี Level ให้รอจึง Finalized ทันทีตอนกดปุ่มนี้เลย"""
     ar = _get_ar_or_404(db, ar_id)
-    pdf_bytes = render_ar_pdf(db, ar)
+    if ar.status != ARStatus.DRAFT:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Approval Request นี้ Finalized ไปแล้ว")
+    if ar.budget_approval_status != ARBudgetApprovalStatus.NOT_SUBMITTED:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Approval Request นี้ถูกส่งขออนุมัติไปแล้ว")
 
-    # เหมือน PR: กดพิมพ์/ดาวน์โหลด PDF ครั้งแรกคือจุดที่ล็อก AR ไม่ให้แก้ไขได้อีก —
-    # Generate สำเร็จก่อนค่อย Finalize เพื่อไม่ให้ AR ถูกล็อกถ้า Render PDF พังกลางทาง
-    if ar.status == ARStatus.DRAFT:
+    requester = db.get(User, ar.requested_by_id)
+    budget_workflow.start_budget_workflow(db, ar, requester)
+
+    detail = {"trigger": "submit_for_approval"}
+    if ar.budget_approval_status == ARBudgetApprovalStatus.PENDING_FA_ACKNOWLEDGE:
+        # แผนกนี้ไม่มี Level อนุมัติเลย (ข้ามตรงไป FA Acknowledge) — ไม่มี Level 1 ให้รอ
+        # จึง Finalize ทันที (ดู Docstring บนสุดของฟังก์ชันนี้)
         ar.status = ARStatus.FINALIZED
-        # Budget Control (2026-09-09): จุดเริ่ม Workflow อนุมัติหักงบ — Resolve Level
-        # แรกของแผนกผู้สร้าง (Snapshot budget_department) + Budget Master ที่อ้างอิง
-        requester = db.get(User, ar.requested_by_id)
-        budget_workflow.start_budget_workflow(db, ar, requester)
+        detail["auto_finalized"] = "no_levels_configured"
+
+    db.add(
+        AuditLog(
+            ar_id=ar.id, action="ar.submitted_for_approval", actor_id=current_user.id, detail=detail
+        )
+    )
+    if ar.status == ARStatus.FINALIZED:
+        # Log แยก "ar.finalized" ไว้ให้เห็นชัดในประวัติเหมือน Path ที่ Finalize ผ่านการ
+        # อนุมัติ Level (ดู approve_ar_level) — Consistency ของ Audit Trail ทั้ง 2 ทาง
         db.add(
             AuditLog(
                 ar_id=ar.id,
                 action="ar.finalized",
                 actor_id=current_user.id,
-                detail={"trigger": "pdf_download"},
+                detail={"trigger": "submit_for_approval", "reason": "no_levels_configured"},
             )
         )
-        db.commit()
+    db.commit()
+    db.refresh(ar)
+    return _to_ar_read(db, ar)
+
+
+@router.get("/{ar_id}/pdf")
+def get_ar_pdf(
+    ar_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> Response:
+    """Correction 2026-09-10: พิมพ์/ดาวน์โหลด PDF ไม่มีผลข้างเคียงต่อ AR อีกต่อไป (เดิม
+    Finalize + เริ่ม Workflow ให้อัตโนมัติตอนพิมพ์ครั้งแรก — ย้ายไป submit_ar_for_approval
+    แทนแล้ว) พิมพ์ดูกี่ครั้งก็ได้ไม่ว่าจะสถานะไหน"""
+    ar = _get_ar_or_404(db, ar_id)
+    pdf_bytes = render_ar_pdf(db, ar)
 
     rev_suffix = f"-Rev{ar.revision}" if ar.revision else ""
     return Response(
@@ -359,6 +427,7 @@ def approve_ar_level(
 ) -> ARRead:
     ar = _get_ar_or_404(db, ar_id)
     level_before = ar.current_approval_level
+    was_draft = ar.status == ARStatus.DRAFT
     budget_workflow.approve_level(db, ar, current_user)
     db.add(
         AuditLog(
@@ -368,6 +437,17 @@ def approve_ar_level(
             detail={"level_no": level_before},
         )
     )
+    if was_draft and ar.status == ARStatus.FINALIZED:
+        # Correction 2026-09-10: Level แรกอนุมัติผ่าน = จุด Finalize (ดู
+        # budget_workflow.approve_level) — Log แยกไว้ให้เห็นชัดในประวัติเหมือนเดิม
+        db.add(
+            AuditLog(
+                ar_id=ar.id,
+                action="ar.finalized",
+                actor_id=current_user.id,
+                detail={"trigger": "level_approved", "level_no": level_before},
+            )
+        )
     db.commit()
     db.refresh(ar)
     return _to_ar_read(db, ar)

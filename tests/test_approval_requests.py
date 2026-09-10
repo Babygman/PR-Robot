@@ -1,5 +1,16 @@
 """Test บันทึก Approval Request (AR) + Generate PDF — Pattern เดียวกับ
-tests/test_purchasing_requisitions.py ทุกประการ (Business Decision 2026-09-08)
+tests/test_purchasing_requisitions.py เกือบทุกประการ (Business Decision 2026-09-08)
+ยกเว้น Flow Finalize/Revise ที่ถูกแก้ใหม่เฉพาะ AR แล้ว (Correction 2026-09-10 — ดู
+Docstring บนสุดของ app/api/routes/approval_requests.py): พิมพ์/ดาวน์โหลด PDF ไม่มีผล
+ข้างเคียงอีกต่อไป, มี Endpoint ใหม่ POST /ars/{id}/submit-for-approval เป็นจุดเริ่ม
+Workflow อนุมัติหักงบ, Revise ได้เฉพาะฉบับที่ถูก Reject มาเท่านั้น
+
+Test ในไฟล์นี้ทั้งหมดใช้ plain_user (Department "Production") ที่ไม่มีการตั้ง
+BudgetApprovalLevel ไว้เลยในแต่ละ Test (DB In-memory ใหม่ทุก Test) จึง
+submit-for-approval จะ Finalize ทันที (ข้ามตรงไป FA Acknowledge — ไม่มี Level ให้รอ)
+เสมอในไฟล์นี้ — Test ที่ต้องมี Level หลายขั้นจริง (Pending รอ Level, PATCH ยกเลิก
+คำขออนุมัติอัตโนมัติ ฯลฯ) อยู่ใน tests/test_budget_control.py แทน (มี Helper ตั้ง
+Level ให้พร้อมอยู่แล้ว)
 """
 from __future__ import annotations
 
@@ -12,6 +23,11 @@ from app.services.ar_pdf import render_ar_html
 
 def _login(client: TestClient) -> None:
     client.post("/auth/login", json={"email": "plain@example.com", "password": "plainpass123"})
+
+
+def _login_as(client: TestClient, email: str, password: str) -> None:
+    res = client.post("/auth/login", json={"email": email, "password": password})
+    assert res.status_code == 200, res.text
 
 
 def _sample_ar_body(**overrides) -> dict:
@@ -130,9 +146,11 @@ def test_get_ar_pdf_returns_valid_pdf(client: TestClient, plain_user: User):
     assert len(res.content) > 1000
 
 
-def test_get_ar_pdf_auto_finalizes_on_first_download(
+def test_get_ar_pdf_has_no_side_effects(
     client: TestClient, plain_user: User, db_session: Session
 ):
+    """Correction 2026-09-10: พิมพ์/ดาวน์โหลด PDF ไม่ Finalize อีกต่อไป — พิมพ์ดูกี่ครั้ง
+    ก็ได้ตราบใดที่ยังไม่กด "ส่งขออนุมัติ" (ดู test_submit_for_approval_* ด้านล่าง)"""
     _login(client)
     created = client.post("/ars", json=_sample_ar_body()).json()
 
@@ -143,22 +161,105 @@ def test_get_ar_pdf_auto_finalizes_on_first_download(
     assert res.status_code == 200
 
     db_session.refresh(ar)
-    assert ar.status == ARStatus.FINALIZED
+    assert ar.status == ARStatus.DRAFT  # ยังไม่ Finalize แค่เพราะพิมพ์
 
     res2 = client.get(f"/ars/{created['id']}/pdf")
     assert res2.status_code == 200
+
+    db_session.refresh(ar)
+    assert ar.status == ARStatus.DRAFT  # พิมพ์ซ้ำกี่ครั้งก็ยังไม่ Finalize
+
+    # ยังแก้ไขได้ตามปกติเพราะยังเป็น Draft อยู่
+    edited = client.patch(f"/ars/{created['id']}", json=_sample_ar_body(subject="แก้ได้"))
+    assert edited.status_code == 200
+
+
+# ── Submit for Approval (Correction 2026-09-10) ──────────────────────────
+
+
+def test_submit_for_approval_requires_login(client: TestClient):
+    res = client.post("/ars/1/submit-for-approval")
+    assert res.status_code == 401
+
+
+def test_submit_for_approval_not_found(client: TestClient, plain_user: User):
+    _login(client)
+    res = client.post("/ars/9999/submit-for-approval")
+    assert res.status_code == 404
+
+
+def test_submit_for_approval_auto_finalizes_when_no_levels_configured(
+    client: TestClient, plain_user: User
+):
+    """Department "Production" ไม่มีการตั้ง BudgetApprovalLevel เลยในไฟล์นี้ — ไม่มี
+    Level ให้รอจึง Finalize ทันทีตอนกด "ส่งขออนุมัติ" (ข้ามตรงไป FA Acknowledge)"""
+    _login(client)
+    created = client.post("/ars", json=_sample_ar_body()).json()
+
+    res = client.post(f"/ars/{created['id']}/submit-for-approval")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["status"] == "finalized"
+    assert body["budget_approval_status"] == "pending_fa_acknowledge"
+
+    history = client.get(f"/ars/{created['id']}/history").json()
+    actions = [log["action"] for log in history]
+    assert "ar.submitted_for_approval" in actions
+    assert "ar.finalized" in actions
+
+
+def test_submit_for_approval_twice_rejected(client: TestClient, plain_user: User):
+    _login(client)
+    created = client.post("/ars", json=_sample_ar_body()).json()
+    first = client.post(f"/ars/{created['id']}/submit-for-approval")
+    assert first.status_code == 200
+
+    # ครั้งที่ 2: Finalized ไปแล้วตั้งแต่ครั้งแรก (ไม่มี Level) จึงโดน Gate สถานะ Draft
+    second = client.post(f"/ars/{created['id']}/submit-for-approval")
+    assert second.status_code == 409
 
 
 def test_finalized_ar_rejects_edit(client: TestClient, plain_user: User):
     _login(client)
     created = client.post("/ars", json=_sample_ar_body()).json()
-    client.get(f"/ars/{created['id']}/pdf")
+    client.post(f"/ars/{created['id']}/submit-for-approval")
 
     res = client.patch(f"/ars/{created['id']}", json=_sample_ar_body(subject="แก้ไม่ได้แล้ว"))
     assert res.status_code == 409
 
 
-# ── Revise (Pattern เดียวกับ PR) ──────────────────────────────────────────
+def test_update_ar_after_reject_requires_revise(
+    client: TestClient, plain_user: User, admin_user: User
+):
+    """Correction 2026-09-10: AR ที่ถูก Reject ไปแล้วแก้ตรงๆ ผ่าน PATCH ไม่ได้อีกต่อไป
+    ต้องใช้ปุ่ม "สร้าง Revision" แทนเท่านั้น"""
+    _login(client)
+    created = client.post("/ars", json=_sample_ar_body()).json()
+    client.post(f"/ars/{created['id']}/submit-for-approval")  # -> pending_fa_acknowledge
+
+    _login_as(client, admin_user.email, "adminpass123")  # Admin Override ได้ทุก Level รวม FA
+    rejected = client.post(f"/ars/{created['id']}/reject-fa", json={"reason": "ข้อมูลไม่ครบ"})
+    assert rejected.status_code == 200
+    assert rejected.json()["budget_approval_status"] == "rejected"
+
+    res = client.patch(f"/ars/{created['id']}", json=_sample_ar_body(subject="แก้ตรงๆ ไม่ได้"))
+    assert res.status_code == 409
+
+
+# ── Revise — Correction 2026-09-10: Gate ด้วย budget_approval_status == rejected
+# เท่านั้น (ไม่เกี่ยวกับ status Finalized เหมือนเดิม/เหมือน PR อีกต่อไป) ────────────
+
+
+def _reject_via_fa(client: TestClient, admin_user: User, ar_id: int) -> dict:
+    """Helper: Submit-for-approval (Production ไม่มี Level -> Finalize+PENDING_FA_ACK
+    ทันที) แล้ว Reject ที่ขั้น FA Acknowledge ด้วย Admin Override — ทางลัดที่สุดในไฟล์
+    นี้เพื่อให้ AR เข้าสถานะ Rejected (เงื่อนไขเดียวที่ Revise ได้ตาม Correction นี้)"""
+    client.post(f"/ars/{ar_id}/submit-for-approval")
+    _login_as(client, admin_user.email, "adminpass123")
+    res = client.post(f"/ars/{ar_id}/reject-fa", json={"reason": "ทดสอบ Reject"})
+    assert res.status_code == 200, res.text
+    assert res.json()["budget_approval_status"] == "rejected"
+    return res.json()
 
 
 def test_revise_draft_ar_rejected(client: TestClient, plain_user: User):
@@ -169,11 +270,14 @@ def test_revise_draft_ar_rejected(client: TestClient, plain_user: User):
     assert res.status_code == 409
 
 
-def test_revise_finalized_ar_creates_draft_copy(client: TestClient, plain_user: User):
+def test_revise_rejected_ar_creates_draft_copy(
+    client: TestClient, plain_user: User, admin_user: User
+):
     _login(client)
     original = client.post("/ars", json=_sample_ar_body()).json()
-    client.get(f"/ars/{original['id']}/pdf")
+    _reject_via_fa(client, admin_user, original["id"])
 
+    _login(client)  # กลับมาเป็นผู้สร้าง AR เพื่อกด Revise
     res = client.post(f"/ars/{original['id']}/revise")
     assert res.status_code == 201
     revised = res.json()
@@ -183,19 +287,62 @@ def test_revise_finalized_ar_creates_draft_copy(client: TestClient, plain_user: 
     assert revised["revision"] == 1
     assert revised["revised_from_id"] == original["id"]
     assert revised["status"] == "draft"
+    assert revised["budget_approval_status"] == "not_submitted"
     assert revised["requested_by_id"] == original["requested_by_id"]
     assert revised["subject"] == original["subject"]
     assert revised["amount_items"][0]["label"] == original["amount_items"][0]["label"]
 
     orig_after = client.get(f"/ars/{original['id']}").json()
-    assert orig_after["status"] == "finalized"
+    assert orig_after["status"] == "finalized"  # ต้นฉบับยัง Finalized เหมือนเดิม ไม่ถูกแตะ
+    assert orig_after["budget_approval_status"] == "rejected"
     assert orig_after["superseded_by_id"] == revised["id"]
 
 
-def test_revise_already_superseded_ar_rejected(client: TestClient, plain_user: User):
+def test_revise_rejected_while_still_draft_creates_draft_copy(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    """เคสที่ Level ปฏิเสธก่อนมี Level ไหนอนุมัติผ่านเลยสักครั้ง — ar.status ยังเป็น
+    Draft อยู่ (ไม่เคย Finalize ตาม budget_workflow.approve_level) แต่
+    budget_approval_status กลาย เป็น rejected แล้ว — Revise ต้องยังใช้ได้เพราะ Gate
+    เช็คแค่ budget_approval_status เท่านั้น ไม่เกี่ยวกับ ar.status"""
+    from tests.test_budget_control import _make_level, _make_user
+
+    manager = _make_user(
+        db_session, name="Reject Mgr", email="rejectmgr@example.com", department="Production"
+    )
+    _make_level(
+        db_session,
+        department="Production",
+        level_no=1,
+        level_name="Manager",
+        approver_user_id=manager.id,
+    )
+
+    _login(client)
+    created = client.post("/ars", json=_sample_ar_body()).json()
+    submitted = client.post(f"/ars/{created['id']}/submit-for-approval").json()
+    assert submitted["status"] == "draft"  # มี Level ให้รอ -> ยังไม่ Finalize
+    assert submitted["budget_approval_status"] == "pending"
+
+    _login_as(client, manager.email, "password123456")
+    rejected = client.post(f"/ars/{created['id']}/reject-level", json={"reason": "ไม่อนุมัติ"})
+    assert rejected.status_code == 200
+    assert rejected.json()["status"] == "draft"  # ยัง Draft อยู่ ไม่เคย Finalize เลย
+    assert rejected.json()["budget_approval_status"] == "rejected"
+
+    _login(client)
+    res = client.post(f"/ars/{created['id']}/revise")
+    assert res.status_code == 201
+    assert res.json()["status"] == "draft"
+
+
+def test_revise_already_superseded_ar_rejected(
+    client: TestClient, plain_user: User, admin_user: User
+):
     _login(client)
     original = client.post("/ars", json=_sample_ar_body()).json()
-    client.get(f"/ars/{original['id']}/pdf")
+    _reject_via_fa(client, admin_user, original["id"])
+    _login(client)
     client.post(f"/ars/{original['id']}/revise")
 
     res = client.post(f"/ars/{original['id']}/revise")
@@ -216,21 +363,23 @@ def test_revise_requires_login(client: TestClient):
 def test_ar_history_records_lifecycle(client: TestClient, plain_user: User):
     _login(client)
     created = client.post("/ars", json=_sample_ar_body()).json()
-    client.get(f"/ars/{created['id']}/pdf")
+    client.post(f"/ars/{created['id']}/submit-for-approval")
 
     res = client.get(f"/ars/{created['id']}/history")
     assert res.status_code == 200
     actions = [log["action"] for log in res.json()]
     assert "ar.created" in actions
+    assert "ar.submitted_for_approval" in actions
     assert "ar.finalized" in actions
 
 
 def test_revised_ar_html_renders_rev_suffix(
-    client: TestClient, plain_user: User, db_session: Session
+    client: TestClient, plain_user: User, admin_user: User, db_session: Session
 ):
     _login(client)
     original = client.post("/ars", json=_sample_ar_body()).json()
-    client.get(f"/ars/{original['id']}/pdf")
+    _reject_via_fa(client, admin_user, original["id"])
+    _login(client)
     revised = client.post(f"/ars/{original['id']}/revise").json()
 
     orig_ar = db_session.get(ApprovalRequest, original["id"])

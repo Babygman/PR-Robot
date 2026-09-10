@@ -19,6 +19,12 @@
   <p class="muted hidden" id="finalized-note">
     Approval Request นี้สรุปแล้ว (Finalized) — พิมพ์เอกสารนี้เพื่อขอลายเซ็นอนุมัติสด (President/Director, General Manager, Senior Manager, Manager, F&amp;A) นอกระบบ
   </p>
+  <p class="muted hidden" id="pending-approval-note">
+    กำลังรอ Level อนุมัติอยู่ — ยังแก้ไขได้ แต่ถ้าแก้ไข คำขออนุมัติที่ค้างอยู่จะถูกยกเลิกอัตโนมัติ ต้องกด "ส่งขออนุมัติ" ใหม่
+  </p>
+  <p class="error hidden" id="rejected-note">
+    Approval Request นี้ถูกปฏิเสธไปแล้ว — แก้ไขตรงๆ ไม่ได้ กรุณากด "สร้าง Revision" เพื่อแก้ไขและส่งขออนุมัติใหม่
+  </p>
   <p class="muted hidden" id="revised-from-note">
     แก้ไขมาจาก <a id="revised-from-link" href="#">Approval Request ฉบับก่อนหน้า</a>
   </p>
@@ -63,13 +69,6 @@
         </table>
       </div>
 
-      <div class="card hidden" id="approval-card">
-        <h2>สถานะการอนุมัติ Budget <span id="budget-status-badge"></span></h2>
-        <ul class="history-list" id="approval-steps"></ul>
-        <div class="error hidden" id="approval-action-error"></div>
-        <div class="actions" id="approval-actions"></div>
-      </div>
-
       <div class="card">
         <h2>Suppliers / เงื่อนไข</h2>
         <table>
@@ -88,13 +87,22 @@
         <div class="actions" style="flex-direction: column;">
           <a class="btn secondary" id="pdf-link" href="#" target="_blank">พิมพ์ / ดาวน์โหลด PDF</a>
           <a class="btn secondary hidden" id="edit-link" href="#">แก้ไข Approval Request</a>
+          <button type="button" class="hidden" id="submit-approval-btn">ส่งขออนุมัติ</button>
           <button type="button" class="secondary hidden" id="revise-btn">สร้าง Revision</button>
         </div>
+        <div class="error hidden" id="submit-approval-error"></div>
       </div>
 
       <div class="card">
         <h2>ประวัติ</h2>
         <ul class="history-list" id="history-list"></ul>
+      </div>
+
+      <div class="card hidden" id="approval-card">
+        <h2>สถานะการอนุมัติ Budget <span id="budget-status-badge"></span></h2>
+        <ul class="history-list" id="approval-steps"></ul>
+        <div class="error hidden" id="approval-action-error"></div>
+        <div class="actions" id="approval-actions"></div>
       </div>
     </div>
   </div>
@@ -270,19 +278,45 @@ async function loadDetail() {
       ? `${scheduleStart} - ${scheduleFinish}`
       : scheduleStart || scheduleFinish || "-";
 
-  if (ar.status === "draft") {
+  // Correction 2026-09-10: loadDetail() เรียกซ้ำได้แล้วหลัง "ส่งขออนุมัติ" (ไม่ต้อง
+  // Reload หน้าเหมือนปุ่มอื่นเดิม) — ต้องซ่อนกลับทุกอันก่อน แล้วค่อยเปิดตามสถานะจริง
+  // ล่าสุด ไม่งั้นสถานะเก่าจากรอบก่อนหน้าจะค้างโชว์
+  [
+    "edit-link",
+    "submit-approval-btn",
+    "pending-approval-note",
+    "finalized-note",
+    "superseded-note",
+    "rejected-note",
+    "revise-btn",
+  ].forEach((id) => document.getElementById(id).classList.add("hidden"));
+
+  // Finalize ผูกกับ Level แรกอนุมัติผ่านแล้ว ไม่ใช่พิมพ์/
+  // (ไม่ใช่ status == finalized) เพราะโดน Reject ได้ทั้งตอนยังเป็น Draft (Reject ก่อน
+  // Level แรกอนุมัติ) หรือตอน Finalized แล้ว (Reject จาก Level หลังจากนั้น/FA) ก็ได้
+  const isRejected = ar.budget_approval_status === "rejected";
+  const isSuperseded = !!ar.superseded_by_id;
+
+  if (ar.status === "draft" && !isRejected) {
     document.getElementById("edit-link").href = `/app/ars/${AR_ID}/edit`;
     document.getElementById("edit-link").classList.remove("hidden");
-  } else {
-    document.getElementById("finalized-note").classList.remove("hidden");
-    if (ar.superseded_by_id) {
-      const link = document.getElementById("superseded-link");
-      link.href = `/app/ars/${ar.superseded_by_id}`;
-      link.textContent = `AR #${ar.superseded_by_id}`;
-      document.getElementById("superseded-note").classList.remove("hidden");
-    } else {
-      document.getElementById("revise-btn").classList.remove("hidden");
+    if (ar.budget_approval_status === "not_submitted") {
+      document.getElementById("submit-approval-btn").classList.remove("hidden");
+    } else if (ar.budget_approval_status === "pending") {
+      document.getElementById("pending-approval-note").classList.remove("hidden");
     }
+  }
+  if (ar.status === "finalized") {
+    document.getElementById("finalized-note").classList.remove("hidden");
+  }
+  if (isSuperseded) {
+    const link = document.getElementById("superseded-link");
+    link.href = `/app/ars/${ar.superseded_by_id}`;
+    link.textContent = `AR #${ar.superseded_by_id}`;
+    document.getElementById("superseded-note").classList.remove("hidden");
+  } else if (isRejected) {
+    document.getElementById("rejected-note").classList.remove("hidden");
+    document.getElementById("revise-btn").classList.remove("hidden");
   }
 
   if (ar.revised_from_id) {
@@ -310,8 +344,23 @@ async function loadHistory() {
     .join("");
 }
 
-document.getElementById("pdf-link").addEventListener("click", () => {
-  setTimeout(() => window.location.reload(), 1500);
+// Correction 2026-09-10: พิมพ์/ดาวน์โหลด PDF ไม่มีผลข้างเคียงต่อ AR อีกต่อไป (เปิดอ่าน
+// อย่างเดียวในแท็บใหม่) จึงไม่ต้อง Reload หน้านี้หลังคลิกเหมือนเดิมอีกแล้ว
+
+document.getElementById("submit-approval-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("submit-approval-btn");
+  const errEl = document.getElementById("submit-approval-error");
+  errEl.classList.add("hidden");
+  btn.disabled = true;
+  const res = await apiFetch(`/ars/${AR_ID}/submit-for-approval`, { method: "POST" });
+  btn.disabled = false;
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    errEl.textContent = body.detail || "ส่งขออนุมัติไม่สำเร็จ";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  await loadDetail();
 });
 
 document.getElementById("revise-btn").addEventListener("click", async () => {

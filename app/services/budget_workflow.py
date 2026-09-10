@@ -29,6 +29,7 @@ from app.models import (
     ApprovalRequest,
     ARBudgetApproval,
     ARBudgetApprovalStatus,
+    ARStatus,
     BudgetApprovalAction,
     BudgetApprovalLevel,
     BudgetApprovalStepType,
@@ -170,6 +171,10 @@ def _check_fa_actor(actor: User) -> _ActorCheck:
 
 # ───────────────────────── Level ปกติ ─────────────────────────
 def approve_level(db: Session, ar: ApprovalRequest, actor: User) -> ApprovalRequest:
+    """Correction 2026-09-10: การอนุมัติ Level ครั้งแรกของ AR ใบนี้ (ไม่ว่าจะเป็น Level
+    เลขอะไร) คือจุดที่ทำให้ AR เปลี่ยนจาก Draft -> Finalized (ล็อกแก้ไขไม่ได้อีก) — เดิม
+    Lock ผูกกับการพิมพ์/ดาวน์โหลด PDF ครั้งแรก ย้ายมาผูกกับจุดนี้แทนตามคำขอ (ดู
+    app/api/routes/approval_requests.py: submit_ar_for_approval/update_ar/get_ar_pdf)"""
     if ar.budget_approval_status != ARBudgetApprovalStatus.PENDING:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "Approval Request นี้ไม่ได้อยู่ในสถานะรอ Level อนุมัติ"
@@ -178,6 +183,9 @@ def approve_level(db: Session, ar: ApprovalRequest, actor: User) -> ApprovalRequ
     group = _current_level_group(db, ar)
     check = _check_level_actor(group, actor)
     level = group[0]  # ทุกแถวในกลุ่มเดียวกันมี level_no/level_name ตรงกันเสมอ (บังคับ Sync ที่ Route Layer)
+
+    if ar.status == ARStatus.DRAFT:
+        ar.status = ARStatus.FINALIZED
 
     db.add(
         ARBudgetApproval(
