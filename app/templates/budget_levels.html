@@ -23,6 +23,10 @@
         <option value="">-- เลือกแผนก --</option>
       </select>
     </div>
+    <div class="field hidden" id="new-dept-field">
+      <label for="new-dept-input">ชื่อแผนกใหม่</label>
+      <input type="text" id="new-dept-input" placeholder="พิมพ์ชื่อแผนกใหม่ แล้วกด Enter">
+    </div>
   </div>
 </div>
 
@@ -113,7 +117,13 @@ async function loadDeptList() {
   const prev = currentDept || sel.value;
   sel.innerHTML =
     '<option value="">-- เลือกแผนก --</option>' +
-    depts.map((d) => `<option value="${escapeHtml(d)}" ${d === prev ? "selected" : ""}>${escapeHtml(d)}</option>`).join("");
+    depts.map((d) => `<option value="${escapeHtml(d)}" ${d === prev ? "selected" : ""}>${escapeHtml(d)}</option>`).join("") +
+    '<option value="__new__">+ เพิ่มแผนกใหม่</option>';
+  // แผนกที่เพิ่งพิมพ์ใหม่ (ยังไม่มีใน DB เลย) จะไม่อยู่ใน depts จนกว่าจะมี Level แรก
+  // ถูกสร้างจริง — พอปรากฏใน depts แล้ว (กลายเป็นแผนกจริง) ให้ซ่อนช่องพิมพ์กลับ
+  if (depts.includes(prev)) {
+    document.getElementById("new-dept-field").classList.add("hidden");
+  }
 }
 
 function wireApproverRow(row, department, levelNo, group) {
@@ -224,9 +234,34 @@ async function loadLevels(department) {
 }
 
 document.getElementById("dept-select").addEventListener("change", (e) => {
-  currentDept = e.target.value.trim();
+  const val = e.target.value;
+  const newField = document.getElementById("new-dept-field");
+  if (val === "__new__") {
+    newField.classList.remove("hidden");
+    const input = document.getElementById("new-dept-input");
+    input.value = "";
+    input.focus();
+    document.getElementById("levels-card").classList.add("hidden");
+    return;
+  }
+  newField.classList.add("hidden");
+  currentDept = val.trim();
   if (currentDept) loadLevels(currentDept);
 });
+
+function submitNewDept() {
+  const val = document.getElementById("new-dept-input").value.trim();
+  if (!val) return;
+  currentDept = val;
+  loadLevels(val);
+}
+document.getElementById("new-dept-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    submitNewDept();
+  }
+});
+document.getElementById("new-dept-input").addEventListener("blur", submitNewDept);
 
 document.getElementById("add-level-btn").addEventListener("click", async () => {
   const errEl = document.getElementById("add-error");
