@@ -3,7 +3,7 @@
 {% block content %}
 <h1 id="page-title">{% if ar_id %}แก้ไข Approval Request{% else %}สร้าง Approval Request ใหม่{% endif %}</h1>
 <p class="muted" style="margin-top:-10px;">
-  กรอกข้อมูลทุกช่องที่จำเป็นเพื่อพิมพ์เอกสารไปขอลายเซ็นอนุมัติสดนอกระบบ — Total กรอกเอง ส่วน VAT/Grand Total/This Application/Balance ระบบคำนวณให้อัตโนมัติ กรุณาตรวจสอบตัวเลขก่อนส่งขออนุมัติทุกครั้ง
+  กรอกข้อมูลทุกช่องที่จำเป็นเพื่อพิมพ์เอกสารไปขอลายเซ็นอนุมัติสดนอกระบบ — Total จะรวมให้อัตโนมัติจากรายการ Amount &amp; Quantity ถ้ากรอกจำนวนเงินครบทุกแถว (ถ้าแถวไหนยังไม่กรอก Total จะกลับมากรอกเองได้) ส่วน VAT/Grand Total/This Application/Balance ระบบคำนวณให้อัตโนมัติ กรุณาตรวจสอบตัวเลขก่อนส่งขออนุมัติทุกครั้ง
 </p>
 
 <div class="error hidden" id="load-error"></div>
@@ -114,8 +114,12 @@ function addAmountItemRow(item) {
   const wrap = document.createElement("div");
   wrap.innerHTML = amountItemRowHtml(item);
   const row = wrap.firstElementChild;
-  row.querySelector(".remove-item").addEventListener("click", () => row.remove());
+  row.querySelector(".remove-item").addEventListener("click", () => {
+    row.remove();
+    recalcTotalFromItems();
+  });
   document.getElementById("items-container").appendChild(row);
+  recalcTotalFromItems();
 }
 
 document.getElementById("add-item-btn").addEventListener("click", () => addAmountItemRow());
@@ -148,6 +152,26 @@ function toNum(v) {
 // Balance/This Application กรอกเองทั้งหมด (Business Decision 2026-09-08) — กลับคำ
 // ตัดสินใจนั้นเฉพาะ VAT/Grand Total/This Application/Balance ให้คำนวณอัตโนมัติ Total
 // ยังกรอกเองเหมือนเดิม (ไม่ Auto-sum จากรายการ Amount & Quantity)
+//
+// Correction 2 (Comment 3, 2026-09-10): กลับคำตัดสินใจอีกรอบ — ผู้ใช้แจ้งว่า Total ควร
+// รวมให้อัตโนมัติจากรายการ Amount & Quantity (Auto-sum ค่า .it-amount ทุกแถว) "TOTAL จะ
+// Free input ก็ต่อเมื่อ ไม่ใส่จำนวนเงินของรายการนั้นๆ" — ดู recalcTotalFromItems()
+// ด้านล่าง: ถ้าทุกแถวกรอกจำนวนเงินครบ รวมให้อัตโนมัติ + Readonly, ถ้ามีแถวใดว่าง กลับมา
+// เป็นกรอกเองได้เหมือนเดิม (ไม่ล้างค่าที่เคยกรอกไว้)
+function recalcTotalFromItems() {
+  const amountInputs = Array.from(document.querySelectorAll("#items-container .it-amount"));
+  const totalInput = document.getElementById("f-total");
+  const allFilled = amountInputs.length > 0 && amountInputs.every((el) => el.value.trim() !== "");
+  if (allFilled) {
+    const sum = amountInputs.reduce((acc, el) => acc + toNum(el.value), 0);
+    totalInput.value = plainMoney(sum);
+    totalInput.readOnly = true;
+    recalcVatAndGrandTotal();
+  } else {
+    totalInput.readOnly = false;
+  }
+}
+
 function recalcVatAndGrandTotal() {
   const rate = document.getElementById("f-vat-rate").value;
   const vatInput = document.getElementById("f-vat");
@@ -183,6 +207,10 @@ function recalcBalance() {
   document.getElementById("f-balance").value = plainMoney(year - usedBefore - thisApp);
 }
 
+// Comment 3: Delegate ฟังทุกแถว .it-amount ที่เพิ่ม/ลบได้ Dynamic (ไม่ต้อง Bind ทีละแถว)
+document.getElementById("items-container").addEventListener("input", (e) => {
+  if (e.target.classList.contains("it-amount")) recalcTotalFromItems();
+});
 document.getElementById("f-total").addEventListener("input", recalcVatAndGrandTotal);
 document.getElementById("f-vat-rate").addEventListener("change", recalcVatAndGrandTotal);
 document.getElementById("f-vat").addEventListener("input", () => {

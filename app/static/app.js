@@ -173,6 +173,35 @@ function statusBadge(status) {
   return `<span class="badge badge-${status}">${label}</span>`;
 }
 
+// Correction 2026-09-10 (Comment 1/2): Badge หัวเรื่อง AR (ar_detail.html/ar_list.html)
+// ต้องสัมพันธ์กับสถานะอนุมัติงบจริง ไม่ใช่แค่ draft/finalized เฉยๆ เหมือน PR — ผู้ใช้
+// Confirm ตาราง 3 แถว: Draft (ยังแก้ไขได้) / Workflow Running (พิมพ์แล้วแต่ยังอนุมัติไม่
+// ครบ) / Approved (อนุมัติครบทุกคนแล้ว ไม่ว่าจะรอ FA หักงบหรือหักงบแล้วก็ถือว่า Approved)
+// ใช้ร่วมกันทั้ง ar_detail.html (ar-status-badge) และ ar_list.html (คอลัมน์ Status) —
+// รับ ar object เต็ม (ต้องมีทั้ง .status และ .budget_approval_status)
+const AR_TOP_STATUS_LABEL = {
+  draft: "Draft (แก้ไขได้)",
+  workflow_running: "Workflow Running",
+  approved: "Approved",
+  rejected: "Rejected",
+};
+
+function arTopStatusBadge(ar) {
+  let key;
+  if (ar.status !== "finalized") {
+    key = "draft";
+  } else if (ar.budget_approval_status === "rejected") {
+    key = "rejected";
+  } else if (ar.budget_approval_status === "pending_fa_acknowledge" || ar.budget_approval_status === "approved") {
+    key = "approved";
+  } else {
+    // pending หรือกรณีอื่น (not_submitted ไม่ควรเกิดตอน finalized ตามจริง) — ถือว่ายังรอ
+    // อนุมัติอยู่
+    key = "workflow_running";
+  }
+  return `<span class="badge badge-ar-${key}">${AR_TOP_STATUS_LABEL[key]}</span>`;
+}
+
 function escapeHtml(value) {
   if (value === null || value === undefined) return "";
   return String(value)

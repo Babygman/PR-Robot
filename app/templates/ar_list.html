@@ -101,7 +101,7 @@ async function loadArs() {
       <td class="mono">${escapeHtml(ar.ar_no_display)}${ar.revision ? ` Rev.${ar.revision}` : ""}</td>
       <td>${escapeHtml(ar.subject)}</td>
       <td>${formatDateDMY(ar.application_date)}</td>
-      <td>${statusBadge(ar.status)}</td>
+      <td>${arTopStatusBadge(ar)}</td>
       <td class="center">${ar.budget_approval_status === "approved" ? '<span class="fa-check" title="FA Acknowledge แล้ว">✓</span>' : ""}</td>
       <td><a href="/app/ars/${ar.id}">ดูรายละเอียด →</a></td>
     </tr>`

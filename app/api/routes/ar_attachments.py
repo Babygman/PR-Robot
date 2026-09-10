@@ -157,10 +157,17 @@ def download_ar_attachment(
     file_path = Path(attachment.stored_path)
     if not file_path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "ไฟล์เอกสารแนบนี้หายไปจาก Server แล้ว")
+    # Correction 2026-09-10 (Comment 4 — My Approvals Preview): เดิมส่ง
+    # Content-Disposition: attachment (Default ของ FileResponse) เสมอ ทำให้เบราว์เซอร์
+    # บังคับ Download ทุกครั้งแม้จะเปิดใน <iframe>/<img> เพื่อ Preview ในหน้าก็ตาม (โดย
+    # เฉพาะ PDF ที่ผู้ใช้แจ้งปัญหา) เปลี่ยนเป็น inline ให้เบราว์เซอร์แสดงในหน้าได้แทน — ตัว
+    # Viewer ในตัวเบราว์เซอร์เอง (Chrome/Firefox) มี Page Navigation/Zoom ของ PDF ให้อยู่
+    # แล้วในตัว ไม่ต้องเพิ่ม Library ใหม่
     return FileResponse(
         path=str(file_path),
         media_type=attachment.content_type or "application/octet-stream",
         filename=attachment.file_name,
+        content_disposition_type="inline",
     )
 
 

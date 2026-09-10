@@ -317,6 +317,17 @@ td a { color: var(--color-primary); font-weight: 600; }
 .badge-budget-approved { background: var(--color-success-tint); color: var(--color-success); }
 .badge-budget-rejected { background: var(--color-danger-tint); color: var(--color-danger); }
 
+/* Correction 2026-09-10 (Comment 1/2 — AR Top Badge): เดิม Badge หัวเรื่อง AR แสดงแค่
+   draft/finalized เฉยๆ ไม่สัมพันธ์กับสถานะอนุมัติงบ ทำให้ผู้ใช้เห็น "Finalized" ค้างอยู่
+   ทั้งที่อนุมัติครบทุกคนแล้ว — ผู้ใช้แจ้งว่าต้องเปลี่ยน Badge หัวเรื่องเองตามสถานะอนุมัติ
+   จริง ดู arTopStatusBadge() ใน app.js: draft → เหมือนเดิม, finalized+ยังไม่อนุมัติครบ →
+   "Workflow Running" (เหลืองเหมือน pending เดิม), อนุมัติครบ(รอ FA หักงบ)/หักงบแล้ว →
+   "Approved" (เขียว), ถูกปฏิเสธ → "Rejected" (แดง) */
+.badge-ar-draft { background: var(--color-brass-tint); color: var(--color-brass); }
+.badge-ar-workflow_running { background: var(--color-brass-tint); color: var(--color-brass); }
+.badge-ar-approved { background: var(--color-success-tint); color: var(--color-success); }
+.badge-ar-rejected { background: var(--color-danger-tint); color: var(--color-danger); }
+
 /* Correction 2026-09-10 (Phase A): คอลัมน์ "FA" ใน AR List — ✓ สีเขียวเมื่อ
    FA Acknowledge แล้ว (budget_approval_status == approved) */
 td.center { text-align: center; }
@@ -494,3 +505,32 @@ td.center { text-align: center; }
 .ma-popup-actions { display: flex; gap: 8px; margin-top: 12px; }
 .ma-popup-actions button { flex: 1; }
 .ma-readonly-note { margin-top: 12px; font-size: 12.5px; color: var(--color-text-faint); }
+
+/* Comment 4 (2026-09-10, My Approvals — เอกสารแนบ): เดิมกด "ตรวจสอบ/ดูเอกสาร" แล้ว PDF
+   ถูกบังคับ Download แทนที่จะ Preview (แก้ Root Cause ที่ Backend ให้ inline แล้ว — ดู
+   ar_attachments.py) ผู้ใช้แจ้งว่าต้องการ (1) เอกสารแสดงเป็น Icon/Thumbnail Preview ใน
+   หน้า Popup ก่อน (2) คลิกแล้ว Float ออกมาเกือบเต็มจอ พร้อม Blur พื้นหลัง + สลับ Tab
+   เอกสาร/Zoom — ขอบเขตยืนยันจากผู้ใช้เฉพาะ Popup Float/Blur/Tab/Zoom เท่านั้น (Nav หน้า
+   PDF ใช้ตัว Viewer ในตัวเบราว์เซอร์เอง ไม่ทำ PDF.js เพิ่ม) ไม่รวม AI Summary/ปุ่มอนุมัติ
+   จากตัวอย่างอ้างอิงที่ผู้ใช้ส่งมา ซึ่งเป็น Demo ไม่เกี่ยวกับระบบนี้ */
+.ma-doc-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; padding: 14px; overflow-y: auto; align-content: flex-start; }
+.ma-doc-thumb { border: 1px solid var(--color-border); border-radius: 10px; background: #fff; cursor: pointer; padding: 8px; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; transition: border-color 0.15s, box-shadow 0.15s; }
+.ma-doc-thumb:hover { border-color: var(--color-primary); box-shadow: 0 4px 14px -8px rgba(13, 42, 59, 0.4); }
+.ma-doc-thumb-preview { width: 100%; height: 74px; border-radius: 6px; background: var(--color-surface-2); display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 28px; }
+.ma-doc-thumb-preview img { width: 100%; height: 100%; object-fit: cover; }
+.ma-doc-thumb-name { font-size: 11px; color: var(--color-text-faint); word-break: break-all; line-height: 1.3; }
+.ma-doc-thumb-size { font-size: 10px; color: var(--color-text-faint); }
+
+.ma-lightbox-overlay { z-index: 90; background: rgba(13, 42, 59, 0.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.ma-lightbox { width: 96vw; height: 92vh; max-width: 1400px; background: #fff; border-radius: 14px; box-shadow: 0 30px 70px -20px rgba(13, 42, 59, 0.55); display: flex; flex-direction: column; overflow: hidden; }
+.ma-lightbox-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--color-border); flex: none; }
+.ma-lightbox-tabs { display: flex; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; }
+.ma-lightbox-tab { padding: 5px 12px; font-size: 12px; border-radius: 6px; cursor: pointer; background: var(--color-surface-2); color: var(--color-text-faint); white-space: nowrap; border: none; }
+.ma-lightbox-tab.active { background: var(--color-primary); color: #fff; }
+.ma-lightbox-tools { display: flex; align-items: center; gap: 6px; flex: none; }
+.ma-lightbox-zoom-group { display: flex; align-items: center; gap: 6px; }
+.ma-lightbox-tools button.secondary { padding: 3px 10px; }
+.ma-lightbox-body { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; background: var(--color-surface-2); }
+.ma-lightbox-body iframe { width: 100%; height: 100%; border: none; }
+.ma-lightbox-body img { max-width: none; transition: transform 0.15s; }
+.ma-lightbox-body .muted { padding: 20px; text-align: center; }

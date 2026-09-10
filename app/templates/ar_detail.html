@@ -369,7 +369,7 @@ async function loadDetail() {
   const ar = await res.json();
 
   document.getElementById("ar-no").textContent = ar.revision ? `${ar.ar_no_display} Rev.${ar.revision}` : ar.ar_no_display;
-  document.getElementById("ar-status-badge").innerHTML = statusBadge(ar.status);
+  document.getElementById("ar-status-badge").innerHTML = arTopStatusBadge(ar);
   document.getElementById("ar-subject").textContent = ar.subject;
   document.getElementById("ar-date").textContent = formatDateDMY(ar.application_date);
   document.getElementById("ar-requested").textContent = ar.requested_by_name || "-";
