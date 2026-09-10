@@ -6,6 +6,7 @@ Endpoint ที่ต้องสิทธิ์ Admin ใช้ Depends(require
 Scope Revision (Phase 9, 2026-09-03): ตัด require_can_review/approve/receive ออก —
 ไม่มี Workflow อนุมัติในระบบแล้ว
 """
+
 from __future__ import annotations
 
 from fastapi import Depends, HTTPException, Request, status
@@ -43,4 +44,13 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
 def require_fa_or_admin(user: User = Depends(get_current_user)) -> User:
     if not (user.is_fa or user.is_admin):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "ต้องมีสิทธิ์ FA หรือ Admin เท่านั้น")
+    return user
+
+
+# My Approvals (Phase B/2, 2026-09-10): Admin/FA เห็นเมนูนี้เสมอโดยนิยาม (เป็นผู้มีสิทธิ์
+# อนุมัติอยู่แล้ว) ส่วนคนอื่นต้องถูก Admin เปิด can_view_approvals ให้จากหน้า "จัดการ User"
+# ก่อน — ดู Docstring app/models/user.py
+def require_can_view_approvals(user: User = Depends(get_current_user)) -> User:
+    if not (user.is_admin or user.is_fa or user.can_view_approvals):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "ไม่มีสิทธิ์เข้าถึงเมนู 'การอนุมัติของฉัน'")
     return user

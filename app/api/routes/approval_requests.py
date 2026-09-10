@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_can_view_approvals
 from app.db.session import get_db
 from app.models import (
     ApprovalRequest,
@@ -50,6 +50,8 @@ from app.schemas.budget import (
     BudgetApproveLevelBody,
     BudgetFaAcknowledgeBody,
     BudgetRejectBody,
+    MyApprovalCounts,
+    MyApprovalItem,
 )
 from app.schemas.purchasing_requisition import AuditLogRead
 from app.services import budget_workflow
@@ -189,6 +191,52 @@ def list_ars(
         item = ARListItem.model_validate(ar, from_attributes=True)
         result.append(item.model_copy(update={"ar_no_display": format_ar_no(ar.ar_no)}))
     return result
+
+
+@router.get("/my-approvals/counts", response_model=MyApprovalCounts)
+def get_my_approval_counts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_can_view_approvals),
+) -> MyApprovalCounts:
+    """เติมเลข Badge ทั้ง 4 หมวดที่ Sidebar Submenu (base.html) — เรียกทุกหน้าที่มีเมนูนี้
+    โชว์อยู่ ไม่ใช่แค่หน้า My Approvals เอง"""
+    return MyApprovalCounts(**budget_workflow.count_my_approvals(db, current_user))
+
+
+def _to_my_approval_item(
+    db: Session, ar: ApprovalRequest, names: dict[int, str], actor: User
+) -> MyApprovalItem:
+    level_name = None
+    if ar.budget_approval_status == ARBudgetApprovalStatus.PENDING_FA_ACKNOWLEDGE:
+        level_name = "FA Acknowledge"
+    elif ar.current_approval_level is not None and ar.budget_department:
+        levels = budget_workflow.get_department_levels(db, ar.budget_department)
+        match = next((lv for lv in levels if lv.level_no == ar.current_approval_level), None)
+        level_name = match.level_name if match else None
+
+    item = MyApprovalItem.model_validate(ar, from_attributes=True)
+    return item.model_copy(
+        update={
+            "ar_no_display": format_ar_no(ar.ar_no),
+            "current_level_name": level_name,
+            "requested_by_name": names.get(ar.requested_by_id),
+            "actionable": budget_workflow.is_ar_actionable_by(db, ar, actor),
+        }
+    )
+
+
+@router.get("/my-approvals", response_model=list[MyApprovalItem])
+def list_my_approvals_route(
+    bucket: str = Query(..., pattern="^(waiting|mine|history|returned)$"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_can_view_approvals),
+) -> list[MyApprovalItem]:
+    ars = budget_workflow.list_my_approvals(db, current_user, bucket)
+    page = ars[offset : offset + limit]
+    names = resolve_user_names(db, {ar.requested_by_id for ar in page})
+    return [_to_my_approval_item(db, ar, names, current_user) for ar in page]
 
 
 @router.get("/{ar_id}", response_model=ARRead)

@@ -11,7 +11,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
-from app.models.approval_request import ARBudgetType
+from app.models.approval_request import ARBudgetApprovalStatus, ARBudgetType
 from app.models.budget import BudgetApprovalAction, BudgetApprovalStepType
 
 
@@ -145,3 +145,33 @@ class BudgetApproveLevelBody(BaseModel):
 class BudgetFaAcknowledgeBody(BaseModel):
     force: bool = False
     comment: str | None = Field(default=None, max_length=2000)
+
+
+# ───────────────────────── My Approvals (Phase B/2, 2026-09-10) ─────────────────────────
+class MyApprovalItem(BaseModel):
+    """1 แถวในตารางหน้า "การอนุมัติของฉัน" — ดู Docstring
+    app/services/budget_workflow.py (ท้ายไฟล์) สำหรับนิยามแต่ละหมวด (Bucket)"""
+
+    id: int
+    ar_no: int
+    ar_no_display: str = ""  # เติมใน Route
+    revision: int
+    subject: str
+    application_date: date
+    budget_department: str | None
+    budget_approval_status: ARBudgetApprovalStatus
+    current_approval_level: int | None
+    current_level_name: str | None = None  # เติมใน Route — "FA Acknowledge" ถ้าถึงขั้น FA
+    requested_by_id: int
+    requested_by_name: str | None = None  # เติมใน Route
+    actionable: bool = False  # เติมใน Route — โชว์/ซ่อนปุ่มอนุมัติ/ปฏิเสธที่ฝั่ง Client
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class MyApprovalCounts(BaseModel):
+    waiting: int
+    mine: int
+    history: int
+    returned: int

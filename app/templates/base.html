@@ -19,23 +19,50 @@
     </div>
   </div>
   <nav class="sidebar-nav">
-    <a href="/app/" class="nav-item" data-nav-path="/app/">
+    <a href="/app/" class="nav-item" id="nav-pr-list" data-nav-path="/app/">
       <svg width="16" height="16" viewBox="0 0 16 16"><rect x="1.5" y="1.5" width="6" height="6" rx="1.5" stroke="currentColor" fill="none"/><rect x="8.5" y="1.5" width="6" height="6" rx="1.5" stroke="currentColor" fill="none"/><rect x="1.5" y="8.5" width="6" height="6" rx="1.5" stroke="currentColor" fill="none"/><rect x="8.5" y="8.5" width="6" height="6" rx="1.5" stroke="currentColor" fill="none"/></svg>
       รายการ PR
     </a>
-    <a href="/app/prs/new" class="nav-item" data-nav-path="/app/prs/new">
+    <a href="/app/prs/new" class="nav-item" id="nav-pr-new" data-nav-path="/app/prs/new">
       <svg width="16" height="16" viewBox="0 0 16 16"><line x1="8" y1="3" x2="8" y2="13" stroke="currentColor" stroke-width="1.6"/><line x1="3" y1="8" x2="13" y2="8" stroke="currentColor" stroke-width="1.6"/></svg>
       สร้าง PR ใหม่
     </a>
-    <a href="/app/documents/upload" class="nav-item" data-nav-path="/app/documents/upload">
+    <a href="/app/documents/upload" class="nav-item" id="nav-doc-upload" data-nav-path="/app/documents/upload">
       <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 11V3M8 3L4.5 6.5M8 3l3.5 3.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 12.5v1a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-1" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
       อัปโหลดเอกสาร
     </a>
-    <a href="/app/ars" class="nav-item" data-nav-path="/app/ars">
+    <a href="/app/ars" class="nav-item" id="nav-ar" data-nav-path="/app/ars">
       <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 2h6l3 3v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><path d="M10 2v3h3" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><path d="m5.7 10.3 1.4 1.4 3.2-3.2" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Approval Request
     </a>
-    <a href="/app/ai-usage" class="nav-item" data-nav-path="/app/ai-usage">
+
+    <div class="nav-item nav-item-toggle hidden" id="nav-approvals-toggle" data-nav-path="/app/my-approvals">
+      <span class="nav-item-label">
+        <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2.5 3.5h11v9a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-9Z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><path d="M2.5 6.5h11" stroke="currentColor" stroke-width="1.4"/><path d="m5.5 9.3 1.4 1.4 3.2-3.2" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        การอนุมัติของฉัน
+      </span>
+      <span class="nav-chevron">▾</span>
+    </div>
+    <div class="submenu" id="approvals-submenu">
+      <a href="/app/my-approvals?tab=waiting" class="submenu-item" id="nav-approvals-waiting" data-tab="waiting" data-nav-path="/app/my-approvals?tab=waiting">
+        <span class="si-label">📥 กล่องรออนุมัติ</span>
+        <span class="badge-pill" id="badge-waiting">0</span>
+      </a>
+      <a href="/app/my-approvals?tab=mine" class="submenu-item" id="nav-approvals-mine" data-tab="mine" data-nav-path="/app/my-approvals?tab=mine">
+        <span class="si-label">✅ รอการตัดสินใจของฉัน</span>
+        <span class="badge-pill" id="badge-mine">0</span>
+      </a>
+      <a href="/app/my-approvals?tab=history" class="submenu-item" id="nav-approvals-history" data-tab="history" data-nav-path="/app/my-approvals?tab=history">
+        <span class="si-label">🕒 ประวัติการอนุมัติ</span>
+        <span class="badge-pill" id="badge-history">0</span>
+      </a>
+      <a href="/app/my-approvals?tab=returned" class="submenu-item" id="nav-approvals-returned" data-tab="returned" data-nav-path="/app/my-approvals?tab=returned">
+        <span class="si-label">↩️ ส่งกลับแก้ไข</span>
+        <span class="badge-pill" id="badge-returned">0</span>
+      </a>
+    </div>
+
+    <a href="/app/ai-usage" class="nav-item" id="nav-ai-usage" data-nav-path="/app/ai-usage">
       <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.6" fill="none"/><text x="8" y="10.8" font-size="7.5" text-anchor="middle" fill="currentColor" font-family="IBM Plex Mono, monospace">฿</text></svg>
       ค่าใช้จ่าย AI
     </a>

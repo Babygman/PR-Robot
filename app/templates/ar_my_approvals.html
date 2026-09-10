@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+{% block title %}การอนุมัติของฉัน — PR-Robot{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1 id="ma-title">การอนุมัติของฉัน</h1>
+    <p class="muted" style="margin-top:-10px;" id="ma-sub">กำลังโหลด...</p>
+  </div>
+</div>
+
+<div class="error hidden" id="page-error"></div>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>AR No.</th>
+        <th>เรื่อง</th>
+        <th>แผนก</th>
+        <th>ขั้นตอนปัจจุบัน</th>
+        <th>ผู้ขอ</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="ma-table-body">
+      <tr><td colspan="6" class="muted">กำลังโหลด...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="overlay" id="ma-overlay">
+  <div class="ma-popup">
+    <div class="ma-popup-head">
+      <h3 id="ma-popup-title"></h3>
+      <button type="button" class="ma-popup-close" id="ma-popup-close">✕</button>
+    </div>
+    <div class="ma-popup-body">
+      <div class="ma-doc-pane">
+        <div class="ma-doc-tabs" id="ma-doc-tabs"></div>
+        <div class="ma-doc-preview" id="ma-doc-preview">
+          <p class="muted">ยังไม่มีเอกสารแนบ</p>
+        </div>
+      </div>
+      <div class="ma-side-pane">
+        <h4>รายละเอียด</h4>
+        <div id="ma-kv-list"></div>
+        <div class="error hidden" id="ma-action-error"></div>
+        <div id="ma-action-area"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let ME = null;
+let CURRENT_TAB = new URLSearchParams(window.location.search).get("tab") || "waiting";
+let CURRENT_ITEMS = [];
+let POPUP_ITEM = null;
+
+const MA_TAB_META = {
+  waiting: { title: "📥 กล่องรออนุมัติ", sub: "ทุกรายการ AR ที่คุณเกี่ยวข้อง กำลังดำเนินอยู่ในขั้นตอนใดขั้นตอนหนึ่ง" },
+  mine: { title: "✅ รอการตัดสินใจของฉัน", sub: "ถึงคิวคุณอนุมัติ/Acknowledge แล้ว — ดำเนินการได้ทันที" },
+  history: { title: "🕒 ประวัติการอนุมัติ", sub: "AR ที่คุณเคยอนุมัติมาแล้ว (ไม่รวมที่ปฏิเสธ)" },
+  returned: { title: "↩️ ส่งกลับแก้ไข", sub: "AR ที่ถูกปฏิเสธไปแล้ว กำลังรอผู้ขอแก้ไขและส่งใหม่" },
+};
+
+const MA_STATUS_LABEL = {
+  not_submitted: "ยังไม่เข้าสู่ Workflow",
+  pending: "รออนุมัติ Level",
+  pending_fa_acknowledge: "รอ FA Acknowledge",
+  approved: "Approved (หักงบแล้ว)",
+  rejected: "ถูกปฏิเสธ",
+};
+
+function maStatusBadge(status) {
+  return `<span class="badge badge-budget-${status}">${MA_STATUS_LABEL[status] || status}</span>`;
+}
+
+async function loadList() {
+  const meta = MA_TAB_META[CURRENT_TAB] || MA_TAB_META.waiting;
+  document.getElementById("ma-title").textContent = meta.title;
+  document.getElementById("ma-sub").textContent = meta.sub;
+
+  const tbody = document.getElementById("ma-table-body");
+  tbody.innerHTML = '<tr><td colspan="6" class="muted">กำลังโหลด...</td></tr>';
+  const res = await apiFetch(`/ars/my-approvals?bucket=${encodeURIComponent(CURRENT_TAB)}&limit=100`);
+  if (!res.ok) {
+    tbody.innerHTML = '<tr><td colspan="6" class="error">โหลดรายการไม่สำเร็จ</td></tr>';
+    return;
+  }
+  CURRENT_ITEMS = await res.json();
+  if (CURRENT_ITEMS.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="muted">ไม่มีรายการในหมวดนี้</td></tr>';
+    return;
+  }
+  tbody.innerHTML = CURRENT_ITEMS
+    .map(
+      (item) => `
+    <tr class="${item.actionable ? "ma-actionable-row" : ""}" data-id="${item.id}">
+      <td class="mono">${escapeHtml(item.ar_no_display)}${item.revision ? ` Rev.${item.revision}` : ""}</td>
+      <td>${escapeHtml(item.subject)}</td>
+      <td>${escapeHtml(item.budget_department || "-")}</td>
+      <td>${escapeHtml(item.current_level_name || "-")} ${maStatusBadge(item.budget_approval_status)}</td>
+      <td>${escapeHtml(item.requested_by_name || "-")}</td>
+      <td><span class="ma-doc-link" data-id="${item.id}">${item.actionable ? "ตรวจสอบ / ดูเอกสาร →" : "ดูเอกสาร →"}</span></td>
+    </tr>`
+    )
+    .join("");
+  tbody.querySelectorAll(".ma-doc-link").forEach((el) => {
+    el.addEventListener("click", () => openPopup(Number(el.dataset.id)));
+  });
+}
+
+function fmtFileSizeMa(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderDocPreview(att) {
+  const preview = document.getElementById("ma-doc-preview");
+  if (!att) {
+    preview.innerHTML = '<p class="muted">ยังไม่มีเอกสารแนบ</p>';
+    return;
+  }
+  const url = `/ars/${POPUP_ITEM.id}/attachments/${att.id}/download`;
+  const ct = att.content_type || "";
+  if (ct === "application/pdf") {
+    preview.innerHTML = `<iframe src="${url}"></iframe>`;
+  } else if (ct.startsWith("image/")) {
+    preview.innerHTML = `<img src="${url}" alt="${escapeHtml(att.file_name)}">`;
+  } else {
+    preview.innerHTML = `<p class="muted">ไม่รองรับ Preview ไฟล์ประเภทนี้ในเบราว์เซอร์<br><a href="${url}" target="_blank">ดาวน์โหลด ${escapeHtml(att.file_name)} (${fmtFileSizeMa(att.file_size)})</a></p>`;
+  }
+}
+
+async function loadPopupAttachments() {
+  const tabsEl = document.getElementById("ma-doc-tabs");
+  tabsEl.innerHTML = "";
+  const res = await apiFetch(`/ars/${POPUP_ITEM.id}/attachments`);
+  const attachments = res.ok ? await res.json() : [];
+  if (attachments.length === 0) {
+    renderDocPreview(null);
+    return;
+  }
+  tabsEl.innerHTML = attachments
+    .map((a, i) => `<button type="button" class="ma-doc-tab ${i === 0 ? "active" : ""}" data-id="${a.id}">${escapeHtml(a.file_name)}</button>`)
+    .join("");
+  tabsEl.querySelectorAll(".ma-doc-tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      tabsEl.querySelectorAll(".ma-doc-tab").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      renderDocPreview(attachments.find((a) => a.id === Number(btn.dataset.id)));
+    });
+  });
+  renderDocPreview(attachments[0]);
+}
+
+function renderActionArea() {
+  const area = document.getElementById("ma-action-area");
+  document.getElementById("ma-action-error").classList.add("hidden");
+  if (!POPUP_ITEM.actionable) {
+    area.innerHTML = '<p class="ma-readonly-note">รายการนี้ไม่ได้อยู่ในคิวที่คุณดำเนินการได้ตอนนี้ (ดูอย่างเดียว)</p>';
+    return;
+  }
+  if (POPUP_ITEM.budget_approval_status === "pending") {
+    area.innerHTML = `
+      <textarea class="comment-box" id="ma-comment" placeholder="Comment (ถ้ามี — ไม่บังคับ)"></textarea>
+      <div class="ma-popup-actions">
+        <button type="button" id="ma-approve-btn">อนุมัติ${POPUP_ITEM.current_level_name ? ` "${escapeHtml(POPUP_ITEM.current_level_name)}"` : ""}</button>
+        <button type="button" class="secondary" id="ma-reject-btn">ปฏิเสธ</button>
+      </div>`;
+    document.getElementById("ma-approve-btn").addEventListener("click", () => submitMaAction("approve-level"));
+    document.getElementById("ma-reject-btn").addEventListener("click", () => submitMaAction("reject-level"));
+  } else if (POPUP_ITEM.budget_approval_status === "pending_fa_acknowledge") {
+    area.innerHTML = `
+      <textarea class="comment-box" id="ma-comment" placeholder="Comment (ถ้ามี — ไม่บังคับ)"></textarea>
+      <div class="ma-popup-actions">
+        <button type="button" id="ma-fa-btn">FA Acknowledge</button>
+        <button type="button" class="secondary" id="ma-reject-fa-btn">ปฏิเสธ</button>
+      </div>`;
+    document.getElementById("ma-fa-btn").addEventListener("click", () => submitMaAction("fa-acknowledge"));
+    document.getElementById("ma-reject-fa-btn").addEventListener("click", () => submitMaAction("reject-fa"));
+  } else {
+    area.innerHTML = "";
+  }
+}
+
+async function submitMaAction(kind, force = false) {
+  const errEl = document.getElementById("ma-action-error");
+  errEl.classList.add("hidden");
+  const commentEl = document.getElementById("ma-comment");
+  let path = "";
+  let body = {};
+  if (kind === "approve-level") {
+    path = `/ars/${POPUP_ITEM.id}/approve-level`;
+    body = { comment: (commentEl && commentEl.value.trim()) || null };
+  } else if (kind === "reject-level" || kind === "reject-fa") {
+    const reason = prompt("เหตุผลที่ปฏิเสธ:");
+    if (!reason) return;
+    path = `/ars/${POPUP_ITEM.id}/${kind}`;
+    body = { reason };
+  } else if (kind === "fa-acknowledge") {
+    path = `/ars/${POPUP_ITEM.id}/fa-acknowledge`;
+    body = { force, comment: (commentEl && commentEl.value.trim()) || null };
+  }
+
+  const res = await apiFetch(path, { method: "POST", body: JSON.stringify(body) });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    if (kind === "fa-acknowledge" && res.status === 409 && !force && errBody.detail && typeof errBody.detail === "object") {
+      const d = errBody.detail;
+      const confirmForce = confirm(
+        `${d.message}\n\nงบประมาณ: ${d.budgeted_amount}  ใช้ไปแล้ว: ${d.used_amount}  คงเหลือ: ${d.balance}\n` +
+          `ยอดที่ขอ: ${d.requested_amount}  เกินไป: ${d.shortfall}\n\nยืนยันอนุมัติทั้งที่เกินงบ?`
+      );
+      if (confirmForce) await submitMaAction("fa-acknowledge", true);
+      return;
+    }
+    errEl.textContent =
+      typeof errBody.detail === "string" ? errBody.detail : (errBody.detail && errBody.detail.message) || "ดำเนินการไม่สำเร็จ";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  closePopup();
+  await loadList();
+  if (typeof setupMyApprovalsNav === "function") await setupMyApprovalsNav();
+}
+
+async function openPopup(id) {
+  POPUP_ITEM = CURRENT_ITEMS.find((i) => i.id === id);
+  if (!POPUP_ITEM) return;
+  document.getElementById("ma-popup-title").textContent = `${POPUP_ITEM.ar_no_display} — ${POPUP_ITEM.subject}`;
+  document.getElementById("ma-kv-list").innerHTML = `
+    <div class="ma-kv"><span>ผู้ขอ</span><span>${escapeHtml(POPUP_ITEM.requested_by_name || "-")}</span></div>
+    <div class="ma-kv"><span>แผนก</span><span>${escapeHtml(POPUP_ITEM.budget_department || "-")}</span></div>
+    <div class="ma-kv"><span>วันที่</span><span>${formatDateDMY(POPUP_ITEM.application_date)}</span></div>
+    <div class="ma-kv"><span>ขั้นตอนปัจจุบัน</span><span>${escapeHtml(POPUP_ITEM.current_level_name || "-")}</span></div>
+    <div class="ma-kv"><span>สถานะ</span><span>${maStatusBadge(POPUP_ITEM.budget_approval_status)}</span></div>
+    <div class="ma-kv"><span></span><span><a href="/app/ars/${POPUP_ITEM.id}" target="_blank">ดูหน้ารายละเอียดเต็ม (ประวัติ/พิมพ์ PDF) →</a></span></div>
+  `;
+  renderActionArea();
+  document.getElementById("ma-overlay").classList.add("open");
+  await loadPopupAttachments();
+}
+
+function closePopup() {
+  document.getElementById("ma-overlay").classList.remove("open");
+  POPUP_ITEM = null;
+}
+
+document.getElementById("ma-popup-close").addEventListener("click", closePopup);
+document.getElementById("ma-overlay").addEventListener("click", (e) => {
+  if (e.target.id === "ma-overlay") closePopup();
+});
+
+(async () => {
+  ME = await requireLogin();
+  if (!ME) return;
+  if (!(ME.is_admin || ME.is_fa || ME.can_view_approvals)) {
+    document.getElementById("page-error").textContent = "หน้านี้สำหรับผู้มีสิทธิ์อนุมัติเท่านั้น";
+    document.getElementById("page-error").classList.remove("hidden");
+    return;
+  }
+  await loadList();
+})();
+</script>
+{% endblock %}

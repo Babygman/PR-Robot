@@ -9,6 +9,7 @@ get_current_user ที่นี่เลย (ไม่ Enforce Login ระด�
 Namespace อยู่ใต้ /app ทั้งหมดเพื่อไม่ให้ชนกับ JSON API เดิม (เช่น /prs/{id} ของ API
 กับ /app/prs/{id} ของหน้าเว็บ เป็นคนละ Path กันชัดเจน)
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -34,9 +35,7 @@ def page_dashboard(request: Request):
 
 @router.get("/prs/new")
 def page_pr_new(request: Request):
-    return templates.TemplateResponse(
-        request=request, name="pr_edit.html", context={"pr_id": None}
-    )
+    return templates.TemplateResponse(request=request, name="pr_edit.html", context={"pr_id": None})
 
 
 @router.get("/prs/{pr_id}/edit")
@@ -55,9 +54,7 @@ def page_pr_detail(request: Request, pr_id: int):
 
 @router.get("/ars/new")
 def page_ar_new(request: Request):
-    return templates.TemplateResponse(
-        request=request, name="ar_edit.html", context={"ar_id": None}
-    )
+    return templates.TemplateResponse(request=request, name="ar_edit.html", context={"ar_id": None})
 
 
 @router.get("/ars/{ar_id}/edit")
@@ -82,6 +79,12 @@ def page_ar_list(request: Request):
 @router.get("/documents/upload")
 def page_upload(request: Request):
     return templates.TemplateResponse(request=request, name="upload.html", context={})
+
+
+# My Approvals (Phase B/2, 2026-09-10)
+@router.get("/my-approvals")
+def page_my_approvals(request: Request):
+    return templates.TemplateResponse(request=request, name="ar_my_approvals.html", context={})
 
 
 @router.get("/ai-usage")

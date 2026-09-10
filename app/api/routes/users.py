@@ -39,6 +39,8 @@ def create_user(
         position=body.position,
         is_admin=body.is_admin,
         is_fa=body.is_fa,
+        can_view_approvals=body.can_view_approvals,
+        approver_only=body.approver_only,
     )
     db.add(user)
     db.commit()

@@ -22,7 +22,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, tuple_, update
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -458,3 +458,195 @@ def reset_for_new_draft(ar: ApprovalRequest) -> None:
     ar.current_approval_level = None
     ar.budget_deducted_amount = None
     ar.budget_overridden = False
+
+
+# ───────────────────────── My Approvals (Phase B/2, 2026-09-10) ─────────────────────────
+# ดู Mockup v4 ที่ผู้ใช้ Confirm แล้ว ("เยี่ยมมาก ทำ phase2 เลย โดย Design นี้") — Sidebar
+# Submenu ขยายลงจาก "การอนุมัติของฉัน" 4 หมวด:
+#   1. waiting  ("กล่องรออนุมัติ")         = ทุก AR ที่ User "เกี่ยวข้อง" กำลังดำเนินอยู่
+#   2. mine     ("รอการตัดสินใจของฉัน")    = Subset ของ (1) ที่ "ถึงคิว" User คนนี้ตัดสินใจ
+#                                             ได้จริง ณ ตอนนี้ (Level ปัจจุบันตรงกับที่ User
+#                                             เป็นผู้อนุมัติ หรือ FA รอ Acknowledge)
+#   3. history  ("ประวัติการอนุมัติ")      = AR ที่ User "เคยอนุมัติ" (ไม่รวมปฏิเสธ) มาแล้ว
+#   4. returned ("ส่งกลับแก้ไข")           = AR ที่ถูกปฏิเสธไปแล้ว ที่ User เกี่ยวข้องอยู่
+#
+# "เกี่ยวข้อง" นิยามคือ: (ก) Admin — เกี่ยวข้องกับทุกใบเสมอ (Feedback จริง: "Admin ต้อง
+# เห็นทั้งหมด เพราะต้องตรวจสอบ") (ข) เป็นผู้อนุมัติ Level ใดก็ได้ (Active) ของแผนกนั้น
+# (ค) เป็น FA — เกี่ยวข้องเฉพาะ AR ที่ขึ้นถึงขั้น FA Acknowledge แล้วจริง (ไม่ใช่ทุก AR ทุก
+# แผนกที่ยังไม่ถึงคิว FA เลย ไม่งั้น Waiting ของ FA จะกว้างเกินจริง กลายเป็นทุกใบทั้งระบบ)
+#
+# หมายเหตุ Performance: Query คืน List ทั้งก้อนแล้วนับ len() เอา (ไม่แยก COUNT Query) —
+# ขนาดข้อมูลจริงของ AR ในองค์กรนี้เล็ก (หลักร้อย/พันใบ) ไม่คุ้มเพิ่มความซับซ้อน Query แยก
+MY_APPROVAL_BUCKETS = ("waiting", "mine", "history", "returned")
+
+
+def _approver_departments(db: Session, actor: User) -> set[str]:
+    """แผนกทั้งหมดที่ actor เป็นผู้อนุมัติ Level ใดก็ได้ (Active) — ใช้กับ Bucket
+    "waiting"/"returned" (กว้างกว่า mine — ไม่สนว่า Level ปัจจุบันตรงกับ actor หรือไม่)"""
+    rows = (
+        db.execute(
+            select(BudgetApprovalLevel.department)
+            .where(
+                BudgetApprovalLevel.approver_user_id == actor.id,
+                BudgetApprovalLevel.is_active.is_(True),
+            )
+            .distinct()
+        )
+        .scalars()
+        .all()
+    )
+    return set(rows)
+
+
+def _approver_level_pairs(db: Session, actor: User) -> set[tuple[str, int]]:
+    """คู่ (department, level_no) ที่ actor เป็นผู้อนุมัติจริง (Active) — ใช้กับ Bucket
+    "mine" (ต้องตรง Level ปัจจุบันเป๊ะ ไม่ใช่แค่แผนกเดียวกัน)"""
+    rows = db.execute(
+        select(BudgetApprovalLevel.department, BudgetApprovalLevel.level_no).where(
+            BudgetApprovalLevel.approver_user_id == actor.id,
+            BudgetApprovalLevel.is_active.is_(True),
+        )
+    ).all()
+    return {(r[0], r[1]) for r in rows}
+
+
+def _fa_reached_ar_ids_subquery():
+    """AR ที่มีบันทึก ar_budget_approvals ขั้น FA_ACKNOWLEDGE แล้วจริง (ไม่ว่าผล
+    จะอนุมัติ/ปฏิเสธ) — ใช้กรอง Bucket "returned" ของ FA ไม่ให้กว้างเกินไปรวม AR ที่ถูก
+    ปฏิเสธไปตั้งแต่ Level ก่อนหน้า ซึ่ง FA ไม่เคยเกี่ยวข้องด้วยเลย"""
+    return (
+        select(ARBudgetApproval.ar_id)
+        .where(ARBudgetApproval.step_type == BudgetApprovalStepType.FA_ACKNOWLEDGE)
+        .distinct()
+        .scalar_subquery()
+    )
+
+
+def _order_and_run(db: Session, stmt) -> list[ApprovalRequest]:
+    stmt = stmt.order_by(ApprovalRequest.ar_no.desc(), ApprovalRequest.revision.desc())
+    return list(db.execute(stmt).scalars().all())
+
+
+def _bucket_waiting(db: Session, actor: User) -> list[ApprovalRequest]:
+    base = select(ApprovalRequest).where(
+        ApprovalRequest.budget_approval_status.in_(
+            [ARBudgetApprovalStatus.PENDING, ARBudgetApprovalStatus.PENDING_FA_ACKNOWLEDGE]
+        )
+    )
+    if actor.is_admin:
+        return _order_and_run(db, base)
+
+    conditions = []
+    depts = _approver_departments(db, actor)
+    if depts:
+        conditions.append(
+            (ApprovalRequest.budget_approval_status == ARBudgetApprovalStatus.PENDING)
+            & ApprovalRequest.budget_department.in_(depts)
+        )
+    if actor.is_fa:
+        conditions.append(
+            ApprovalRequest.budget_approval_status == ARBudgetApprovalStatus.PENDING_FA_ACKNOWLEDGE
+        )
+    if not conditions:
+        return []
+    return _order_and_run(db, base.where(or_(*conditions)))
+
+
+def _bucket_mine(db: Session, actor: User) -> list[ApprovalRequest]:
+    if actor.is_admin:
+        # Admin Override ได้ทุก Level/FA เสมอ (ดู _check_level_actor/_check_fa_actor) —
+        # ทุกใบที่ค้างอยู่จึง "ถึงคิว" Admin ตัดสินใจได้จริงเท่ากับ Bucket waiting เป๊ะ
+        return _bucket_waiting(db, actor)
+
+    conditions = []
+    pairs = _approver_level_pairs(db, actor)
+    if pairs:
+        conditions.append(
+            (ApprovalRequest.budget_approval_status == ARBudgetApprovalStatus.PENDING)
+            & tuple_(ApprovalRequest.budget_department, ApprovalRequest.current_approval_level).in_(
+                pairs
+            )
+        )
+    if actor.is_fa:
+        conditions.append(
+            ApprovalRequest.budget_approval_status == ARBudgetApprovalStatus.PENDING_FA_ACKNOWLEDGE
+        )
+    if not conditions:
+        return []
+    return _order_and_run(db, select(ApprovalRequest).where(or_(*conditions)))
+
+
+def _bucket_history(db: Session, actor: User) -> list[ApprovalRequest]:
+    """AR ที่ actor เคย "อนุมัติ" (ไม่รวมปฏิเสธ — ปฏิเสธไปโผล่ Bucket "returned" แทน) มา
+    แล้วอย่างน้อย 1 ครั้ง (Level ใดก็ได้ หรือ FA Acknowledge) — เป็น Log ส่วนบุคคลของ actor
+    เอง แม้แต่ Admin ก็ดูเฉพาะที่ตัวเองกดจริง (ต่างจาก waiting/mine/returned ที่ Admin เห็น
+    ทั้งระบบเพื่อตรวจสอบ — history คือ "ที่ฉันทำ" ไม่ใช่ "ที่ต้องตรวจ")"""
+    ar_ids_subq = (
+        select(ARBudgetApproval.ar_id)
+        .where(
+            ARBudgetApproval.acted_by_id == actor.id,
+            ARBudgetApproval.action == BudgetApprovalAction.APPROVED,
+        )
+        .distinct()
+        .scalar_subquery()
+    )
+    return _order_and_run(db, select(ApprovalRequest).where(ApprovalRequest.id.in_(ar_ids_subq)))
+
+
+def _bucket_returned(db: Session, actor: User) -> list[ApprovalRequest]:
+    base = select(ApprovalRequest).where(
+        ApprovalRequest.budget_approval_status == ARBudgetApprovalStatus.REJECTED
+    )
+    if actor.is_admin:
+        return _order_and_run(db, base)
+
+    conditions = []
+    depts = _approver_departments(db, actor)
+    if depts:
+        conditions.append(ApprovalRequest.budget_department.in_(depts))
+    if actor.is_fa:
+        conditions.append(ApprovalRequest.id.in_(_fa_reached_ar_ids_subquery()))
+    if not conditions:
+        return []
+    return _order_and_run(db, base.where(or_(*conditions)))
+
+
+_BUCKET_FUNCS = {
+    "waiting": _bucket_waiting,
+    "mine": _bucket_mine,
+    "history": _bucket_history,
+    "returned": _bucket_returned,
+}
+
+
+def list_my_approvals(db: Session, actor: User, bucket: str) -> list[ApprovalRequest]:
+    fn = _BUCKET_FUNCS.get(bucket)
+    if fn is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f'ไม่รู้จักหมวด "{bucket}"')
+    return fn(db, actor)
+
+
+def count_my_approvals(db: Session, actor: User) -> dict[str, int]:
+    return {bucket: len(fn(db, actor)) for bucket, fn in _BUCKET_FUNCS.items()}
+
+
+def is_ar_actionable_by(db: Session, ar: ApprovalRequest, actor: User) -> bool:
+    """True ถ้า actor กด "อนุมัติ/ปฏิเสธ"/"FA Acknowledge" ใบนี้ได้จริง ณ ตอนนี้ (ใช้โชว์/
+    ซ่อนปุ่ม Action ในหน้า My Approvals — Logic เดียวกับเงื่อนไขของ Bucket "mine" แต่เช็ค
+    ทีละใบแทนการ Query ทั้งชุด)"""
+    if actor.is_admin:
+        return ar.budget_approval_status in (
+            ARBudgetApprovalStatus.PENDING,
+            ARBudgetApprovalStatus.PENDING_FA_ACKNOWLEDGE,
+        )
+    if (
+        ar.budget_approval_status == ARBudgetApprovalStatus.PENDING
+        and ar.current_approval_level is not None
+        and ar.budget_department
+    ):
+        pairs = _approver_level_pairs(db, actor)
+        if (ar.budget_department, ar.current_approval_level) in pairs:
+            return True
+    if ar.budget_approval_status == ARBudgetApprovalStatus.PENDING_FA_ACKNOWLEDGE and actor.is_fa:
+        return True
+    return False

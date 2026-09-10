@@ -64,7 +64,64 @@ async function requireLogin() {
   if (navLevels && me.is_admin) navLevels.classList.remove("hidden");
   const navBudget = document.getElementById("nav-budget");
   if (navBudget && (me.is_admin || me.is_fa)) navBudget.classList.remove("hidden");
+
+  // My Approvals (Phase B/2, 2026-09-10) — เมนู "การอนุมัติของฉัน" (Submenu ขยายลง 4
+  // หมวด) โชว์ให้ Admin/FA เสมอ (เป็นผู้มีสิทธิ์อนุมัติอยู่แล้วโดยนิยาม) หรือ User ที่ถูก
+  // Admin เปิด can_view_approvals ให้จากหน้า "จัดการ User" — approver_only ซ่อนเมนูอื่น
+  // ทั้งหมด เหลือแค่เมนูนี้เมนูเดียว (ดู Docstring app/models/user.py)
+  const canSeeApprovals = me.is_admin || me.is_fa || me.can_view_approvals;
+  const navApprovalsToggle = document.getElementById("nav-approvals-toggle");
+  const approvalsSubmenu = document.getElementById("approvals-submenu");
+  if (canSeeApprovals) {
+    if (navApprovalsToggle) navApprovalsToggle.classList.remove("hidden");
+    await setupMyApprovalsNav();
+  }
+  if (me.approver_only) {
+    ["nav-pr-list", "nav-pr-new", "nav-doc-upload", "nav-ar", "nav-ai-usage", "nav-budget", "nav-budget-levels", "nav-users"]
+      .forEach((id) => document.getElementById(id)?.classList.add("hidden"));
+  }
   return me;
+}
+
+// My Approvals (Phase B/2, 2026-09-10) — Toggle Accordion + Badge Count + Active Tab
+async function setupMyApprovalsNav() {
+  const toggle = document.getElementById("nav-approvals-toggle");
+  const submenu = document.getElementById("approvals-submenu");
+  if (!toggle || !submenu || toggle.dataset.bound) {
+    // ยังต้อง Refresh Badge/Active Tab ทุกครั้งแม้ Bind Handler ไปแล้วรอบก่อน (Guard
+    // เฉพาะการผูก Event ซ้ำซ้อน ไม่ใช่การโหลดข้อมูล)
+  } else {
+    toggle.dataset.bound = "1";
+    toggle.addEventListener("click", () => {
+      toggle.classList.toggle("expanded");
+      submenu.classList.toggle("open");
+    });
+  }
+
+  const onMyApprovalsPage = window.location.pathname.startsWith("/app/my-approvals");
+  const currentTab = new URLSearchParams(window.location.search).get("tab");
+  submenu.querySelectorAll(".submenu-item").forEach((el) => {
+    el.classList.toggle("active", onMyApprovalsPage && el.dataset.tab === currentTab);
+  });
+  if (onMyApprovalsPage) {
+    toggle.classList.add("expanded");
+    submenu.classList.add("open");
+  }
+
+  try {
+    const res = await apiFetch("/ars/my-approvals/counts");
+    if (!res.ok) return;
+    const counts = await res.json();
+    ["waiting", "mine", "history", "returned"].forEach((bucket) => {
+      const el = document.getElementById(`badge-${bucket}`);
+      if (!el) return;
+      const n = counts[bucket] || 0;
+      el.textContent = String(n);
+      el.classList.toggle("zero", n === 0);
+    });
+  } catch (e) {
+    // เงียบไว้ — Badge เป็นแค่ตัวช่วยแสดงผล ไม่ใช่ข้อมูลสำคัญที่พังแล้ว Block การใช้งานหน้าอื่น
+  }
 }
 
 // ไฮไลต์เมนู Sidebar ที่ตรงกับหน้าปัจจุบัน (2026-09-04 — Design System v2) — เทียบ

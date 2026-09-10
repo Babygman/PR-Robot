@@ -33,3 +33,6 @@ htmlcov/
 .vscode/
 .idea/
 .DS_Store
+
+# Scratch design mockups (throwaway — not part of the app, for review only)
+mockup_*.html
