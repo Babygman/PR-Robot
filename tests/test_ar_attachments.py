@@ -36,6 +36,24 @@ def _make_real_xlsx_bytes() -> bytes:
     return buf.getvalue()
 
 
+def _make_multi_sheet_xlsx_bytes() -> bytes:
+    """แก้ไขเพิ่ม (2026-09-10): ผู้ใช้แจ้งว่าไฟล์ Excel จริงมีหลาย Tab (Sheet) ต้อง Preview
+    เห็นครบทุก Tab ไม่ใช่แค่ Tab แรก — จำลองไฟล์ 3 Sheet เหมือนไฟล์จริงที่ผู้ใช้ส่งมา"""
+    workbook = Workbook()
+    sheet1 = workbook.active
+    sheet1.title = "Budget Master"
+    sheet1.append(["Department", "Budget No"])
+    sheet1.append(["Production", "BG0001"])
+    sheet2 = workbook.create_sheet("Approval")
+    sheet2.append(["Level", "Approver"])
+    sheet2.append(["Manager", "Somchai"])
+    sheet3 = workbook.create_sheet("Notes")
+    sheet3.append(["Remark"])
+    buf = io.BytesIO()
+    workbook.save(buf)
+    return buf.getvalue()
+
+
 def _login(client: TestClient) -> None:
     client.post("/auth/login", json={"email": "plain@example.com", "password": "plainpass123"})
 
@@ -150,13 +168,39 @@ def test_xlsx_preview_returns_rows_for_real_xlsx(client: TestClient, plain_user:
     res = client.get(f"/ars/{ar_id}/attachments/{att_id}/xlsx-preview")
     assert res.status_code == 200, res.text
     body = res.json()
-    assert body["sheet_name"] == "Budget"
-    assert body["truncated"] is False
-    assert body["rows"] == [
+    assert len(body["sheets"]) == 1
+    sheet = body["sheets"][0]
+    assert sheet["sheet_name"] == "Budget"
+    assert sheet["truncated"] is False
+    assert sheet["rows"] == [
         ["Item", "Qty", "Amount"],
         ["pc", 1, 44040],
         ["mouse", 2, 250],
     ]
+
+
+def test_xlsx_preview_returns_all_sheets(client: TestClient, plain_user: User):
+    _login(client)
+    ar_id = client.post("/ars", json=_sample_ar_body()).json()["id"]
+
+    att_id = client.post(
+        f"/ars/{ar_id}/attachments",
+        files={
+            "file": (
+                "budget_master_template and approval.xlsx",
+                io.BytesIO(_make_multi_sheet_xlsx_bytes()),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    ).json()["id"]
+
+    res = client.get(f"/ars/{ar_id}/attachments/{att_id}/xlsx-preview")
+    assert res.status_code == 200, res.text
+    sheets = res.json()["sheets"]
+    assert [s["sheet_name"] for s in sheets] == ["Budget Master", "Approval", "Notes"]
+    assert sheets[0]["rows"] == [["Department", "Budget No"], ["Production", "BG0001"]]
+    assert sheets[1]["rows"] == [["Level", "Approver"], ["Manager", "Somchai"]]
+    assert sheets[2]["rows"] == [["Remark"]]
 
 
 def test_xlsx_preview_rejects_unreadable_file(client: TestClient, plain_user: User):

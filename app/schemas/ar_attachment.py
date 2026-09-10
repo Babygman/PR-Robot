@@ -26,7 +26,16 @@ class ARAttachmentRead(BaseModel):
 # Preview .xlsx ตรงๆ ไม่ได้ (ไม่มี Native Viewer เหมือน PDF) จึงอ่านค่าด้วย openpyxl ฝั่ง
 # Server แล้วส่งเป็นตาราง Rows/Cols กลับมาให้ฝั่งหน้าเว็บ Render เป็น <table> เอง (Vanilla
 # JS ตามหลักการของโปรเจกต์นี้ ไม่ใช้ Library แปลง Excel ฝั่ง Browser)
-class ARAttachmentXlsxPreview(BaseModel):
+#
+# Correction 2026-09-10 (แก้ไขเพิ่ม): เดิมอ่านแค่ Sheet แรก — ผู้ใช้แจ้งว่าไฟล์ Excel จริง
+# มีหลาย Tab (Sheet) ต้องเห็นครบทุก Tab ไม่ใช่แค่ Tab แรก จึงเปลี่ยนเป็นส่งกลับทุก Sheet
+# (จำกัดจำนวน Sheet ที่ _XLSX_PREVIEW_MAX_SHEETS กันไฟล์ที่มี Sheet เยอะเกินไป) ให้ฝั่ง
+# หน้าเว็บ Render เป็น Sub-tab สลับดูแต่ละ Sheet ได้เอง
+class ARAttachmentXlsxSheetPreview(BaseModel):
     sheet_name: str
     rows: list[list[str | float | int | None]]
     truncated: bool
+
+
+class ARAttachmentXlsxPreview(BaseModel):
+    sheets: list[ARAttachmentXlsxSheetPreview]

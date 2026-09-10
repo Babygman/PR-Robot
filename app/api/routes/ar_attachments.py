@@ -32,14 +32,21 @@ from app.core.config import settings
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models import ApprovalRequest, ARAttachment, AuditLog, User
-from app.schemas.ar_attachment import ARAttachmentRead, ARAttachmentXlsxPreview
+from app.schemas.ar_attachment import (
+    ARAttachmentRead,
+    ARAttachmentXlsxPreview,
+    ARAttachmentXlsxSheetPreview,
+)
 from app.services import budget_workflow
 from app.services.user_lookup import resolve_user_names
 
 # Comment 4 (2026-09-10 — xlsx-preview): จำกัดขนาดตารางที่ส่งกลับให้ Preview กันไฟล์ใหญ่
 # เกินไปทำหน้าเว็บค้าง — พอสำหรับดูเนื้อหาคร่าวๆ ถ้าต้องการดูฉบับเต็มยังกดดาวน์โหลดได้
+# _XLSX_PREVIEW_MAX_SHEETS (แก้ไขเพิ่ม): จำกัดจำนวน Sheet ที่ส่งกลับด้วย กันไฟล์ที่มี Sheet
+# เยอะผิดปกติ
 _XLSX_PREVIEW_MAX_ROWS = 300
 _XLSX_PREVIEW_MAX_COLS = 40
+_XLSX_PREVIEW_MAX_SHEETS = 20
 
 router = APIRouter(prefix="/ars/{ar_id}/attachments", tags=["ar-attachments"])
 
@@ -186,7 +193,9 @@ def preview_ar_attachment_xlsx(
 ) -> ARAttachmentXlsxPreview:
     """Comment 4 (2026-09-10): Preview เนื้อหาไฟล์ Excel (.xlsx เท่านั้น — .xls รูปแบบเก่า
     openpyxl อ่านไม่ได้ จะโดน 422 กลับไป ฝั่งหน้าเว็บ Fallback เป็นลิงก์ดาวน์โหลดแทน) อ่าน
-    เฉพาะ Sheet แรก จำกัดจำนวนแถว/คอลัมน์กันไฟล์ใหญ่เกินไป"""
+    ทุก Sheet (จำกัดที่ _XLSX_PREVIEW_MAX_SHEETS) จำกัดจำนวนแถว/คอลัมน์ต่อ Sheet กันไฟล์
+    ใหญ่เกินไป — แก้ไขเพิ่ม 2026-09-10: เดิมอ่านแค่ Sheet แรก ผู้ใช้แจ้งว่าไฟล์จริงมีหลาย
+    Tab ต้องเห็นครบทุก Tab"""
     _get_ar_or_404(db, ar_id)
     attachment = _get_attachment_or_404(db, ar_id, attachment_id)
     file_path = Path(attachment.stored_path)
@@ -202,26 +211,29 @@ def preview_ar_attachment_xlsx(
         ) from exc
 
     try:
-        sheet = workbook.worksheets[0]
-        rows: list[list[str | float | int | None]] = []
-        truncated = False
-        for row_index, row in enumerate(sheet.iter_rows(values_only=True)):
-            if row_index >= _XLSX_PREVIEW_MAX_ROWS:
-                truncated = True
-                break
-            row_values = list(row[:_XLSX_PREVIEW_MAX_COLS])
-            if len(row) > _XLSX_PREVIEW_MAX_COLS:
-                truncated = True
-            cleaned_row = [
-                None if v is None else (v if isinstance(v, str | int | float) else str(v))
-                for v in row_values
-            ]
-            rows.append(cleaned_row)
-        sheet_name = sheet.title
+        sheets: list[ARAttachmentXlsxSheetPreview] = []
+        for sheet in workbook.worksheets[:_XLSX_PREVIEW_MAX_SHEETS]:
+            rows: list[list[str | float | int | None]] = []
+            truncated = False
+            for row_index, row in enumerate(sheet.iter_rows(values_only=True)):
+                if row_index >= _XLSX_PREVIEW_MAX_ROWS:
+                    truncated = True
+                    break
+                row_values = list(row[:_XLSX_PREVIEW_MAX_COLS])
+                if len(row) > _XLSX_PREVIEW_MAX_COLS:
+                    truncated = True
+                cleaned_row = [
+                    None if v is None else (v if isinstance(v, str | int | float) else str(v))
+                    for v in row_values
+                ]
+                rows.append(cleaned_row)
+            sheets.append(
+                ARAttachmentXlsxSheetPreview(sheet_name=sheet.title, rows=rows, truncated=truncated)
+            )
     finally:
         workbook.close()
 
-    return ARAttachmentXlsxPreview(sheet_name=sheet_name, rows=rows, truncated=truncated)
+    return ARAttachmentXlsxPreview(sheets=sheets)
 
 
 @router.delete("/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)

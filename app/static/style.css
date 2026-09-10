@@ -541,7 +541,12 @@ td.center { text-align: center; }
    thumbs/lightbox) ถือว่าแถวแรกเป็น Header เสมอ (Assume ตามรูปแบบ Excel ทั่วไปที่ใช้จริง
    ในโปรเจกต์นี้ — ไม่ใช่กติกาตายตัว) */
 .ma-xlsx-preview { width: 100%; height: 100%; overflow: auto; background: #fff; padding: 16px; box-sizing: border-box; }
-.ma-xlsx-sheet-name { font-size: 12px; color: var(--color-text-faint); margin-bottom: 10px; }
+/* แก้ไขเพิ่ม (2026-09-10): ไฟล์ Excel มีหลาย Sheet (Tab) — ผู้ใช้แจ้งว่าต้องเห็นครบ ไม่ใช่
+   แค่ Sheet แรก เพิ่ม Sub-tab สลับ Sheet ภายใน Preview (แยกชั้นจาก Tab เอกสารแนบด้านบน) */
+.ma-xlsx-sheet-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.ma-xlsx-sheet-tab { padding: 4px 12px; font-size: 12px; border-radius: 6px; cursor: pointer; background: var(--color-surface-2); color: var(--color-text-faint); border: none; }
+.ma-xlsx-sheet-tab.active { background: var(--color-brass); color: #fff; }
+.ma-xlsx-truncated-note { font-size: 12px; color: var(--color-text-faint); margin-bottom: 8px; }
 .ma-xlsx-table-wrap { overflow: auto; }
 .ma-xlsx-table { border-collapse: collapse; font-size: 12.5px; white-space: nowrap; }
 .ma-xlsx-table th, .ma-xlsx-table td { border: 1px solid var(--color-border); padding: 4px 8px; text-align: left; }

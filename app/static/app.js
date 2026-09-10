@@ -283,6 +283,25 @@ function escapeHtmlCell(v) {
   return escapeHtml(String(v));
 }
 
+// แก้ไขเพิ่ม (2026-09-10): เดิม Preview แค่ Sheet แรกของไฟล์ Excel — ผู้ใช้แจ้งว่าไฟล์
+// จริงมีหลาย Tab (Sheet) ต้องเห็นครบทุก Tab ไม่ใช่แค่ Tab แรก จึง Render เป็น Sub-tab ให้
+// สลับดูแต่ละ Sheet ได้ (Backend ส่งกลับทุก Sheet มาแล้ว — ดู xlsx-preview endpoint)
+function xlsxSheetTableHtml(sheet) {
+  if (sheet.rows.length === 0) {
+    return '<p class="muted">Sheet นี้ไม่มีข้อมูล</p>';
+  }
+  const tableRows = sheet.rows
+    .map(
+      (row, i) =>
+        `<tr>${row.map((cell) => (i === 0 ? `<th>${escapeHtmlCell(cell)}</th>` : `<td>${escapeHtmlCell(cell)}</td>`)).join("")}</tr>`
+    )
+    .join("");
+  const truncatedNote = sheet.truncated
+    ? '<div class="ma-xlsx-truncated-note">แสดงบางส่วน — ดาวน์โหลดเพื่อดูฉบับเต็ม</div>'
+    : "";
+  return `${truncatedNote}<div class="ma-xlsx-table-wrap"><table class="ma-xlsx-table">${tableRows}</table></div>`;
+}
+
 async function renderXlsxAttachmentPreview(att, body, url) {
   const res = await apiFetch(`/ars/${LIGHTBOX_AR_ID}/attachments/${att.id}/xlsx-preview`);
   if (!res.ok) {
@@ -290,21 +309,29 @@ async function renderXlsxAttachmentPreview(att, body, url) {
     return;
   }
   const data = await res.json();
-  if (data.rows.length === 0) {
-    body.innerHTML = '<p class="muted">ไฟล์ Excel นี้ไม่มีข้อมูลใน Sheet แรก</p>';
+  const sheets = data.sheets || [];
+  if (sheets.length === 0) {
+    body.innerHTML = '<p class="muted">ไฟล์ Excel นี้ไม่มี Sheet</p>';
     return;
   }
-  const tableRows = data.rows
-    .map(
-      (row, i) =>
-        `<tr>${row.map((cell) => (i === 0 ? `<th>${escapeHtmlCell(cell)}</th>` : `<td>${escapeHtmlCell(cell)}</td>`)).join("")}</tr>`
-    )
-    .join("");
   body.innerHTML = `
     <div class="ma-xlsx-preview">
-      <div class="ma-xlsx-sheet-name">Sheet: ${escapeHtml(data.sheet_name)}${data.truncated ? " — แสดงบางส่วน (ดาวน์โหลดเพื่อดูฉบับเต็ม)" : ""}</div>
-      <div class="ma-xlsx-table-wrap"><table class="ma-xlsx-table">${tableRows}</table></div>
+      <div class="ma-xlsx-sheet-tabs" id="ma-xlsx-sheet-tabs"></div>
+      <div class="ma-xlsx-sheet-body" id="ma-xlsx-sheet-body"></div>
     </div>`;
+  const tabsEl = body.querySelector("#ma-xlsx-sheet-tabs");
+  const sheetBodyEl = body.querySelector("#ma-xlsx-sheet-body");
+  tabsEl.innerHTML = sheets
+    .map((s, i) => `<button type="button" class="ma-xlsx-sheet-tab ${i === 0 ? "active" : ""}" data-index="${i}">${escapeHtml(s.sheet_name)}</button>`)
+    .join("");
+  tabsEl.querySelectorAll(".ma-xlsx-sheet-tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      tabsEl.querySelectorAll(".ma-xlsx-sheet-tab").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      sheetBodyEl.innerHTML = xlsxSheetTableHtml(sheets[Number(btn.dataset.index)]);
+    });
+  });
+  sheetBodyEl.innerHTML = xlsxSheetTableHtml(sheets[0]);
 }
 
 async function renderAttachmentLightboxDoc(att) {
