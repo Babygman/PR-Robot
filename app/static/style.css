@@ -437,14 +437,26 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 /* ---------- ตาราง ---------- */
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 10px 10px; border-bottom: 1px solid var(--color-border); font-size: 13.5px; }
-/* Comment 2026-09-11 (Audit): ตาราง User Management มี 13 คอลัมน์ ถูก width:100% บีบ
-   จนช่อง Email เหลือพื้นที่ไม่พอ (เห็นแค่ "prev..." ของ Email จริง) — ให้ Scroll แนวนอน
-   แทนการบีบทุกคอลัมน์ให้เท่ากัน */
 .table-scroll { overflow-x: auto; }
-.users-table { min-width: 1040px; }
-.users-table .u-email { min-width: 190px; }
-.users-table .u-department, .users-table .u-position { min-width: 110px; }
 th { color: var(--color-text-faint); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; border-bottom-color: var(--color-border-strong); }
+
+/* ---------- User Management: Card ต่อ User (User Management Redesign, 2026-09-11) ----------
+   Comment 2026-09-11 (Audit follow-up): เดิมเป็นตารางแนวนอน 13 คอลัมน์ที่ถูกบีบจนปุ่ม
+   Save/Reset Password ล้นขอบจอ (ไม่มี min-width บนคอลัมน์ปุ่ม) — เปลี่ยนเป็น Card ต่อ User
+   แทนทั้งหมดตาม Mockup ที่ผู้ใช้ส่งมา: LEFT เป็นตาราง Key-Value แนวตั้ง (Name/Email/
+   Department/Division/Position) RIGHT เป็นแถวเดียวของ Checkbox สิทธิ์ทั้งหมด + ปุ่ม Action
+   — Responsive ธรรมชาติ (Flex Wrap) ไม่ต้อง Scroll แนวนอนอีกต่อไป */
+.user-row-card { display: flex; gap: 22px; flex-wrap: wrap; padding: 16px 0; border-bottom: 1px solid var(--color-border); }
+.user-row-card:last-child { border-bottom: none; }
+.user-row-left { flex: 1 1 300px; min-width: 260px; }
+.user-row-left table { width: 100%; }
+.user-row-left th { width: 100px; white-space: nowrap; font-size: 10.5px; vertical-align: middle; }
+.user-row-left td { vertical-align: middle; }
+.user-row-left td input { width: 100%; }
+.user-row-right { flex: 1 1 340px; min-width: 280px; display: flex; flex-direction: column; gap: 12px; justify-content: center; }
+.user-perm-row { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.user-perm-row label { display: flex; align-items: center; gap: 5px; font-size: 13px; text-transform: none; color: var(--color-text); white-space: nowrap; }
+.user-row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 tr:hover td { background: color-mix(in srgb, var(--color-primary-tint) 60%, transparent); }
 td a { color: var(--color-primary); font-weight: 600; }
 

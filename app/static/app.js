@@ -69,7 +69,7 @@ async function requireLogin() {
   // "hidden") เปิดให้เฉพาะคนมีสิทธิ์ตรงนี้ที่เดียว ดู Docstring app/models/user.py และ
   // app/core/deps.py สำหรับความหมายของแต่ละ Field/เงื่อนไขแต่ละเมนู
   const canViewPr = me.is_admin || me.can_view_pr || me.can_view_all_pr;
-  ["nav-pr-list", "nav-pr-new", "nav-doc-upload"].forEach((id) => {
+  ["nav-pr-list", "nav-pr-new"].forEach((id) => {
     if (canViewPr) document.getElementById(id)?.classList.remove("hidden");
   });
 
@@ -87,6 +87,9 @@ async function requireLogin() {
 
   const navLevels = document.getElementById("nav-budget-levels");
   if (me.is_admin) navLevels?.classList.remove("hidden");
+
+  const navTermOfPayment = document.getElementById("nav-term-of-payment");
+  if (me.is_admin) navTermOfPayment?.classList.remove("hidden");
 
   const navUsers = document.getElementById("nav-users");
   if (me.is_admin) navUsers?.classList.remove("hidden");

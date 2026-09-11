@@ -17,6 +17,7 @@ from app.api.routes.budget_levels import router as budget_levels_router
 from app.api.routes.documents import router as documents_router
 from app.api.routes.pages import router as pages_router
 from app.api.routes.purchasing_requisitions import router as prs_router
+from app.api.routes.term_of_payment import router as term_of_payment_router
 from app.api.routes.users import router as users_router
 from app.core.config import settings
 from app.db.session import engine
@@ -34,6 +35,7 @@ app.include_router(audit_logs_router)
 app.include_router(ai_usage_router)
 app.include_router(budget_router)
 app.include_router(budget_levels_router)
+app.include_router(term_of_payment_router)
 app.include_router(pages_router)
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 

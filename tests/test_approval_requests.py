@@ -96,6 +96,40 @@ def test_create_ar_allows_empty_amount_items(client: TestClient, plain_user: Use
     assert res.json()["amount_items"] == []
 
 
+def test_create_ar_rejects_missing_source_document(client: TestClient, plain_user: User):
+    _login(client)
+    res = client.post("/ars", json=_sample_ar_body(source_document_ids=[9999]))
+    assert res.status_code == 400
+
+
+def test_create_ar_links_source_document(client: TestClient, plain_user: User, db_session: Session):
+    """AI Extract for AR (2026-09-11) — Pattern เดียวกับ
+    tests/test_purchasing_requisitions.py: test_create_pr_links_source_document"""
+    from app.models import SourceDocType, SourceDocument
+
+    doc = SourceDocument(
+        file_path="storage/uploads/dummy.pdf",
+        doc_type=SourceDocType.QUOTATION,
+        uploaded_by_id=plain_user.id,
+    )
+    db_session.add(doc)
+    db_session.commit()
+    db_session.refresh(doc)
+
+    _login(client)
+    res = client.post("/ars", json=_sample_ar_body(source_document_ids=[doc.id]))
+    assert res.status_code == 201, res.text
+
+    db_session.refresh(doc)
+    assert doc.ar_id == res.json()["id"]
+    assert doc.pr_id is None
+
+    # เอกสารที่ถูกผูกกับ AR แล้วต้องไม่ปรากฏใน unlinked_only อีกต่อไป (ใช้ Pool เดียวกัน
+    # กับ PR — ดู app/api/routes/documents.py: list_documents)
+    listed = client.get("/documents", params={"unlinked_only": True})
+    assert doc.id not in [d["id"] for d in listed.json()]
+
+
 def test_get_ar_not_found(client: TestClient, plain_user: User):
     _login(client)
     res = client.get("/ars/9999")

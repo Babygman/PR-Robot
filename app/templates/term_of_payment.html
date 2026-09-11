@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Term of Payment — PR-Robot{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Term of Payment (จัดการ Term of Payment)</h1>
+    <p class="muted">
+      Admin เท่านั้น — จัดการรายการ Term of Payment ที่ใช้เป็น Dropdown ในฟอร์ม Approval Request
+      (เช่น "Credit 30 Days", "Cash", "50% Advance") ปิด Active ไว้ถ้าไม่ต้องการให้เลือกใหม่แล้ว
+      แต่ยังอยากเก็บไว้ดูใน AR เก่าที่เคยเลือกไปแล้ว
+    </p>
+  </div>
+</div>
+
+<div class="error hidden" id="page-error"></div>
+
+<div class="card">
+  <h2>Add New Term of Payment</h2>
+  <form id="create-form">
+    <div class="row">
+      <div class="field" style="flex:2;"><label for="c-name">Name</label><input type="text" id="c-name" placeholder="e.g. Credit 30 Days" required></div>
+      <div class="field" style="display:flex; align-items:flex-end;"><button type="submit">Add</button></div>
+    </div>
+    <div class="error hidden" id="create-error"></div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>All Term of Payment</h2>
+  <table>
+    <thead><tr><th>Name</th><th>Active</th><th></th></tr></thead>
+    <tbody id="options-body"><tr><td colspan="3" class="muted">กำลังโหลด...</td></tr></tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function rowHtml(o) {
+  return `<tr data-id="${o.id}">
+    <td><input type="text" class="o-name" value="${escapeHtml(o.name)}"></td>
+    <td style="text-align:center;"><input type="checkbox" class="o-active" ${o.is_active ? "checked" : ""}></td>
+    <td style="white-space:nowrap;">
+      <button type="button" class="secondary save-btn">Save</button>
+      <button type="button" class="secondary delete-btn" style="color:var(--color-danger); border-color:var(--color-danger);">Delete</button>
+    </td>
+  </tr>`;
+}
+
+async function loadOptions() {
+  const res = await apiFetch("/term-of-payment-options");
+  const body = document.getElementById("options-body");
+  if (!res.ok) {
+    body.innerHTML = '<tr><td colspan="3" class="error">โหลดรายการไม่สำเร็จ (ต้องเป็น Admin เท่านั้น)</td></tr>';
+    return;
+  }
+  const options = await res.json();
+  body.innerHTML = options.map(rowHtml).join("") || '<tr><td colspan="3" class="muted">ยังไม่มีรายการ</td></tr>';
+
+  body.querySelectorAll(".save-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const row = btn.closest("tr");
+      const id = row.dataset.id;
+      btn.disabled = true;
+      const payload = {
+        name: row.querySelector(".o-name").value,
+        is_active: row.querySelector(".o-active").checked,
+      };
+      const r = await apiFetch(`/term-of-payment-options/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+      btn.disabled = false;
+      if (!r.ok) {
+        const body2 = await r.json().catch(() => ({}));
+        alert(body2.detail || "บันทึกไม่สำเร็จ");
+        return;
+      }
+      btn.textContent = "Saved";
+      setTimeout(() => (btn.textContent = "Save"), 1200);
+    });
+  });
+
+  body.querySelectorAll(".delete-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const row = btn.closest("tr");
+      const id = row.dataset.id;
+      const name = row.querySelector(".o-name").value;
+      if (!confirm(`ลบ "${name}" ทิ้งถาวร?`)) return;
+      const r = await apiFetch(`/term-of-payment-options/${id}`, { method: "DELETE" });
+      if (!r.ok) {
+        alert("ลบไม่สำเร็จ");
+        return;
+      }
+      row.remove();
+    });
+  });
+}
+
+document.getElementById("create-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById("create-error");
+  errEl.classList.add("hidden");
+  const res = await apiFetch("/term-of-payment-options", {
+    method: "POST",
+    body: JSON.stringify({ name: document.getElementById("c-name").value }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    errEl.textContent = body.detail || "เพิ่มไม่สำเร็จ";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  document.getElementById("create-form").reset();
+  await loadOptions();
+});
+
+(async () => {
+  const me = await requireLogin();
+  if (!me) return;
+  if (!me.is_admin) {
+    document.getElementById("page-error").textContent = "หน้านี้สำหรับ Admin เท่านั้น";
+    document.getElementById("page-error").classList.remove("hidden");
+    return;
+  }
+  await loadOptions();
+})();
+</script>
+{% endblock %}

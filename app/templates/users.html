@@ -5,9 +5,13 @@
   <div>
     <h1>User Management (จัดการ User)</h1>
     <p class="muted">
-      Admin เท่านั้น — กำหนด Department/Position/สิทธิ์การเข้าถึงแต่ละเมนูให้แต่ละคน
+      Admin เท่านั้น — กำหนด Department/Division/Position/สิทธิ์การเข้าถึงแต่ละเมนูให้แต่ละคน
       ผู้สร้าง Approval Request ต้องมี Department ก่อนถึงจะสร้างได้
     </p>
+  </div>
+  <div class="actions" style="margin:0;">
+    <a class="btn secondary" href="/users/export">Download (Excel)</a>
+    <button type="button" class="secondary" id="open-upload-modal-btn">Upload (Excel)</button>
   </div>
 </div>
 
@@ -23,30 +27,31 @@
     </div>
     <div class="row">
       <div class="field"><label for="c-department">Department</label><input type="text" id="c-department" placeholder="e.g. Production"></div>
+      <div class="field"><label for="c-division">Division</label><input type="text" id="c-division" placeholder="e.g. Manufacturing"></div>
       <div class="field"><label for="c-position">Position</label><input type="text" id="c-position" placeholder="e.g. Manager"></div>
-      <div class="field" style="display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap;">
-        <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
-          <input type="checkbox" id="c-is-admin" style="width:auto;"> Admin
-        </label>
-        <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
-          <input type="checkbox" id="c-is-fa" style="width:auto;"> FA
-        </label>
-        <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
-          <input type="checkbox" id="c-can-view-approvals" style="width:auto;"> Approve
-        </label>
-        <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
-          <input type="checkbox" id="c-can-view-pr" style="width:auto;"> PR
-        </label>
-        <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
-          <input type="checkbox" id="c-can-view-ar" style="width:auto;"> AR
-        </label>
-        <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
-          <input type="checkbox" id="c-can-view-all-pr" style="width:auto;"> View All PR
-        </label>
-        <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
-          <input type="checkbox" id="c-can-view-all-ar" style="width:auto;"> View All AR
-        </label>
-      </div>
+    </div>
+    <div class="field" style="display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap;">
+      <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
+        <input type="checkbox" id="c-is-admin" style="width:auto;"> Admin
+      </label>
+      <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
+        <input type="checkbox" id="c-is-fa" style="width:auto;"> FA
+      </label>
+      <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
+        <input type="checkbox" id="c-can-view-approvals" style="width:auto;"> Approve
+      </label>
+      <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
+        <input type="checkbox" id="c-can-view-pr" style="width:auto;"> PR
+      </label>
+      <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
+        <input type="checkbox" id="c-can-view-ar" style="width:auto;"> AR
+      </label>
+      <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
+        <input type="checkbox" id="c-can-view-all-pr" style="width:auto;"> View All PR
+      </label>
+      <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
+        <input type="checkbox" id="c-can-view-all-ar" style="width:auto;"> View All AR
+      </label>
     </div>
     <div class="error hidden" id="create-error"></div>
     <div class="actions"><button type="submit">Add User</button></div>
@@ -59,15 +64,31 @@
     Admin = จัดการระบบทั้งหมด เห็น/แก้ไขได้ทุกอย่าง | FA = FA Acknowledge + Budget Control + AI Costs + Log AR |
     Approve = เมนู "การอนุมัติของฉัน" | PR = เมนู PR List/New PR (เห็นเฉพาะของตัวเอง) |
     AR = เมนู Approval Request (เห็นเฉพาะของตัวเอง) |
-    เห็น PR/AR ทั้งหมด = เห็นได้ทุกใบ + เห็นเมนู Log PR/Log AR (แต่แก้ไข/พิมพ์/ลบได้เฉพาะของตัวเองเสมอ)
+    เห็น PR/AR ทั้งหมด = เห็นได้ทุกใบ + เห็นเมนู Log PR/Log AR (แต่แก้ไข/พิมพ์/ลบได้เฉพาะของตัวเองเสมอ) |
+    Delete ลบถาวรได้เฉพาะ User ที่ไม่เคยมีประวัติอะไรในระบบเลยเท่านั้น — มีประวัติแล้วใช้ Active/Inactive แทน
   </p>
-  <div class="table-scroll">
-  <table class="users-table">
-    <thead>
-      <tr><th>Name</th><th>Email</th><th>Department</th><th>Position</th><th>Admin</th><th>FA</th><th>Approve</th><th>PR</th><th>AR</th><th>View All<br>PR</th><th>View All<br>AR</th><th>Active</th><th></th></tr>
-    </thead>
-    <tbody id="users-body"><tr><td colspan="13" class="muted">กำลังโหลด...</td></tr></tbody>
-  </table>
+  <div id="users-body"><p class="muted">กำลังโหลด...</p></div>
+</div>
+
+<div class="modal-overlay hidden" id="upload-users-modal">
+  <div class="modal-box" style="text-align:left; max-width:480px;">
+    <h3 style="margin:0 0 10px; font-size:16px;">Upload Users (Excel)</h3>
+    <p class="muted" style="font-size:12.5px;">
+      คอลัมน์: name | email | password (จำเป็นเฉพาะแถวสร้าง User ใหม่) | department | division |
+      position | is_admin | is_fa | can_view_approvals | can_view_pr | can_view_ar |
+      can_view_all_pr | can_view_all_ar | is_active — จับคู่ด้วย email เจอเดิม = Update
+      (ไม่แตะ Password) ไม่เจอ = สร้างใหม่
+    </p>
+    <div class="field">
+      <label for="upload-users-file">Excel File (.xlsx)</label>
+      <input type="file" id="upload-users-file" accept=".xlsx">
+    </div>
+    <div id="upload-users-result"></div>
+    <div class="error hidden" id="upload-users-error"></div>
+    <div class="actions">
+      <button type="button" id="upload-users-submit">Upload</button>
+      <button type="button" class="secondary" id="upload-users-cancel">Cancel</button>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -76,43 +97,54 @@
 let USERS_CACHE = [];
 
 function userRowHtml(u) {
-  return `<tr data-id="${u.id}">
-    <td>${escapeHtml(u.name)}</td>
-    <td><input type="email" class="u-email mono" aria-label="Email for ${escapeHtml(u.name)}" value="${escapeHtml(u.email)}"></td>
-    <td><input type="text" class="u-department" aria-label="Department for ${escapeHtml(u.name)}" value="${escapeHtml(u.department || "")}" placeholder="(None)"></td>
-    <td><input type="text" class="u-position" aria-label="Position for ${escapeHtml(u.name)}" value="${escapeHtml(u.position || "")}" placeholder="(None)"></td>
-    <td style="text-align:center;"><input type="checkbox" class="u-is-admin" aria-label="Admin for ${escapeHtml(u.name)}" ${u.is_admin ? "checked" : ""}></td>
-    <td style="text-align:center;"><input type="checkbox" class="u-is-fa" aria-label="FA for ${escapeHtml(u.name)}" ${u.is_fa ? "checked" : ""}></td>
-    <td style="text-align:center;"><input type="checkbox" class="u-can-view-approvals" aria-label="Approve for ${escapeHtml(u.name)}" ${u.can_view_approvals ? "checked" : ""}></td>
-    <td style="text-align:center;"><input type="checkbox" class="u-can-view-pr" aria-label="PR for ${escapeHtml(u.name)}" ${u.can_view_pr ? "checked" : ""}></td>
-    <td style="text-align:center;"><input type="checkbox" class="u-can-view-ar" aria-label="AR for ${escapeHtml(u.name)}" ${u.can_view_ar ? "checked" : ""}></td>
-    <td style="text-align:center;"><input type="checkbox" class="u-can-view-all-pr" aria-label="View All PR for ${escapeHtml(u.name)}" ${u.can_view_all_pr ? "checked" : ""}></td>
-    <td style="text-align:center;"><input type="checkbox" class="u-can-view-all-ar" aria-label="View All AR for ${escapeHtml(u.name)}" ${u.can_view_all_ar ? "checked" : ""}></td>
-    <td style="text-align:center;"><input type="checkbox" class="u-is-active" aria-label="Active for ${escapeHtml(u.name)}" ${u.is_active ? "checked" : ""}></td>
-    <td style="white-space:nowrap; display:flex; gap:6px;">
-      <button type="button" class="secondary save-user-btn">Save</button>
-      <button type="button" class="secondary reset-pw-btn" style="color:var(--color-danger); border-color:var(--color-danger);">Reset Password</button>
-    </td>
-  </tr>`;
+  return `<div class="user-row-card" data-id="${u.id}">
+    <div class="user-row-left">
+      <table>
+        <tr><th>Name</th><td>${escapeHtml(u.name)}</td></tr>
+        <tr><th>Email</th><td><input type="email" class="u-email mono" aria-label="Email for ${escapeHtml(u.name)}" value="${escapeHtml(u.email)}"></td></tr>
+        <tr><th>Department</th><td><input type="text" class="u-department" aria-label="Department for ${escapeHtml(u.name)}" value="${escapeHtml(u.department || "")}" placeholder="(None)"></td></tr>
+        <tr><th>Division</th><td><input type="text" class="u-division" aria-label="Division for ${escapeHtml(u.name)}" value="${escapeHtml(u.division || "")}" placeholder="(None)"></td></tr>
+        <tr><th>Position</th><td><input type="text" class="u-position" aria-label="Position for ${escapeHtml(u.name)}" value="${escapeHtml(u.position || "")}" placeholder="(None)"></td></tr>
+      </table>
+    </div>
+    <div class="user-row-right">
+      <div class="user-perm-row">
+        <label><input type="checkbox" class="u-is-admin" aria-label="Admin for ${escapeHtml(u.name)}" ${u.is_admin ? "checked" : ""}> Admin</label>
+        <label><input type="checkbox" class="u-is-fa" aria-label="FA for ${escapeHtml(u.name)}" ${u.is_fa ? "checked" : ""}> FA</label>
+        <label><input type="checkbox" class="u-can-view-approvals" aria-label="Approve for ${escapeHtml(u.name)}" ${u.can_view_approvals ? "checked" : ""}> Approve</label>
+        <label><input type="checkbox" class="u-can-view-pr" aria-label="PR for ${escapeHtml(u.name)}" ${u.can_view_pr ? "checked" : ""}> PR</label>
+        <label><input type="checkbox" class="u-can-view-ar" aria-label="AR for ${escapeHtml(u.name)}" ${u.can_view_ar ? "checked" : ""}> AR</label>
+        <label><input type="checkbox" class="u-can-view-all-pr" aria-label="View All PR for ${escapeHtml(u.name)}" ${u.can_view_all_pr ? "checked" : ""}> View All PR</label>
+        <label><input type="checkbox" class="u-can-view-all-ar" aria-label="View All AR for ${escapeHtml(u.name)}" ${u.can_view_all_ar ? "checked" : ""}> View All AR</label>
+        <label><input type="checkbox" class="u-is-active" aria-label="Active for ${escapeHtml(u.name)}" ${u.is_active ? "checked" : ""}> Active</label>
+      </div>
+      <div class="user-row-actions">
+        <button type="button" class="secondary save-user-btn">Save</button>
+        <button type="button" class="secondary reset-pw-btn" style="color:var(--color-danger); border-color:var(--color-danger);">Reset Password</button>
+        <button type="button" class="secondary delete-user-btn" style="color:var(--color-danger); border-color:var(--color-danger);">Delete</button>
+      </div>
+    </div>
+  </div>`;
 }
 
 async function loadUsers() {
   const res = await apiFetch("/users");
   const body = document.getElementById("users-body");
   if (!res.ok) {
-    body.innerHTML = '<tr><td colspan="13" class="error">โหลดรายชื่อไม่สำเร็จ (ต้องเป็น Admin เท่านั้น)</td></tr>';
+    body.innerHTML = '<p class="error">โหลดรายชื่อไม่สำเร็จ (ต้องเป็น Admin เท่านั้น)</p>';
     return;
   }
   USERS_CACHE = await res.json();
-  body.innerHTML = USERS_CACHE.map(userRowHtml).join("") || '<tr><td colspan="13" class="muted">ยังไม่มี User</td></tr>';
+  body.innerHTML = USERS_CACHE.map(userRowHtml).join("") || '<p class="muted">ยังไม่มี User</p>';
   body.querySelectorAll(".save-user-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      const row = btn.closest("tr");
+      const row = btn.closest(".user-row-card");
       const id = row.dataset.id;
       btn.disabled = true;
       const payload = {
         email: row.querySelector(".u-email").value,
         department: row.querySelector(".u-department").value || null,
+        division: row.querySelector(".u-division").value || null,
         position: row.querySelector(".u-position").value || null,
         is_admin: row.querySelector(".u-is-admin").checked,
         is_fa: row.querySelector(".u-is-fa").checked,
@@ -140,9 +172,9 @@ async function loadUsers() {
   // ซึ่งระบบยังไม่มี)
   body.querySelectorAll(".reset-pw-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      const row = btn.closest("tr");
+      const row = btn.closest(".user-row-card");
       const id = row.dataset.id;
-      const name = row.querySelector("td").textContent;
+      const name = row.querySelector("th ~ td")?.textContent || `#${id}`;
       const newPassword = prompt(`ตั้งรหัสผ่านใหม่ให้ ${name} (อย่างน้อย 8 ตัวอักษร)`);
       if (newPassword === null) return; // กดยกเลิก
       if (newPassword.length < 8) {
@@ -165,6 +197,26 @@ async function loadUsers() {
       setTimeout(() => (btn.textContent = original), 1500);
     });
   });
+
+  // Delete User — CRUD ครบ (User Management Redesign, 2026-09-11) — ลบได้เฉพาะ User ที่
+  // ไม่มีประวัติอะไรเลยในระบบเท่านั้น (Backend เช็คให้ 409 ถ้ามีประวัติ พร้อมเหตุผล)
+  body.querySelectorAll(".delete-user-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const row = btn.closest(".user-row-card");
+      const id = row.dataset.id;
+      const name = row.querySelector("th ~ td")?.textContent || `#${id}`;
+      if (!confirm(`ลบ User "${name}" ทิ้งถาวร? ลบได้เฉพาะ User ที่ไม่เคยมีประวัติอะไรในระบบเลยเท่านั้น`)) return;
+      btn.disabled = true;
+      const r = await apiFetch(`/users/${id}`, { method: "DELETE" });
+      btn.disabled = false;
+      if (!r.ok) {
+        const errBody = await r.json().catch(() => ({}));
+        alert(errBody.detail || "ลบไม่สำเร็จ — User นี้มีประวัติการใช้งานในระบบแล้ว กรุณาใช้ Active/Inactive แทน");
+        return;
+      }
+      row.remove();
+    });
+  });
 }
 
 document.getElementById("create-form").addEventListener("submit", async (e) => {
@@ -176,6 +228,7 @@ document.getElementById("create-form").addEventListener("submit", async (e) => {
     email: document.getElementById("c-email").value,
     password: document.getElementById("c-password").value,
     department: document.getElementById("c-department").value || null,
+    division: document.getElementById("c-division").value || null,
     position: document.getElementById("c-position").value || null,
     is_admin: document.getElementById("c-is-admin").checked,
     is_fa: document.getElementById("c-is-fa").checked,
@@ -194,6 +247,45 @@ document.getElementById("create-form").addEventListener("submit", async (e) => {
   }
   document.getElementById("create-form").reset();
   await loadUsers();
+});
+
+// Upload (Excel) — User Management Redesign, 2026-09-11 (Pattern เดียวกับ Budget Upload)
+document.getElementById("open-upload-modal-btn").addEventListener("click", () => {
+  document.getElementById("upload-users-file").value = "";
+  document.getElementById("upload-users-result").innerHTML = "";
+  document.getElementById("upload-users-error").classList.add("hidden");
+  document.getElementById("upload-users-modal").classList.remove("hidden");
+});
+document.getElementById("upload-users-cancel").addEventListener("click", () => {
+  document.getElementById("upload-users-modal").classList.add("hidden");
+});
+document.getElementById("upload-users-submit").addEventListener("click", async () => {
+  const fileInput = document.getElementById("upload-users-file");
+  const errEl = document.getElementById("upload-users-error");
+  errEl.classList.add("hidden");
+  if (!fileInput.files.length) {
+    errEl.textContent = "กรุณาเลือกไฟล์ก่อน";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  const formData = new FormData();
+  formData.append("file", fileInput.files[0]);
+  const btn = document.getElementById("upload-users-submit");
+  btn.disabled = true;
+  const res = await apiFetch("/users/upload", { method: "POST", body: formData });
+  btn.disabled = false;
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    errEl.textContent = body.detail ? JSON.stringify(body.detail) : "อัปโหลดไม่สำเร็จ";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  const result = await res.json();
+  const resultEl = document.getElementById("upload-users-result");
+  const errorLines = result.errors.map((e) => `แถว ${e.row_no}: ${escapeHtml(e.message)}`).join("<br>");
+  resultEl.innerHTML = `<p class="muted">ทั้งหมด ${result.total_rows} แถว — สำเร็จ ${result.success_rows} — Error ${result.error_rows}</p>` +
+    (errorLines ? `<p class="error">${errorLines}</p>` : "");
+  if (result.success_rows > 0) await loadUsers();
 });
 
 (async () => {

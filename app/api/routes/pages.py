@@ -117,3 +117,8 @@ def page_budget_levels(request: Request):
 @router.get("/budget")
 def page_budget(request: Request):
     return templates.TemplateResponse(request=request, name="budget_upload.html", context={})
+
+
+@router.get("/term-of-payment")
+def page_term_of_payment(request: Request):
+    return templates.TemplateResponse(request=request, name="term_of_payment.html", context={})

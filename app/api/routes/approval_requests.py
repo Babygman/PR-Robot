@@ -49,6 +49,7 @@ from app.models import (
     ARBudgetApprovalStatus,
     ARStatus,
     AuditLog,
+    SourceDocument,
     User,
 )
 from app.schemas.approval_request import (
@@ -152,6 +153,20 @@ def create_ar(
             status.HTTP_400_BAD_REQUEST,
             "บัญชีของคุณยังไม่ได้ระบุ Department — กรุณาติดต่อ Admin ให้กรอกก่อนสร้าง Approval Request",
         )
+    # AI Extract for AR (2026-09-11) — Pattern เดียวกับ create_pr ทุกประการ
+    if body.source_document_ids:
+        found = (
+            db.query(SourceDocument.id)
+            .filter(SourceDocument.id.in_(body.source_document_ids))
+            .all()
+        )
+        found_ids = {row[0] for row in found}
+        missing = set(body.source_document_ids) - found_ids
+        if missing:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, f"ไม่พบเอกสารต้นทาง ID: {sorted(missing)}"
+            )
+
     ar = ApprovalRequest(
         ar_no=allocate_ar_no(db),
         status=ARStatus.DRAFT,
@@ -161,12 +176,17 @@ def create_ar(
     db.add(ar)
     db.flush()  # ให้ ar.id พร้อมใช้ก่อน Commit
 
+    if body.source_document_ids:
+        db.query(SourceDocument).filter(SourceDocument.id.in_(body.source_document_ids)).update(
+            {"ar_id": ar.id}, synchronize_session=False
+        )
+
     db.add(
         AuditLog(
             ar_id=ar.id,
             action="ar.created",
             actor_id=current_user.id,
-            detail={"ar_no": ar.ar_no},
+            detail={"ar_no": ar.ar_no, "source_document_ids": body.source_document_ids or None},
         )
     )
     db.commit()

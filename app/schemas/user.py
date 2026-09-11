@@ -18,6 +18,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     department: str | None = None
+    division: str | None = None
     position: str | None = None
     is_admin: bool = False
     is_fa: bool = False
@@ -46,6 +47,7 @@ class UserUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     email: EmailStr | None = None
     department: str | None = None
+    division: str | None = None
     position: str | None = None
     is_active: bool | None = None
     is_admin: bool | None = None
@@ -70,6 +72,7 @@ class UserRead(BaseModel):
     name: str
     email: EmailStr
     department: str | None
+    division: str | None
     position: str | None
     is_active: bool
     is_admin: bool
@@ -82,3 +85,19 @@ class UserRead(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class UserExcelUploadRowError(BaseModel):
+    row_no: int
+    message: str
+
+
+class UserExcelUploadResult(BaseModel):
+    """ผลลัพธ์ Import Excel แบบ Partial-success (User Management Redesign, 2026-09-11)
+    — Pattern เดียวกับ BudgetUploadResult (app/schemas/budget.py) แต่ไม่มี Batch Log
+    Table แยกต่างหาก (ไม่ได้ร้องขอ) คืนผลสรุปตรงๆ ในการเรียกครั้งเดียว"""
+
+    total_rows: int
+    success_rows: int
+    error_rows: int
+    errors: list[UserExcelUploadRowError]

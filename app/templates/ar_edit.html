@@ -59,10 +59,21 @@
     <div class="field"><label for="f-description">Description</label><textarea id="f-description"></textarea></div>
   </div>
 
+  <div class="card" id="source-doc-card">
+    <h2>Attach Source Documents (แนบเอกสารต้นทาง ถ้ามี)</h2>
+    <p class="muted">
+      เลือกใบเสนอราคาที่อัปโหลดไว้เพื่อผูกกับ Approval Request นี้ — เลือกได้หลายรายการ AI จะรวมรายการ
+      จากทุกเอกสารที่เลือกไว้เป็นตาราง Amount &amp; Quantity ด้านล่างให้อัตโนมัติ (เปลี่ยนตัวเลือกแล้ว
+      รายการจะปรับใหม่ทันที แก้ไข/เพิ่ม/ลบรายการเองได้เสมอก่อนบันทึก)
+    </p>
+    <div id="source-doc-list" class="muted">กำลังโหลดรายการเอกสาร...</div>
+  </div>
+
   <div class="card">
     <h2>Amount &amp; Quantity</h2>
     <div id="items-container"></div>
     <button type="button" class="secondary" id="add-item-btn">+ Add Item</button>
+    <a href="/app/documents/upload?target=ar" class="btn secondary" style="margin-left:8px;">Upload Document</a>
     <div class="row" style="margin-top:14px;">
       <div class="field"><label for="f-total">Total</label><input type="text" id="f-total"></div>
       <div class="field"><label for="f-vat-rate">Vat %</label>
@@ -81,7 +92,7 @@
   <div class="card">
     <div class="row">
       <div class="field"><label for="f-suppliers">Suppliers / Vendor</label><input type="text" id="f-suppliers"></div>
-      <div class="field"><label for="f-term">Term of Payment</label><input type="text" id="f-term"></div>
+      <div class="field"><label for="f-term">Term of Payment</label><select id="f-term"><option value="">— Select —</option></select></div>
     </div>
     <div class="row">
       <div class="field"><label for="f-schedule-start">Schedule Start</label><input type="text" id="f-schedule-start" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off"></div>
@@ -98,6 +109,133 @@
 {% block scripts %}
 <script>
 const AR_ID = {{ ar_id if ar_id is not none else "null" }};
+
+// AI Extract for AR (2026-09-11) — Pattern เดียวกับ pr_edit.html: ผูกเอกสารต้นทาง
+// (ใบเสนอราคา) ที่เลือกไว้ตอน Upload เข้ากับ AR นี้ผ่าน source_document_ids ตอนสร้าง —
+// รองรับทั้งมาจาก Link "Create Approval Request from Selected Documents" (Query Param)
+// และเลือกเพิ่ม/ลบเองในการ์ด "Attach Source Documents" ด้านล่าง
+const arUploadParams = new URLSearchParams(window.location.search);
+const initialArDocIds = (arUploadParams.get("source_document_ids") || "")
+  .split(",")
+  .map((s) => Number(s.trim()))
+  .filter((n) => Number.isFinite(n) && n > 0);
+const selectedArDocIds = new Set(initialArDocIds);
+let allArDocs = [];
+
+// รวม product_name/description/color เป็น Label บรรทัดเดียว (Pattern เดียวกับ
+// combineDescription ใน pr_edit.html) เติม Quantity/Unit ต่อท้ายในวงเล็บถ้ามี เพราะ AR
+// Amount Item มีแค่ 2 คอลัมน์ (Label/Amount) ไม่มีช่อง Quantity แยกเหมือน PR Item
+function combineArItemLabel(item) {
+  const parts = [item.product_name, item.description];
+  if (item.color) parts.push(`(Color: ${item.color})`);
+  const qty = [item.quantity, item.unit].filter(Boolean).join(" ");
+  if (qty) parts.push(`(Qty: ${qty})`);
+  return parts.filter(Boolean).join(" / ");
+}
+
+// สร้างรายการ Amount & Quantity ใหม่จากทุกเอกสารต้นทางที่ติ๊กเลือกไว้ ณ ขณะนี้ (Live
+// Recompute เขียนทับรายการเดิม) + Prefill Suppliers/Vendor จากเอกสารแรกที่มี vendor_name
+// — ผู้ใช้แก้ไข/ลบ/เพิ่มเองได้เสมอก่อนบันทึกจริง (Pattern เดียวกับ pr_edit.html)
+function recomputeAmountItemsFromSelectedDocs() {
+  const items = [];
+  let vendorName = "";
+  for (const doc of allArDocs) {
+    if (!selectedArDocIds.has(doc.id)) continue;
+    const data = doc.reviewed_data || doc.ai_extraction_raw_json;
+    if (!vendorName && data?.vendor_name) vendorName = data.vendor_name;
+    if (data && data.items && data.items.length) {
+      data.items.forEach((it) => {
+        items.push({ label: combineArItemLabel(it), amount: it.amount ?? null });
+      });
+    }
+  }
+  document.getElementById("items-container").innerHTML = "";
+  if (items.length) {
+    items.forEach(addAmountItemRow);
+  } else {
+    addAmountItemRow();
+  }
+  if (vendorName) document.getElementById("f-suppliers").value = vendorName;
+  recalcTotalFromItems();
+}
+
+function renderArSourceDocList() {
+  const listEl = document.getElementById("source-doc-list");
+  if (allArDocs.length === 0) {
+    listEl.textContent = "ไม่มีเอกสารที่ยังไม่ได้ใช้สร้าง PR/AR — อัปโหลดใหม่ได้ที่ปุ่ม Upload Document ด้านล่าง";
+    return;
+  }
+  listEl.innerHTML = allArDocs
+    .slice(0, 30)
+    .map((doc) => {
+      const label = doc.reviewed_data?.vendor_name || doc.ai_extraction_raw_json?.vendor_name || `เอกสาร #${doc.id}`;
+      const checked = selectedArDocIds.has(doc.id) ? "checked" : "";
+      return `<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px; font-size:13.5px;">
+        <label style="display:block;">
+          <input type="checkbox" class="ar-source-doc-checkbox" value="${doc.id}" style="width:auto;" ${checked}>
+          #${doc.id} — ${escapeHtml(DOC_TYPE_LABEL[doc.doc_type] || doc.doc_type || "ไม่ระบุประเภท")} — ${escapeHtml(label)}
+        </label>
+        <a href="#" class="ar-doc-delete-link" data-doc-id="${doc.id}" style="color:var(--color-danger); white-space:nowrap;">Remove</a>
+      </div>`;
+    })
+    .join("");
+
+  listEl.querySelectorAll(".ar-source-doc-checkbox").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const id = Number(cb.value);
+      if (cb.checked) selectedArDocIds.add(id);
+      else selectedArDocIds.delete(id);
+      recomputeAmountItemsFromSelectedDocs();
+    });
+  });
+
+  listEl.querySelectorAll(".ar-doc-delete-link").forEach((link) => {
+    link.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const id = Number(link.dataset.docId);
+      if (!confirm(`ลบเอกสาร #${id} ทิ้งถาวร? (ยังไม่ได้ใช้สร้าง AR ไหน ลบแล้วกู้คืนไม่ได้)`)) return;
+      const res = await apiFetch(`/documents/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        alert("ลบไม่สำเร็จ — อาจถูกใช้สร้าง PR/AR ไปแล้ว");
+        return;
+      }
+      const wasSelected = selectedArDocIds.has(id);
+      allArDocs = allArDocs.filter((d) => d.id !== id);
+      selectedArDocIds.delete(id);
+      renderArSourceDocList();
+      if (wasSelected) recomputeAmountItemsFromSelectedDocs();
+    });
+  });
+}
+
+async function loadArSourceDocuments() {
+  const res = await apiFetch("/documents?unlinked_only=true");
+  const listEl = document.getElementById("source-doc-list");
+  if (!res.ok) {
+    listEl.textContent = "โหลดรายการเอกสารไม่สำเร็จ";
+    return;
+  }
+  allArDocs = await res.json();
+  renderArSourceDocList();
+
+  if (selectedArDocIds.size > 0 && !AR_ID) {
+    recomputeAmountItemsFromSelectedDocs();
+  }
+}
+
+// Term of Payment (AR Redesign, 2026-09-11) — Dropdown จาก Master Data แทนกรอกข้อความ
+// อิสระเดิม — ถ้า AR เก่าเคยบันทึกค่าที่ไม่อยู่ในรายการ Active แล้ว (Admin ลบ/ปิดไปทีหลัง)
+// เติมเป็น Option พิเศษเพิ่มให้เห็น/แก้ไขได้เหมือนเดิม ไม่ทำให้ข้อมูลเดิมหายไปเงียบๆ
+async function loadTermOfPaymentOptions(currentValue) {
+  const select = document.getElementById("f-term");
+  const res = await apiFetch("/term-of-payment-options?active_only=true");
+  const options = res.ok ? await res.json() : [];
+  const names = options.map((o) => o.name);
+  if (currentValue && !names.includes(currentValue)) names.unshift(currentValue);
+  select.innerHTML =
+    '<option value="">— Select —</option>' +
+    names.map((n) => `<option value="${escapeHtml(n)}" ${n === currentValue ? "selected" : ""}>${escapeHtml(n)}</option>`).join("");
+}
 
 function amountItemRowHtml(item) {
   item = item || {};
@@ -314,12 +452,13 @@ async function loadForEdit() {
   }
   document.getElementById("f-vat").readOnly = vatRateSelect.value !== "custom";
   document.getElementById("f-suppliers").value = ar.suppliers || "";
-  document.getElementById("f-term").value = ar.term_of_payment || "";
+  await loadTermOfPaymentOptions(ar.term_of_payment || "");
   setDateFieldIso(document.getElementById("f-schedule-start"), ar.schedule_start || "");
   setDateFieldIso(document.getElementById("f-schedule-finish"), ar.schedule_finish || "");
 
   document.getElementById("items-container").innerHTML = "";
   ar.amount_items.forEach(addAmountItemRow);
+  document.getElementById("source-doc-card").classList.add("hidden"); // แก้ไขเอกสารที่ผูกไว้ ทำใน Phase หน้า (Pattern เดียวกับ pr_edit.html)
   return true;
 }
 
@@ -365,6 +504,9 @@ document.getElementById("ar-form").addEventListener("submit", async (e) => {
   if (AR_ID) {
     res = await apiFetch(`/ars/${AR_ID}`, { method: "PATCH", body: JSON.stringify(payload) });
   } else {
+    payload.source_document_ids = Array.from(document.querySelectorAll(".ar-source-doc-checkbox:checked")).map(
+      (cb) => Number(cb.value)
+    );
     res = await apiFetch("/ars", { method: "POST", body: JSON.stringify(payload) });
   }
 
@@ -385,12 +527,15 @@ bindDateFieldsIn(document);
   if (!me) return;
   CURRENT_USER_DEPARTMENT = me.department;
 
+  await loadArSourceDocuments();
+
   if (AR_ID) {
     const ok = await loadForEdit();
     if (!ok) return;
   } else {
     setDateFieldIso(document.getElementById("f-appdate"), new Date().toISOString().slice(0, 10));
-    addAmountItemRow();
+    await loadTermOfPaymentOptions("");
+    if (document.querySelectorAll("#items-container .item-row").length === 0) addAmountItemRow();
     recalcVatAndGrandTotal(); // ตั้งค่าเริ่มต้น VAT 7% + Grand Total/This Application/Balance = 0.00
   }
 

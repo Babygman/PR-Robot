@@ -27,6 +27,9 @@ class ARAmountItemCreate(BaseModel):
 
 
 class ARCreate(BaseModel):
+    # AI Extract for AR (2026-09-11) — Pattern เดียวกับ PRCreate.source_document_ids
+    # ทุกประการ: ผูกเอกสารต้นทางที่เลือกไว้ตอน Upload เข้ากับ AR นี้ (ar_id) หลังสร้างเสร็จ
+    source_document_ids: list[int] = Field(default_factory=list)
     application_date: date
     subject: str
     budget_type: ARBudgetType

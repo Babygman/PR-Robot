@@ -214,9 +214,10 @@ def list_documents(
     unlinked_only: bool = Query(
         default=False,
         description=(
-            "true = คืนเฉพาะเอกสารที่ยังไม่ถูกใช้สร้าง PR ไหนเลย (pr_id เป็น Null) — "
-            "ใช้ตอนแสดงรายการให้เลือกที่หน้าสร้าง PR ใหม่ เพื่อไม่ให้เอกสารที่ถูกใช้ไป"
-            "แล้วโผล่ให้เลือกซ้ำ (Feedback จริงจากผู้ใช้ 2026-09-03)"
+            "true = คืนเฉพาะเอกสารที่ยังไม่ถูกใช้สร้าง PR หรือ AR ไหนเลย (pr_id และ ar_id "
+            "เป็น Null ทั้งคู่) — ใช้ตอนแสดงรายการให้เลือกที่หน้าสร้าง PR/AR ใหม่ เพื่อไม่ให้"
+            "เอกสารที่ถูกใช้ไปแล้วโผล่ให้เลือกซ้ำ (Feedback จริงจากผู้ใช้ 2026-09-03 — ขยาย"
+            "ครอบคลุม ar_id ด้วย ตอนเพิ่ม AI Extract สำหรับ AR 2026-09-11)"
         ),
     ),
     db: Session = Depends(get_db),
@@ -224,7 +225,7 @@ def list_documents(
 ) -> list[SourceDocument]:
     query = db.query(SourceDocument)
     if unlinked_only:
-        query = query.filter(SourceDocument.pr_id.is_(None))
+        query = query.filter(SourceDocument.pr_id.is_(None), SourceDocument.ar_id.is_(None))
     return query.order_by(SourceDocument.id.desc()).all()
 
 
@@ -249,8 +250,8 @@ def delete_document(
     """ลบเอกสารต้นทางที่อัปโหลดผิด/ไม่ต้องการแล้ว (Feedback จริงจากผู้ใช้ 2026-09-03 —
     รายการเอกสารที่หน้าสร้าง PR สะสมยาวขึ้นเรื่อยๆ ไม่มีทางลบทิ้งได้)
 
-    ลบไม่ได้ถ้าเอกสารถูกใช้สร้าง PR ไปแล้ว (pr_id ไม่ใช่ Null) — กัน Audit Trail ของ PR
-    นั้นขาดหาย ต้องลบ/แก้ไข PR นั้นก่อนถ้าต้องการลบเอกสารจริงๆ
+    ลบไม่ได้ถ้าเอกสารถูกใช้สร้าง PR หรือ AR ไปแล้ว (pr_id/ar_id ไม่ใช่ Null) — กัน Audit
+    Trail ของ PR/AR นั้นขาดหาย ต้องลบ/แก้ไข PR/AR นั้นก่อนถ้าต้องการลบเอกสารจริงๆ
     """
     document = db.get(SourceDocument, document_id)
     if document is None:
@@ -258,6 +259,10 @@ def delete_document(
     if document.pr_id is not None:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "ลบไม่ได้ — เอกสารนี้ถูกใช้สร้าง PR ไปแล้ว"
+        )
+    if document.ar_id is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "ลบไม่ได้ — เอกสารนี้ถูกใช้สร้าง Approval Request ไปแล้ว"
         )
 
     file_path = Path(document.file_path)

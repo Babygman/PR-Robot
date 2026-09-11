@@ -3,8 +3,8 @@
 {% block content %}
 <div class="topbar">
   <div>
-    <h1>Upload Source Documents (อัปโหลดเอกสารต้นทาง)</h1>
-    <p class="muted">
+    <h1 id="upload-page-title">Upload Source Documents (อัปโหลดเอกสารต้นทาง)</h1>
+    <p class="muted" id="upload-page-desc">
       อัปโหลดเอกสารได้พร้อมกันหลายไฟล์ (ใบเสนอราคา / ใบยืมสินค้า / ใบส่งสินค้า / ใบรับของ —
       PDF/PNG/JPEG/WEBP/DOCX/XLSX/CSV/TXT) AI จะอ่านข้อมูลและเดาประเภทเอกสารให้อัตโนมัติ แก้ไขประเภทได้ถ้า AI เดาผิด
       จากนั้นเลือกเอกสารที่ต้องการแล้วไปสร้าง PR — ระบบจะรวมรายการสินค้าจากทุกเอกสารที่เลือกให้
@@ -58,6 +58,22 @@
 {% endblock %}
 {% block scripts %}
 <script>
+// AI Extract for AR (2026-09-11) — หน้านี้ใช้ร่วมกันทั้ง PR และ AR (Entry Point ต่างกัน
+// เท่านั้น): ปุ่ม "Upload Document" ที่หน้า New/Edit PR ลิงก์มาด้วย ?target=pr (Default
+// ถ้าไม่ระบุ — เข้ากันได้กับ Link เก่าที่ไม่มี Query Param นี้) ส่วนปุ่มที่หน้า New/Edit AR
+// ลิงก์มาด้วย ?target=ar — เปลี่ยนแค่ Label/ปลายทางปุ่ม "Create X from Selected Documents"
+// เท่านั้น ตัว Upload/AI Extraction เบื้องหลังเหมือนกันทุกประการ (Schema เดียวกัน — ดู
+// Docstring app/models/source_document.py)
+const uploadTarget = new URLSearchParams(window.location.search).get("target") === "ar" ? "ar" : "pr";
+if (uploadTarget === "ar") {
+  document.getElementById("upload-page-title").textContent =
+    "Upload Source Documents for Approval Request (อัปโหลดเอกสารต้นทาง สำหรับ Approval Request)";
+  document.getElementById("upload-page-desc").textContent =
+    "อัปโหลดใบเสนอราคาได้พร้อมกันหลายไฟล์ (PDF/PNG/JPEG/WEBP/DOCX/XLSX/CSV/TXT) AI จะอ่านข้อมูลให้อัตโนมัติ " +
+    "จากนั้นเลือกเอกสารที่ต้องการแล้วไปสร้าง Approval Request — ระบบจะรวมรายการเป็น Amount & Quantity ให้ ตรวจทาน/แก้ไขอีกครั้งในขั้นตอนเดียวตอนสร้าง Approval Request";
+  document.getElementById("create-pr-btn").textContent = "Create Approval Request from Selected Documents →";
+}
+
 const uploadedDocIds = [];
 const docDataById = {}; // เก็บผลดิบจาก AI ไว้ใช้ตอนแก้ doc_type (กันไม่ให้ /review ทับ reviewed_data เป็นค่าว่าง)
 
@@ -350,7 +366,8 @@ document.getElementById("create-pr-btn").addEventListener("click", () => {
     alert("กรุณาเลือกเอกสารอย่างน้อย 1 รายการ");
     return;
   }
-  window.location.href = `/app/prs/new?source_document_ids=${selected.join(",")}`;
+  const destination = uploadTarget === "ar" ? "/app/ars/new" : "/app/prs/new";
+  window.location.href = `${destination}?source_document_ids=${selected.join(",")}`;
 });
 
 requireLogin();

@@ -66,6 +66,10 @@ Migration Default (c3d7f1a9e4b2 -> รุ่นถัดไปที่แยก
 Deploy ครั้งนี้ตัดสิทธิ์ที่ทุกคนใช้งานอยู่ทันที Admin ไปติ๊กเอาออกทีหลังสำหรับคนที่ต้องการ
 จำกัดให้เห็นแค่ของตัวเอง User ใหม่ที่สร้างหลังจากนี้ Default เป็น False ทั้งหมด (ต้องติ๊ก
 เปิดเอง)
+
+User Management Redesign (2026-09-11) — เพิ่ม `division` เป็น Field ใหม่จริงๆ (ยืนยันแล้ว
+จากผู้ใช้ ไม่ใช่แค่เปลี่ยนชื่อ department เดิม) เก็บ Pattern เดียวกับ department/position
+ทุกประการ (Nullable, แสดงผลอย่างเดียว ไม่มีผลต่อ Logic การอนุมัติ/ขอบเขตการมองเห็นใดๆ)
 """
 
 from __future__ import annotations
@@ -86,6 +90,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     department: Mapped[str | None] = mapped_column(String(255))
+    division: Mapped[str | None] = mapped_column(String(255))
     position: Mapped[str | None] = mapped_column(String(100))
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

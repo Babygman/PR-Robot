@@ -31,6 +31,12 @@ class SourceDocument(Base):
     pr_id: Mapped[int | None] = mapped_column(
         ForeignKey("purchasing_requisitions.id", ondelete="SET NULL")
     )
+    # AI Extract for AR (2026-09-11) — คู่กับ pr_id ด้านบน (Pattern เดียวกับ audit_log
+    # ที่มี pr_id/ar_id คู่กันอยู่แล้ว) แถวหนึ่งผูกได้แค่อย่างใดอย่างหนึ่งเท่านั้น — เอกสาร
+    # ต้นทางของ AR คือใบเสนอราคาเหมือน PR เป๊ะ จึงใช้ Schema เดียวกันนี้ทั้งหมด ไม่แยกตาราง
+    ar_id: Mapped[int | None] = mapped_column(
+        ForeignKey("approval_requests.id", ondelete="SET NULL")
+    )
     file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
     doc_type: Mapped[SourceDocType | None] = mapped_column(
         # values_callable: เหตุผลเดียวกับ PRStatus ใน purchasing_requisition.py —
