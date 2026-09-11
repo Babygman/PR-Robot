@@ -106,3 +106,98 @@ def test_admin_update_user_email_duplicate_rejected(
     client.post("/auth/login", json={"email": "admin@example.com", "password": "adminpass123"})
     res = client.patch(f"/users/{plain_user.id}", json={"email": "admin@example.com"})
     assert res.status_code == 409
+
+
+# ───────── PATCH /users/{id}/password — Admin Reset รหัสผ่านให้ User คนอื่น (2026-09-11) ─────────
+def test_admin_can_reset_user_password(client: TestClient, admin_user: User, plain_user: User):
+    client.post("/auth/login", json={"email": "admin@example.com", "password": "adminpass123"})
+    res = client.patch(f"/users/{plain_user.id}/password", json={"password": "brandnewpass1"})
+    assert res.status_code == 204
+
+    client.post("/auth/logout")
+
+    # Login ด้วยรหัสผ่านใหม่ได้จริง
+    login_new = client.post(
+        "/auth/login", json={"email": "plain@example.com", "password": "brandnewpass1"}
+    )
+    assert login_new.status_code == 200
+
+    # รหัสผ่านเดิมใช้ไม่ได้อีกต่อไป
+    login_old = client.post(
+        "/auth/login", json={"email": "plain@example.com", "password": "plainpass123"}
+    )
+    assert login_old.status_code == 401
+
+
+def test_reset_user_password_requires_admin(client: TestClient, plain_user: User):
+    client.post("/auth/login", json={"email": "plain@example.com", "password": "plainpass123"})
+    res = client.patch(f"/users/{plain_user.id}/password", json={"password": "brandnewpass1"})
+    assert res.status_code == 403
+
+
+def test_reset_user_password_unknown_user_404(client: TestClient, admin_user: User):
+    client.post("/auth/login", json={"email": "admin@example.com", "password": "adminpass123"})
+    res = client.patch("/users/999999/password", json={"password": "brandnewpass1"})
+    assert res.status_code == 404
+
+
+def test_reset_user_password_too_short_rejected(
+    client: TestClient, admin_user: User, plain_user: User
+):
+    client.post("/auth/login", json={"email": "admin@example.com", "password": "adminpass123"})
+    res = client.patch(f"/users/{plain_user.id}/password", json={"password": "short"})
+    assert res.status_code == 422
+
+
+# ───────── PATCH /auth/password — User เปลี่ยนรหัสผ่านของตัวเอง (2026-09-11) ─────────
+def test_change_own_password_requires_login(client: TestClient):
+    res = client.patch(
+        "/auth/password", json={"current_password": "whatever", "new_password": "newpassword1"}
+    )
+    assert res.status_code == 401
+
+
+def test_change_own_password_success(client: TestClient, plain_user: User):
+    client.post("/auth/login", json={"email": "plain@example.com", "password": "plainpass123"})
+    res = client.patch(
+        "/auth/password",
+        json={"current_password": "plainpass123", "new_password": "newpassword1"},
+    )
+    assert res.status_code == 200
+
+    client.post("/auth/logout")
+
+    # Login ด้วยรหัสผ่านใหม่ได้จริง
+    login_new = client.post(
+        "/auth/login", json={"email": "plain@example.com", "password": "newpassword1"}
+    )
+    assert login_new.status_code == 200
+
+    # รหัสผ่านเดิมใช้ไม่ได้อีกต่อไป
+    login_old = client.post(
+        "/auth/login", json={"email": "plain@example.com", "password": "plainpass123"}
+    )
+    assert login_old.status_code == 401
+
+
+def test_change_own_password_wrong_current_rejected(client: TestClient, plain_user: User):
+    client.post("/auth/login", json={"email": "plain@example.com", "password": "plainpass123"})
+    res = client.patch(
+        "/auth/password",
+        json={"current_password": "wrongpass", "new_password": "newpassword1"},
+    )
+    # 400 ไม่ใช่ 401 โดยเจตนา — apiFetch() ใน app.js Intercept ทุก 401 แล้วเด้งไปหน้า Login
+    # ทันที ถ้าใช้ 401 ตรงนี้ผู้ใช้กรอกรหัสผ่านเดิมผิดจะโดนเด้งออกจากระบบทั้งที่ยัง Login อยู่จริง
+    assert res.status_code == 400
+
+    # Session เดิมยังใช้งานได้ปกติ ไม่ได้ถูกเด้งออก
+    me = client.get("/auth/me")
+    assert me.status_code == 200
+
+
+def test_change_own_password_too_short_rejected(client: TestClient, plain_user: User):
+    client.post("/auth/login", json={"email": "plain@example.com", "password": "plainpass123"})
+    res = client.patch(
+        "/auth/password", json={"current_password": "plainpass123", "new_password": "short"}
+    )
+    assert res.status_code == 422

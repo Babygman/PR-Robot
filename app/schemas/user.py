@@ -34,8 +34,9 @@ class UserUpdate(BaseModel):
     เพิ่ม `email` (2026-09-10, ตามคำขอ Admin) เพื่อแก้ Email ที่กรอกไว้ชั่วคราวตอน Import
     User จำนวนมากจาก Excel/ตารางแผนผังจริงให้เป็น Email จริงทีหลังได้จากหน้าเว็บ ไม่ต้อง
     ลบ User แล้วสร้างใหม่ — Route ตรวจ Unique กันชนกับ User คนอื่นให้ (ดู
-    app/api/routes/users.py) — ยังไม่มี password ในนี้โดยเจตนา (เปลี่ยนรหัสผ่านเป็นคนละ
-    Flow ยังไม่ทำ Phase นี้)
+    app/api/routes/users.py) — ไม่มี password ในนี้โดยเจตนา (เปลี่ยนรหัสผ่านเป็นคนละ
+    Flow แยกออกไปเป็น UserPasswordReset/PATCH /users/{id}/password ด้านล่าง — User
+    Management Redesign, 2026-09-11)
 
     เพิ่ม `can_view_approvals`/`can_view_pr`/`can_view_ar`/`can_view_all_pr`/`can_view_all_ar`
     (Full RBAC, 2026-09-10 — ตัด `approver_only` ออกแล้ว, แยก `can_view_all` เดิมเป็น 2 Field
@@ -54,6 +55,14 @@ class UserUpdate(BaseModel):
     can_view_ar: bool | None = None
     can_view_all_pr: bool | None = None
     can_view_all_ar: bool | None = None
+
+
+class UserPasswordReset(BaseModel):
+    """PATCH /users/{id}/password (Admin เท่านั้น) — Reset รหัสผ่านของ User คนอื่น
+    (User Management Redesign, 2026-09-11) แยก Endpoint ออกจาก UserUpdate โดยเจตนา
+    (ดู Comment เดิมใน UserUpdate ด้านบน) กันโครงสร้าง PATCH หลักปนกับข้อมูลอ่อนไหว"""
+
+    password: str = Field(min_length=8, max_length=128)
 
 
 class UserRead(BaseModel):

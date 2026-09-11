@@ -555,7 +555,84 @@ function bindDateFieldsIn(root) {
   });
 }
 
+// เปลี่ยนรหัสผ่านของตัวเอง (Popup ที่ Sidebar, 2026-09-11) — คลิกชื่อ/Avatar เปิดเมนู
+// เล็กๆ มีตัวเลือก "Change Password" เดียว กด Logout แยกจากเมนูนี้ (ยังเป็น Icon เดิม
+// ข้างๆ ไม่ต้องเปิดเมนูก่อน)
+function setupChangePassword() {
+  const trigger = document.getElementById("sidebar-user-trigger");
+  const menu = document.getElementById("sidebar-user-menu");
+  const openBtn = document.getElementById("open-change-password");
+  const modal = document.getElementById("change-password-modal");
+  const errorEl = document.getElementById("cp-error");
+  const currentEl = document.getElementById("cp-current");
+  const newEl = document.getElementById("cp-new");
+  const confirmEl = document.getElementById("cp-confirm");
+  const saveBtn = document.getElementById("cp-save");
+  const cancelBtn = document.getElementById("cp-cancel");
+  if (!trigger || !menu || !modal) return;
+
+  const closeMenu = () => menu.classList.add("hidden");
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    menu.classList.toggle("hidden");
+  });
+  document.addEventListener("click", (e) => {
+    if (!menu.classList.contains("hidden") && !menu.contains(e.target) && e.target !== trigger) {
+      closeMenu();
+    }
+  });
+
+  const resetForm = () => {
+    currentEl.value = "";
+    newEl.value = "";
+    confirmEl.value = "";
+    errorEl.classList.add("hidden");
+    errorEl.textContent = "";
+  };
+  const openModal = () => {
+    resetForm();
+    modal.classList.remove("hidden");
+    closeMenu();
+  };
+  const closeModal = () => modal.classList.add("hidden");
+
+  openBtn?.addEventListener("click", openModal);
+  cancelBtn?.addEventListener("click", closeModal);
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
+
+  saveBtn?.addEventListener("click", async () => {
+    errorEl.classList.add("hidden");
+    if (newEl.value.length < 8) {
+      errorEl.textContent = "รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร";
+      errorEl.classList.remove("hidden");
+      return;
+    }
+    if (newEl.value !== confirmEl.value) {
+      errorEl.textContent = "รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน";
+      errorEl.classList.remove("hidden");
+      return;
+    }
+    saveBtn.disabled = true;
+    const res = await apiFetch("/auth/password", {
+      method: "PATCH",
+      body: JSON.stringify({ current_password: currentEl.value, new_password: newEl.value }),
+    });
+    saveBtn.disabled = false;
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      errorEl.textContent = body.detail || "เปลี่ยนรหัสผ่านไม่สำเร็จ";
+      errorEl.classList.remove("hidden");
+      return;
+    }
+    closeModal();
+    alert("เปลี่ยนรหัสผ่านสำเร็จ");
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   setupLogout();
   markActiveNav();
+  setupChangePassword();
 });

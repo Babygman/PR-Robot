@@ -9,14 +9,14 @@ Email ชั่วคราวก่อน แล้วให้ Admin แก้
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_admin
 from app.core.security import hash_password
 from app.db.session import get_db
 from app.models import User
-from app.schemas.user import UserCreate, UserRead, UserUpdate
+from app.schemas.user import UserCreate, UserPasswordReset, UserRead, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -83,3 +83,23 @@ def update_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.patch("/{user_id}/password", status_code=status.HTTP_204_NO_CONTENT)
+def reset_user_password(
+    user_id: int,
+    body: UserPasswordReset,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> Response:
+    """Reset รหัสผ่านของ User คนอื่น — Admin เท่านั้น (User Management Redesign,
+    2026-09-11 — ปุ่ม "Reset Password" แยกในหน้า /app/users ก่อนหน้านี้ไม่มี Endpoint
+    นี้เลย ต้องไปแก้ตรง Database ตรงๆ) ไม่ต้องยืนยันรหัสผ่านเดิม เพราะ Admin เป็นคน
+    Reset แทน User ที่ลืมรหัสผ่าน ไม่ใช่ User เปลี่ยนรหัสผ่านตัวเอง"""
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "ไม่พบ User นี้")
+
+    user.password_hash = hash_password(body.password)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

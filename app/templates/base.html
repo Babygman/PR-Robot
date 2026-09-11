@@ -104,14 +104,42 @@
 
   <div class="sidebar-spacer"></div>
   <div class="sidebar-user">
-    <span class="user-avatar" id="nav-user-avatar"></span>
-    <span class="user-name" id="nav-user-name"></span>
+    <button type="button" class="sidebar-user-trigger" id="sidebar-user-trigger">
+      <span class="user-avatar" id="nav-user-avatar"></span>
+      <span class="user-name" id="nav-user-name"></span>
+    </button>
     <a href="#" id="logout-link" title="Log Out">
       <svg width="15" height="15" viewBox="0 0 16 16"><path d="M6 2H3.5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1H6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/><path d="M10 5.3 13 8l-3 2.7M13 8H6.3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </a>
+    <div class="sidebar-user-menu hidden" id="sidebar-user-menu">
+      <button type="button" class="sidebar-user-menu-item" id="open-change-password">🔒 Change Password</button>
+    </div>
   </div>
 </aside>
 {% endblock %}
+
+<div class="modal-overlay hidden" id="change-password-modal">
+  <div class="modal-box" style="text-align:left; max-width:380px;">
+    <h3 style="margin:0 0 14px; font-size:16px;">Change Password</h3>
+    <div class="field">
+      <label for="cp-current">Current Password</label>
+      <input type="password" id="cp-current" autocomplete="current-password">
+    </div>
+    <div class="field">
+      <label for="cp-new">New Password</label>
+      <input type="password" id="cp-new" autocomplete="new-password">
+    </div>
+    <div class="field">
+      <label for="cp-confirm">Confirm New Password</label>
+      <input type="password" id="cp-confirm" autocomplete="new-password">
+    </div>
+    <div class="error hidden" id="cp-error"></div>
+    <div class="actions">
+      <button type="button" id="cp-save">Save</button>
+      <button type="button" class="secondary" id="cp-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
 <div class="content-area">
 <div class="top-header">
   <div>

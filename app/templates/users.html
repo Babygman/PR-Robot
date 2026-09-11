@@ -87,7 +87,10 @@ function userRowHtml(u) {
     <td style="text-align:center;"><input type="checkbox" class="u-can-view-all-pr" ${u.can_view_all_pr ? "checked" : ""}></td>
     <td style="text-align:center;"><input type="checkbox" class="u-can-view-all-ar" ${u.can_view_all_ar ? "checked" : ""}></td>
     <td style="text-align:center;"><input type="checkbox" class="u-is-active" ${u.is_active ? "checked" : ""}></td>
-    <td><button type="button" class="secondary save-user-btn">Save</button></td>
+    <td style="white-space:nowrap; display:flex; gap:6px;">
+      <button type="button" class="secondary save-user-btn">Save</button>
+      <button type="button" class="secondary reset-pw-btn" style="color:var(--color-danger); border-color:var(--color-danger);">Reset Password</button>
+    </td>
   </tr>`;
 }
 
@@ -127,6 +130,37 @@ async function loadUsers() {
       }
       btn.textContent = "Saved";
       setTimeout(() => (btn.textContent = "Save"), 1200);
+    });
+  });
+
+  // Reset Password (User Management Redesign, 2026-09-11) — Admin ตั้งรหัสผ่านใหม่แทน
+  // User ที่ลืมรหัสผ่าน ไม่ต้องรู้รหัสผ่านเดิม (คนละ Flow จาก User เปลี่ยนรหัสผ่านตัวเอง
+  // ซึ่งระบบยังไม่มี)
+  body.querySelectorAll(".reset-pw-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const row = btn.closest("tr");
+      const id = row.dataset.id;
+      const name = row.querySelector("td").textContent;
+      const newPassword = prompt(`ตั้งรหัสผ่านใหม่ให้ ${name} (อย่างน้อย 8 ตัวอักษร)`);
+      if (newPassword === null) return; // กดยกเลิก
+      if (newPassword.length < 8) {
+        alert("รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร");
+        return;
+      }
+      btn.disabled = true;
+      const r = await apiFetch(`/users/${id}/password`, {
+        method: "PATCH",
+        body: JSON.stringify({ password: newPassword }),
+      });
+      btn.disabled = false;
+      if (!r.ok) {
+        const errBody = await r.json().catch(() => ({}));
+        alert(errBody.detail ? JSON.stringify(errBody.detail) : "Reset รหัสผ่านไม่สำเร็จ");
+        return;
+      }
+      const original = btn.textContent;
+      btn.textContent = "Password Reset ✓";
+      setTimeout(() => (btn.textContent = original), 1500);
     });
   });
 }
