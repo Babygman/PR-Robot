@@ -18,7 +18,9 @@
   --color-border-strong: #d8dbe6;
   --color-text: #0f172a;
   --color-text-muted: #5b6472;
-  --color-text-faint: #8b93a3;
+  /* Comment 2026-09-11 (Audit): เดิม #8b93a3 คอนทราสต์บนพื้นขาว 3.09:1 ไม่ผ่าน WCAG AA
+     (4.5:1) ใช้กับ .muted/.ar-stat-sub ทั่วระบบ — เข้มขึ้นเล็กน้อยให้ผ่าน (4.62:1) */
+  --color-text-faint: #6f7582;
 
   --color-primary: #4f46e5;
   --color-primary-hover: #4338ca;
@@ -26,7 +28,9 @@
   --color-primary-tint: #eef0fe;
   --color-navy-deep: #0d2a3b;
 
-  --color-brass: #a97c2f;
+  /* Comment 2026-09-11 (Audit): เดิม #a97c2f คอนทราสต์บนพื้นขาว 3.74:1 ไม่ผ่าน WCAG AA
+     ใช้เป็น Label "DRAFT"/Badge หลายจุด — เข้มขึ้นเล็กน้อยให้ผ่าน (4.98:1) โทนเดิม */
+  --color-brass: #8f6927;
   --color-brass-tint: #f3e6cd;
   --color-success: #33654a;
   --color-success-tint: #e2ecdf;
@@ -338,6 +342,14 @@ input, select, textarea {
   color: var(--color-text);
 }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--color-primary-soft); outline-offset: 1px; }
+/* Comment 2026-09-11 (Audit): ปุ่ม/การ์ดกดได้ (button, .btn, .ar-stat-card,
+   .view-toggle-btn ฯลฯ) ไม่มี Focus Indicator เลยตอนไล่ด้วย Keyboard (Tab) — เพิ่ม
+   :focus-visible ให้ทุก Interactive Element ที่เป็นปุ่ม/การ์ด (:focus-visible ไม่ขึ้น
+   ตอนคลิกด้วยเมาส์ จึงไม่รบกวน UI ปกติ) */
+button:focus-visible, .btn:focus-visible, a:focus-visible {
+  outline: 3px solid var(--color-primary-soft);
+  outline-offset: 2px;
+}
 textarea { resize: vertical; min-height: 60px; }
 .field { margin-bottom: 14px; }
 .row { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -350,7 +362,9 @@ button, .btn {
   background: var(--gradient-primary);
   color: #fff;
   border: 1px solid transparent;
-  padding: 9px 17px;
+  /* Comment 2026-09-11 (Audit): เดิม padding 9px 17px สูงจริง ~39px ต่ำกว่ามาตรฐาน
+     Touch Target 44px — เพิ่ม Padding แนวตั้งให้ถึง */
+  padding: 12px 17px;
   border-radius: 9px;
   font-size: 13.5px;
   font-weight: 600;
@@ -622,6 +636,14 @@ td.center { text-align: center; }
 /* Comment 2026-09-11 (รอบ 2): เปลี่ยนจาก auto-fit (ตกแถวใหม่ถ้าจอแคบ) เป็นตายตัว 5 คอลัมน์
    ให้อยู่แถวเดียวเสมอ (การ์ดจะบีบแคบลงแทนตกแถว) ตามที่ต้องการ */
 .ar-stat-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
+/* Comment 2026-09-11 (Audit): 5 คอลัมน์ตายตัวบีบจนอ่านไม่ออกบนจอแคบ — ยุบเหลือ 2
+   คอลัมน์เมื่อจอแคบกว่า 640px (5 คอลัมน์ตายตัวยังคงไว้ทุกจอที่กว้างกว่านี้ตามที่ขอไว้
+   รอบ 2) */
+@media (max-width: 640px) {
+  .ar-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .ar-stat-card { padding: 10px 12px; }
+  .ar-stat-card .ar-stat-value { font-size: 20px; }
+}
 .ar-stat-card {
   display: flex;
   flex-direction: column;
@@ -662,7 +684,9 @@ td.center { text-align: center; }
 .ar-list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 20px; flex-wrap: wrap; border-bottom: 1px solid var(--color-border); }
 .ar-list-result-label { font-size: 13px; color: var(--color-text-faint); }
 .view-toggle { display: flex; gap: 4px; background: var(--color-surface-2); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 3px; }
-.view-toggle-btn { border: none; background: transparent; color: var(--color-text-muted); padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; }
+/* Comment 2026-09-11 (Audit): เดิม padding 7px 14px สูงจริง ~34px ต่ำกว่ามาตรฐาน
+   Touch Target 44px — เพิ่ม Padding แนวตั้งให้ถึง */
+.view-toggle-btn { border: none; background: transparent; color: var(--color-text-muted); padding: 12px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; }
 .view-toggle-btn.active { background: var(--color-surface); color: var(--color-text); box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1); }
 
 #list-view thead th:first-child, #list-view tbody td:first-child { padding-left: 20px; }
