@@ -35,6 +35,9 @@
 
   /* Comment 2026-09-11: เพิ่ม Gradient กลาง ใช้แทนสีทึบเรียบๆ ตาม Feedback เรื่องสีสัน */
   --gradient-primary: linear-gradient(160deg, var(--color-primary-soft), var(--color-primary));
+  /* Comment 2026-09-11 (รอบ 2): Gradient อ่อนๆ ใช้กับพื้นหลัง Sidebar/Top Header
+     แทนสีขาวล้วน (ตัวหนังสือ/ไอคอนในนี้ยังเป็นสีเข้ม จึงใช้เฉดอ่อนไม่ใช่สีเข้มแบบปุ่ม) */
+  --gradient-surface: linear-gradient(165deg, #ffffff 0%, #f3f1fd 100%);
 
   --radius: 11px;
   --radius-lg: 18px;
@@ -57,7 +60,7 @@ body {
 /* ---------- Sidebar (Design System v3, 2026-09-11 — การ์ดขาวโค้งมน ตาม Mockup) ---------- */
 .sidebar {
   flex: 0 0 264px;
-  background: var(--color-surface);
+  background: var(--gradient-surface);
   color: var(--color-text);
   padding: 0;
   display: flex;
@@ -241,7 +244,7 @@ body.uploading-lock .sidebar .nav-item { pointer-events: none; opacity: 0.4; cur
   align-items: center;
   gap: 24px;
   padding: 16px 32px;
-  background: var(--color-surface);
+  background: var(--gradient-surface);
   border-bottom: 1px solid var(--color-border);
   flex-wrap: wrap;
 }
@@ -585,7 +588,9 @@ td.center { text-align: center; }
 /* Comment 2026-09-11: ปรับตามรีวิว UI (กว้างขึ้นกันตกบรรทัด, เรียงแนวตั้ง, ขอบมีสีตามหมวด,
    Hover ลอย+เงาแทนการถมสี — เดิมเป็น <button> จึงโดน `button, .btn { display:inline-flex }`
    บังคับให้เนื้อหาเรียงแนวนอนผิดตั้งใจ, และโดน `button:hover` ถมสีทับจนอ่านไม่ออก) */
-.ar-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 16px; }
+/* Comment 2026-09-11 (รอบ 2): เปลี่ยนจาก auto-fit (ตกแถวใหม่ถ้าจอแคบ) เป็นตายตัว 5 คอลัมน์
+   ให้อยู่แถวเดียวเสมอ (การ์ดจะบีบแคบลงแทนตกแถว) ตามที่ต้องการ */
+.ar-stat-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
 .ar-stat-card {
   display: flex;
   flex-direction: column;
@@ -611,7 +616,7 @@ td.center { text-align: center; }
   box-shadow: var(--shadow-card);
 }
 .ar-stat-card.active { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary-tint); }
-.ar-stat-card .ar-stat-label { font-size: 12.5px; font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; }
+.ar-stat-card .ar-stat-label { font-size: 12.5px; font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .ar-stat-card .ar-stat-value { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; color: var(--color-text); margin-top: 12px; }
 .ar-stat-card .ar-stat-sub { font-size: 11.5px; color: var(--color-text-faint); margin-top: 2px; }
 .ar-stat-card.stat-total .ar-stat-label { color: var(--color-primary); }
