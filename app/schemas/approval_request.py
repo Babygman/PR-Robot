@@ -144,5 +144,30 @@ class ARListItem(BaseModel):
     budget_approval_status: ARBudgetApprovalStatus
     requested_by_id: int
     created_at: datetime
+    # Design Redesign (2026-09-11) — หน้า AR List โหมด Kanban ต้องมี Department/ยอดเงินโชว์
+    # บนการ์ด ทั้งสอง Field มีอยู่แล้วบน Model (from_attributes ดึงมาให้อัตโนมัติ)
+    budget_department: str | None = None
+    grand_total: Decimal | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ARListStats(BaseModel):
+    """สรุปจำนวน AR แยกตาม Bucket สถานะ สำหรับการ์ดสถิติหน้า AR List (Design Redesign,
+    2026-09-11) — Bucket เดียวกับ arTopStatusBadge() ใน app.js ทุกประการ: draft (ยังไม่
+    Finalized) / waiting (Finalized แต่ยังอนุมัติไม่ครบ) / approved (อนุมัติครบ ไม่ว่าจะ
+    รอ FA หักงบหรือหักงบแล้ว) / rejected — นับตาม Scope การมองเห็นเดียวกับ GET /ars (RBAC)
+    แต่ไม่ผูกกับ Filter ที่ผู้ใช้กรอกอยู่ในฟอร์ม (เป็นภาพรวม Dashboard)"""
+
+    total: int
+    draft: int
+    waiting: int
+    approved: int
+    rejected: int
+
+
+class ARListCount(BaseModel):
+    """จำนวน AR ทั้งหมดที่ตรงกับ Filter เดียวกับ GET /ars (ไม่หัก limit/offset) — สำหรับทำ
+    Pagination จริงในหน้า AR List (Design Redesign, 2026-09-11)"""
+
+    count: int

@@ -3,14 +3,19 @@
 {% block content %}
 <div class="topbar">
   <div>
-    <h1>Approval Request List (รายการ Approval Request)</h1>
-    <p class="muted" style="margin-top:-10px;">เอกสารขออนุมัติ (AR) ทั้งหมด — กรอกข้อมูลในระบบเพื่อพิมพ์ไปเซ็นอนุมัติสดนอกระบบ</p>
+    <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+      <h1 style="margin-bottom:0;">Approval Request List (รายการ Approval Request)</h1>
+      <span class="page-tag">AR Management</span>
+    </div>
+    <p class="muted" style="margin-top:8px;">เอกสารขออนุมัติ (AR) ทั้งหมด — กรอกข้อมูลในระบบเพื่อพิมพ์ไปเซ็นอนุมัติสดนอกระบบ และติดตามสถานะแบบเรียลไทม์</p>
   </div>
   <a class="btn" href="/app/ars/new">
     <svg width="13" height="13" viewBox="0 0 16 16"><line x1="8" y1="3" x2="8" y2="13" stroke="#fff" stroke-width="1.8"/><line x1="3" y1="8" x2="13" y2="8" stroke="#fff" stroke-width="1.8"/></svg>
     New Approval Request
   </a>
 </div>
+
+<div class="ar-stat-grid" id="ar-stat-grid"></div>
 
 <div class="card">
   <form id="filter-form" class="filters">
@@ -48,27 +53,60 @@
   </form>
 </div>
 
-<div class="card">
-  <table>
-    <thead>
-      <tr>
-        <th>AR No.</th>
-        <th>Subject</th>
-        <th>Date</th>
-        <th>Status</th>
-        <th>FA</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody id="ar-table-body">
-      <tr><td colspan="6" class="muted">กำลังโหลด...</td></tr>
-    </tbody>
-  </table>
+<div class="card" style="padding:0; overflow:hidden;">
+  <div class="ar-list-toolbar">
+    <div class="ar-list-result-label" id="result-label"></div>
+    <div class="view-toggle" id="view-toggle">
+      <button type="button" class="view-toggle-btn active" data-view="list">☰ List</button>
+      <button type="button" class="view-toggle-btn" data-view="kanban">▦ Kanban</button>
+    </div>
+  </div>
+
+  <div id="list-view">
+    <table>
+      <thead>
+        <tr>
+          <th>AR No.</th>
+          <th>Subject</th>
+          <th>Date</th>
+          <th>Status</th>
+          <th>FA</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="ar-table-body">
+        <tr><td colspan="6" class="muted">กำลังโหลด...</td></tr>
+      </tbody>
+    </table>
+    <div class="ar-pagination" id="ar-pagination"></div>
+  </div>
+
+  <div id="kanban-view" class="hidden">
+    <div class="kanban-board" id="kanban-board"></div>
+    <div class="kanban-note hidden" id="kanban-note"></div>
+  </div>
 </div>
 {% endblock %}
 {% block scripts %}
 <script>
-async function loadArs() {
+// AR List — Redesign ตาม Design Mockup ที่ผู้ใช้ส่งมา (Artifact 96ca0282, 2026-09-11)
+// ขอบเขตที่ Confirm ไว้: การ์ดสถิติ + สลับมุมมอง List/Kanban ทำจากข้อมูลจริงทั้งหมด
+// (ไม่มี Mock) — Kanban/การกรองตามการ์ดสถิติ (Bucket waiting/approved/rejected) ไม่มี
+// Endpoint แยกจาก Backend โดยตรง (status_filter รองรับแค่ draft/finalized) จึงดึงมาสูงสุด
+// AR_MAX_FETCH แล้วกรอง/จัดกลุ่มฝั่ง Client แทน — ส่วน List View ปกติใช้ Pagination จริง
+// จาก GET /ars + GET /ars/count (limit/offset)
+const AR_PAGE_SIZE = 20;
+const AR_MAX_FETCH = 200; // ตรงกับ le=200 ของ GET /ars ฝั่ง Backend
+const AR_STATE = { view: "list", bucket: null, page: 0 };
+
+const KANBAN_COLUMNS = [
+  { key: "draft", label: "DRAFT", dot: "var(--color-brass)" },
+  { key: "workflow_running", label: "WAITING APPROVAL", dot: "var(--color-primary)" },
+  { key: "approved", label: "APPROVED", dot: "var(--color-success)" },
+  { key: "rejected", label: "REJECTED", dot: "var(--color-danger)" },
+];
+
+function currentFilterParams() {
   const params = new URLSearchParams();
   const q = document.getElementById("f-q").value.trim();
   const arNo = document.getElementById("f-ar-no").value;
@@ -82,43 +120,196 @@ async function loadArs() {
   if (from) params.set("app_date_from", from);
   if (to) params.set("app_date_to", to);
   if (mine) params.set("requested_by_me", "true");
+  return params;
+}
 
-  const res = await apiFetch("/ars?" + params.toString());
-  const tbody = document.getElementById("ar-table-body");
-  if (!res.ok) {
-    tbody.innerHTML = '<tr><td colspan="6" class="error">โหลดรายการไม่สำเร็จ</td></tr>';
-    return;
-  }
-  const ars = await res.json();
-  if (ars.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="muted">ไม่พบ Approval Request</td></tr>';
-    return;
-  }
-  tbody.innerHTML = ars
+async function loadStats() {
+  const res = await apiFetch("/ars/stats");
+  if (!res.ok) return;
+  const s = await res.json();
+  const cards = [
+    { key: null, cls: "stat-total", icon: "📋", label: "TOTAL AR", value: s.total, sub: "ทั้งหมดที่เห็นได้" },
+    { key: "draft", cls: "stat-draft", icon: "📝", label: "DRAFT", value: s.draft, sub: "ยังแก้ไขได้" },
+    { key: "workflow_running", cls: "stat-waiting", icon: "⏳", label: "WAITING APPROVAL", value: s.waiting, sub: "อยู่ระหว่างอนุมัติ" },
+    { key: "approved", cls: "stat-approved", icon: "✅", label: "APPROVED", value: s.approved, sub: "อนุมัติครบแล้ว" },
+    { key: "rejected", cls: "stat-rejected", icon: "✕", label: "REJECTED", value: s.rejected, sub: "ถูกปฏิเสธ" },
+  ];
+  document.getElementById("ar-stat-grid").innerHTML = cards
     .map(
-      (ar) => `
-    <tr>
-      <td class="mono">${escapeHtml(ar.ar_no_display)}${ar.revision ? ` Rev.${ar.revision}` : ""}</td>
-      <td>${escapeHtml(ar.subject)}</td>
-      <td>${formatDateDMY(ar.application_date)}</td>
-      <td>${arTopStatusBadge(ar)}</td>
-      <td class="center">${ar.budget_approval_status === "approved" ? '<span class="fa-check" title="FA Acknowledge แล้ว">✓</span>' : ""}</td>
-      <td><a href="/app/ars/${ar.id}">View Details →</a></td>
-    </tr>`
+      (c) => `<button type="button" class="ar-stat-card ${c.cls}" data-bucket="${c.key ?? ""}">
+        <div class="ar-stat-label">${c.icon} ${c.label}</div>
+        <div class="ar-stat-value">${c.value}</div>
+        <div class="ar-stat-sub">${c.sub}</div>
+      </button>`
     )
     .join("");
+  document.querySelectorAll(".ar-stat-card").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.bucket || null;
+      AR_STATE.bucket = AR_STATE.bucket === key ? null : key;
+      document.querySelectorAll(".ar-stat-card").forEach((b) => {
+        b.classList.toggle("active", (b.dataset.bucket || null) === AR_STATE.bucket);
+      });
+      AR_STATE.page = 0;
+      refreshAll();
+    });
+  });
 }
+
+function arRowHtml(ar) {
+  return `<tr>
+    <td class="mono">${escapeHtml(ar.ar_no_display)}${ar.revision ? ` Rev.${ar.revision}` : ""}</td>
+    <td>${escapeHtml(ar.subject)}</td>
+    <td>${formatDateDMY(ar.application_date)}</td>
+    <td>${arTopStatusBadge(ar)}</td>
+    <td class="center">${ar.budget_approval_status === "approved" ? '<span class="fa-check" title="FA Acknowledge แล้ว">✓</span>' : ""}</td>
+    <td><a href="/app/ars/${ar.id}">View Details →</a></td>
+  </tr>`;
+}
+
+function fmtBaht(v) {
+  if (v === null || v === undefined) return null;
+  return Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+
+function kanbanCardHtml(ar) {
+  const amount = fmtBaht(ar.grand_total);
+  return `<a class="kanban-card" href="/app/ars/${ar.id}">
+    <div class="kc-no">${escapeHtml(ar.ar_no_display)}${ar.revision ? ` Rev.${ar.revision}` : ""}</div>
+    <div class="kc-subject">${escapeHtml(ar.subject)}</div>
+    <div class="kc-meta">
+      <span>${escapeHtml(ar.budget_department || "-")}</span>
+      <span>${formatDateDMY(ar.application_date)}</span>
+    </div>
+    ${amount ? `<div class="kc-meta"><span>Amount</span><span class="mono">฿${amount}</span></div>` : ""}
+  </a>`;
+}
+
+function renderKanban(ars, totalMatching) {
+  const board = document.getElementById("kanban-board");
+  board.innerHTML = KANBAN_COLUMNS.map((col) => {
+    const items = ars.filter((ar) => arStatusBucket(ar) === col.key);
+    const cardsHtml = items.length ? items.map(kanbanCardHtml).join("") : '<div class="kanban-empty">ไม่มีรายการ</div>';
+    return `<div class="kanban-col">
+      <div class="kanban-col-head"><span class="kanban-col-dot" style="background:${col.dot};"></span>${col.label}<span class="kanban-col-count">${items.length}</span></div>
+      ${cardsHtml}
+    </div>`;
+  }).join("");
+
+  const noteEl = document.getElementById("kanban-note");
+  if (totalMatching > ars.length) {
+    noteEl.textContent = `แสดง ${ars.length} รายการล่าสุดจากทั้งหมด ${totalMatching} รายการที่ตรงกับตัวกรอง — ใช้ List View พร้อม Filter เพื่อดูรายการอื่น`;
+    noteEl.classList.remove("hidden");
+  } else {
+    noteEl.classList.add("hidden");
+  }
+}
+
+function renderListRows(ars) {
+  const tbody = document.getElementById("ar-table-body");
+  tbody.innerHTML = ars.length
+    ? ars.map(arRowHtml).join("")
+    : '<tr><td colspan="6" class="muted">ไม่พบ Approval Request</td></tr>';
+}
+
+function renderPagination(totalCount) {
+  const el = document.getElementById("ar-pagination");
+  const totalPages = Math.max(1, Math.ceil(totalCount / AR_PAGE_SIZE));
+  const from = totalCount === 0 ? 0 : AR_STATE.page * AR_PAGE_SIZE + 1;
+  const to = Math.min(totalCount, (AR_STATE.page + 1) * AR_PAGE_SIZE);
+  el.innerHTML = `
+    <div class="ar-pagination-info">Showing ${from}–${to} of ${totalCount}</div>
+    <div class="ar-pagination-controls">
+      <button type="button" class="secondary" id="page-prev" ${AR_STATE.page === 0 ? "disabled" : ""}>‹ Prev</button>
+      <button type="button" class="secondary" id="page-next" ${AR_STATE.page + 1 >= totalPages ? "disabled" : ""}>Next ›</button>
+    </div>`;
+  document.getElementById("page-prev")?.addEventListener("click", () => {
+    AR_STATE.page--;
+    refreshAll();
+  });
+  document.getElementById("page-next")?.addEventListener("click", () => {
+    AR_STATE.page++;
+    refreshAll();
+  });
+}
+
+async function refreshAll() {
+  const resultLabel = document.getElementById("result-label");
+  const baseParams = currentFilterParams();
+
+  if (AR_STATE.view === "kanban" || AR_STATE.bucket) {
+    // Kanban หรือกรองตามการ์ดสถิติ — ดึงมาสูงสุด AR_MAX_FETCH แล้วกรอง/จัดกลุ่มฝั่ง Client
+    // (ดู Comment บนสุดของไฟล์)
+    const listParams = new URLSearchParams(baseParams);
+    listParams.set("limit", String(AR_MAX_FETCH));
+    const [listRes, countRes] = await Promise.all([
+      apiFetch("/ars?" + listParams.toString()),
+      apiFetch("/ars/count?" + baseParams.toString()),
+    ]);
+    document.getElementById("ar-pagination").innerHTML = "";
+    if (!listRes.ok) {
+      renderListRows([]);
+      document.getElementById("kanban-board").innerHTML = '<p class="error" style="padding:0 20px;">โหลดรายการไม่สำเร็จ</p>';
+      return;
+    }
+    let ars = await listRes.json();
+    const totalMatching = countRes.ok ? (await countRes.json()).count : ars.length;
+    if (AR_STATE.bucket) ars = ars.filter((ar) => arStatusBucket(ar) === AR_STATE.bucket);
+
+    if (AR_STATE.view === "kanban") {
+      renderKanban(ars, AR_STATE.bucket ? ars.length : totalMatching);
+    } else {
+      renderListRows(ars);
+    }
+    resultLabel.textContent = `แสดงผล ${ars.length} รายการ${AR_STATE.bucket ? " (กรองตามสถานะที่เลือก)" : ""}`;
+    return;
+  }
+
+  // โหมดปกติ — List View ไม่มี Bucket Filter — ใช้ Pagination จริงจาก Backend
+  const listParams = new URLSearchParams(baseParams);
+  listParams.set("limit", String(AR_PAGE_SIZE));
+  listParams.set("offset", String(AR_STATE.page * AR_PAGE_SIZE));
+  const [listRes, countRes] = await Promise.all([
+    apiFetch("/ars?" + listParams.toString()),
+    apiFetch("/ars/count?" + baseParams.toString()),
+  ]);
+  if (!listRes.ok) {
+    renderListRows([]);
+    document.getElementById("ar-pagination").innerHTML = "";
+    resultLabel.textContent = "";
+    return;
+  }
+  const ars = await listRes.json();
+  const totalCount = countRes.ok ? (await countRes.json()).count : ars.length;
+  renderListRows(ars);
+  renderPagination(totalCount);
+  resultLabel.textContent = `แสดงผล ${ars.length} จากทั้งหมด ${totalCount} รายการ`;
+}
+
+document.querySelectorAll(".view-toggle-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    if (AR_STATE.view === btn.dataset.view) return;
+    AR_STATE.view = btn.dataset.view;
+    document.querySelectorAll(".view-toggle-btn").forEach((b) => b.classList.toggle("active", b === btn));
+    document.getElementById("list-view").classList.toggle("hidden", AR_STATE.view !== "list");
+    document.getElementById("kanban-view").classList.toggle("hidden", AR_STATE.view !== "kanban");
+    AR_STATE.page = 0;
+    refreshAll();
+  });
+});
 
 document.getElementById("filter-form").addEventListener("submit", (e) => {
   e.preventDefault();
-  loadArs();
+  AR_STATE.page = 0;
+  refreshAll();
 });
 
 bindDateFieldsIn(document);
 
 (async () => {
   await requireLogin();
-  await loadArs();
+  await loadStats();
+  await refreshAll();
 })();
 </script>
 {% endblock %}

@@ -12,6 +12,7 @@ submit-for-approval จะ Finalize ทันที (ข้ามตรงไป
 คำขออนุมัติอัตโนมัติ ฯลฯ) อยู่ใน tests/test_budget_control.py แทน (มี Helper ตั้ง
 Level ให้พร้อมอยู่แล้ว)
 """
+
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
@@ -109,6 +110,54 @@ def test_list_ars_returns_created(client: TestClient, plain_user: User):
     assert len(res.json()) >= 1
 
 
+# ── /ars/count และ /ars/stats — หน้า AR List Redesign (2026-09-11): Pagination จริง +
+# การ์ดสถิติ ต้องได้ตัวเลขตรงกับข้อมูลจริงในระบบ ไม่ใช่ Mock
+
+
+def test_count_ars_requires_login(client: TestClient):
+    assert client.get("/ars/count").status_code == 401
+
+
+def test_count_ars_matches_filtered_results(client: TestClient, plain_user: User):
+    _login(client)
+    client.post("/ars", json=_sample_ar_body(subject="Buy laptop for accounting"))
+    client.post("/ars", json=_sample_ar_body(subject="Renew antivirus license"))
+
+    res = client.get("/ars/count")
+    assert res.status_code == 200
+    assert res.json()["count"] >= 2
+
+    filtered = client.get("/ars/count", params={"q": "laptop"})
+    assert filtered.json()["count"] == 1
+
+
+def test_ar_list_stats_requires_login(client: TestClient):
+    assert client.get("/ars/stats").status_code == 401
+
+
+def test_ar_list_stats_buckets(client: TestClient, plain_user: User, admin_user: User):
+    _login(client)
+    draft = client.post("/ars", json=_sample_ar_body()).json()
+
+    approved = client.post("/ars", json=_sample_ar_body()).json()
+    client.post(f"/ars/{approved['id']}/submit-for-approval")  # ไม่มี Level -> pending_fa_acknowledge
+
+    rejected = client.post("/ars", json=_sample_ar_body()).json()
+    client.post(f"/ars/{rejected['id']}/submit-for-approval")
+    _login_as(client, admin_user.email, "adminpass123")
+    client.post(f"/ars/{rejected['id']}/reject-fa", json={"reason": "ข้อมูลไม่ครบ"})
+    _login(client)
+
+    stats = client.get("/ars/stats").json()
+    assert stats["total"] >= 3
+    assert stats["draft"] >= 1
+    assert stats["approved"] >= 1
+    assert stats["rejected"] >= 1
+    bucket_sum = stats["draft"] + stats["waiting"] + stats["approved"] + stats["rejected"]
+    assert stats["total"] == bucket_sum
+    assert draft["id"]  # sanity — สร้างสำเร็จ
+
+
 def test_update_draft_ar_success(client: TestClient, plain_user: User):
     _login(client)
     created = client.post("/ars", json=_sample_ar_body()).json()
@@ -146,9 +195,7 @@ def test_get_ar_pdf_returns_valid_pdf(client: TestClient, plain_user: User):
     assert len(res.content) > 1000
 
 
-def test_get_ar_pdf_has_no_side_effects(
-    client: TestClient, plain_user: User, db_session: Session
-):
+def test_get_ar_pdf_has_no_side_effects(client: TestClient, plain_user: User, db_session: Session):
     """Correction 2026-09-10: พิมพ์/ดาวน์โหลด PDF ไม่ Finalize อีกต่อไป — พิมพ์ดูกี่ครั้ง
     ก็ได้ตราบใดที่ยังไม่กด "ส่งขออนุมัติ" (ดู test_submit_for_approval_* ด้านล่าง)"""
     _login(client)

@@ -45,6 +45,9 @@ async function requireLogin() {
   const me = await res.json();
   const nameEl = document.getElementById("nav-user-name");
   if (nameEl) nameEl.textContent = me.name;
+  // แถบบนสุด (Shell Redesign, 2026-09-11) — ชื่อเดียวกับ Sidebar แค่แสดงซ้ำในตำแหน่ง Header
+  const topNameEl = document.getElementById("top-header-name");
+  if (topNameEl) topNameEl.textContent = me.name;
   // ตัวอักษรย่อในวงกลม Sidebar (2026-09-04 — Design System v2) — เอาแค่ตัวแรกของ
   // แต่ละคำ สูงสุด 2 ตัว เผื่อชื่อเป็นภาษาไทยที่ไม่มีแนวคิด "ตัวพิมพ์ใหญ่" ก็ยังอ่านได้
   const avatarEl = document.getElementById("nav-user-avatar");
@@ -103,6 +106,20 @@ async function requireLogin() {
     navApprovalsToggle?.classList.remove("hidden");
     await setupMyApprovalsNav();
   }
+
+  // Shell Redesign (2026-09-11) — Sidebar แบ่งเป็น 3 หมวด (MAIN MENU/APPROVALS/
+  // ADMINISTRATION) มีเส้นคั่น+หัวข้อของตัวเอง ต้องซ่อนทั้งหมวดถ้าไม่มีเมนูใดใน
+  // หมวดนั้นได้รับสิทธิ์เลย (เช่น User ที่เป็นแค่ FA ล้วนๆ ไม่มีสิทธิ์เมนูใน MAIN MENU)
+  // ไม่งั้นจะเห็นหัวข้อคั่นลอยๆ ไม่มีเมนูข้างใต้
+  ["nav-section-main", "nav-section-approvals", "nav-section-admin"].forEach((sectionId) => {
+    const section = document.getElementById(sectionId);
+    if (!section) return;
+    const hasVisibleItem = Array.from(section.querySelectorAll(".nav-item")).some(
+      (el) => !el.classList.contains("hidden")
+    );
+    section.classList.toggle("hidden", !hasVisibleItem);
+  });
+
   return me;
 }
 
@@ -182,25 +199,28 @@ function statusBadge(status) {
 // ใช้ร่วมกันทั้ง ar_detail.html (ar-status-badge) และ ar_list.html (คอลัมน์ Status) —
 // รับ ar object เต็ม (ต้องมีทั้ง .status และ .budget_approval_status)
 const AR_TOP_STATUS_LABEL = {
-  draft: "Draft (แก้ไขได้)",
+  draft: "Draft (Editable)",
   workflow_running: "Workflow Running",
   approved: "Approved",
   rejected: "Rejected",
 };
 
-function arTopStatusBadge(ar) {
-  let key;
-  if (ar.status !== "finalized") {
-    key = "draft";
-  } else if (ar.budget_approval_status === "rejected") {
-    key = "rejected";
-  } else if (ar.budget_approval_status === "pending_fa_acknowledge" || ar.budget_approval_status === "approved") {
-    key = "approved";
-  } else {
-    // pending หรือกรณีอื่น (not_submitted ไม่ควรเกิดตอน finalized ตามจริง) — ถือว่ายังรอ
-    // อนุมัติอยู่
-    key = "workflow_running";
+// แยก Logic ตัดสิน Bucket ออกจาก arTopStatusBadge() เป็นฟังก์ชันกลาง (Design Redesign,
+// 2026-09-11) — ar_list.html (การ์ดสถิติ/Kanban) ใช้ตัดสิน Bucket แบบเดียวกันนี้ด้วย
+// กันตรรกะหลุดไม่ตรงกันระหว่างหน้า Badge เดี่ยวกับ List/Kanban
+function arStatusBucket(ar) {
+  if (ar.status !== "finalized") return "draft";
+  if (ar.budget_approval_status === "rejected") return "rejected";
+  if (ar.budget_approval_status === "pending_fa_acknowledge" || ar.budget_approval_status === "approved") {
+    return "approved";
   }
+  // pending หรือกรณีอื่น (not_submitted ไม่ควรเกิดตอน finalized ตามจริง) — ถือว่ายังรอ
+  // อนุมัติอยู่
+  return "workflow_running";
+}
+
+function arTopStatusBadge(ar) {
+  const key = arStatusBucket(ar);
   return `<span class="badge badge-ar-${key}">${AR_TOP_STATUS_LABEL[key]}</span>`;
 }
 

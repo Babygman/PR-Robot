@@ -53,7 +53,9 @@ from app.models import (
 )
 from app.schemas.approval_request import (
     ARCreate,
+    ARListCount,
     ARListItem,
+    ARListStats,
     ARRead,
     ARUpdate,
 )
@@ -172,20 +174,20 @@ def create_ar(
     return _to_ar_read(db, ar)
 
 
-@router.get("", response_model=list[ARListItem])
-def list_ars(
-    status_filter: ARStatus | None = None,
-    ar_no: int | None = None,
-    q: str | None = Query(default=None, description="ค้นหาใน Subject"),
-    app_date_from: date | None = None,
-    app_date_to: date | None = None,
-    requested_by_me: bool = False,
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_can_view_ar),
-) -> list[ARListItem]:
-    query = db.query(ApprovalRequest)
+def _apply_ar_list_filters(
+    query,
+    *,
+    status_filter: ARStatus | None,
+    ar_no: int | None,
+    q: str | None,
+    app_date_from: date | None,
+    app_date_to: date | None,
+    requested_by_me: bool,
+    current_user: User,
+):
+    """Filter เดียวกันที่ใช้ร่วมกันทั้ง 3 Endpoint: GET /ars (List), GET /ars/count
+    (Pagination จริง), GET /ars ผ่าน list_ars — แยกออกมาเป็น Helper (Design Redesign,
+    2026-09-11) กัน Logic ซ้ำซ้อน/หลุดไม่ตรงกันระหว่าง List กับ Count"""
     if status_filter is not None:
         query = query.filter(ApprovalRequest.status == status_filter)
     if ar_no is not None:
@@ -204,7 +206,32 @@ def list_ars(
     # "Approval Request" List ทั่วไป ต่างจาก My Approvals ที่กรองตามบทบาทอนุมัติ)
     if not (current_user.is_admin or current_user.can_view_all_ar):
         query = query.filter(ApprovalRequest.requested_by_id == current_user.id)
+    return query
 
+
+@router.get("", response_model=list[ARListItem])
+def list_ars(
+    status_filter: ARStatus | None = None,
+    ar_no: int | None = None,
+    q: str | None = Query(default=None, description="ค้นหาใน Subject"),
+    app_date_from: date | None = None,
+    app_date_to: date | None = None,
+    requested_by_me: bool = False,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_can_view_ar),
+) -> list[ARListItem]:
+    query = _apply_ar_list_filters(
+        db.query(ApprovalRequest),
+        status_filter=status_filter,
+        ar_no=ar_no,
+        q=q,
+        app_date_from=app_date_from,
+        app_date_to=app_date_to,
+        requested_by_me=requested_by_me,
+        current_user=current_user,
+    )
     ars = (
         query.order_by(ApprovalRequest.ar_no.desc(), ApprovalRequest.revision.desc())
         .offset(offset)
@@ -216,6 +243,61 @@ def list_ars(
         item = ARListItem.model_validate(ar, from_attributes=True)
         result.append(item.model_copy(update={"ar_no_display": format_ar_no(ar.ar_no)}))
     return result
+
+
+@router.get("/count", response_model=ARListCount)
+def count_ars(
+    status_filter: ARStatus | None = None,
+    ar_no: int | None = None,
+    q: str | None = None,
+    app_date_from: date | None = None,
+    app_date_to: date | None = None,
+    requested_by_me: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_can_view_ar),
+) -> ARListCount:
+    """จำนวน AR ทั้งหมดที่ตรง Filter เดียวกับ GET /ars (ไม่ผูก limit/offset) — หน้า AR List
+    ใช้ทำ Pagination จริง (Design Redesign, 2026-09-11)"""
+    query = _apply_ar_list_filters(
+        db.query(ApprovalRequest),
+        status_filter=status_filter,
+        ar_no=ar_no,
+        q=q,
+        app_date_from=app_date_from,
+        app_date_to=app_date_to,
+        requested_by_me=requested_by_me,
+        current_user=current_user,
+    )
+    return ARListCount(count=query.count())
+
+
+@router.get("/stats", response_model=ARListStats)
+def get_ar_list_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_can_view_ar),
+) -> ARListStats:
+    """การ์ดสถิติหน้า AR List — นับตาม Scope การมองเห็นเดียวกับ GET /ars (RBAC) แต่ไม่ผูกกับ
+    Filter ที่ผู้ใช้กรอกอยู่ในฟอร์ม ณ ขณะนั้น (เป็นภาพรวม Dashboard, Design Redesign
+    2026-09-11) Bucket ตรงกับ arTopStatusBadge() ใน app.js ทุกประการ"""
+    base_query = db.query(ApprovalRequest)
+    if not (current_user.is_admin or current_user.can_view_all_ar):
+        base_query = base_query.filter(ApprovalRequest.requested_by_id == current_user.id)
+
+    total = base_query.count()
+    draft = base_query.filter(ApprovalRequest.status != ARStatus.FINALIZED).count()
+    finalized_query = base_query.filter(ApprovalRequest.status == ARStatus.FINALIZED)
+    rejected = finalized_query.filter(
+        ApprovalRequest.budget_approval_status == ARBudgetApprovalStatus.REJECTED
+    ).count()
+    approved = finalized_query.filter(
+        ApprovalRequest.budget_approval_status.in_(
+            [ARBudgetApprovalStatus.PENDING_FA_ACKNOWLEDGE, ARBudgetApprovalStatus.APPROVED]
+        )
+    ).count()
+    waiting = total - draft - rejected - approved
+    return ARListStats(
+        total=total, draft=draft, waiting=waiting, approved=approved, rejected=rejected
+    )
 
 
 @router.get("/my-approvals/counts", response_model=MyApprovalCounts)
