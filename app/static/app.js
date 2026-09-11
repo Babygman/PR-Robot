@@ -51,7 +51,10 @@ async function requireLogin() {
   // ตัวอักษรย่อในวงกลม Sidebar (2026-09-04 — Design System v2) — เอาแค่ตัวแรกของ
   // แต่ละคำ สูงสุด 2 ตัว เผื่อชื่อเป็นภาษาไทยที่ไม่มีแนวคิด "ตัวพิมพ์ใหญ่" ก็ยังอ่านได้
   const avatarEl = document.getElementById("nav-user-avatar");
-  if (avatarEl && me.name) {
+  // Avatar ที่แถบบนสุด (Correction 2026-09-11 ตาม Design Mockup ใหม่) ใช้ตัวย่อ
+  // เดียวกับ Avatar ที่ Sidebar เป๊ะ เลยคำนวณ initials ครั้งเดียวใช้ร่วมกัน
+  const topAvatarEl = document.getElementById("top-header-avatar");
+  if ((avatarEl || topAvatarEl) && me.name) {
     const initials = me.name
       .trim()
       .split(/\s+/)
@@ -59,7 +62,8 @@ async function requireLogin() {
       .join("")
       .slice(0, 2)
       .toUpperCase();
-    avatarEl.textContent = initials;
+    if (avatarEl) avatarEl.textContent = initials;
+    if (topAvatarEl) topAvatarEl.textContent = initials;
   }
   // Full RBAC (Correction 2026-09-10) — ทุกเมนูซ่อนเป็น Default ใน base.html (class
   // "hidden") เปิดให้เฉพาะคนมีสิทธิ์ตรงนี้ที่เดียว ดู Docstring app/models/user.py และ

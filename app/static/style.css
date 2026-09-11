@@ -257,6 +257,20 @@ body.uploading-lock .sidebar .nav-item { pointer-events: none; opacity: 0.4; cur
   padding: 4px 11px;
 }
 .status-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--color-success); }
+.top-header-avatar {
+  margin-left: auto;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(160deg, #fbbf24, #f97316);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex: none;
+}
 
 /* ---------- เนื้อหาหลัก ---------- */
 .content-area { flex: 1; min-width: 0; display: flex; flex-direction: column; }

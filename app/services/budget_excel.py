@@ -301,6 +301,36 @@ def parse_and_upsert(
     return batch, outcomes
 
 
+def build_export_workbook(rows: list[BudgetMaster]) -> bytes:
+    """Export ยอดงบทั้งหมดเป็น Excel (Correction 2026-09-11) — คอลัมน์ 8 คอลัมน์แรก
+    ตรงกับ Format Upload เดิมเป๊ะ (_ALL_COLUMNS) เรียงเหมือนกันทุกประการ เพื่อให้เอา
+    ไฟล์ที่ Export ออกมานี้ไป Re-upload กลับเข้าระบบได้ทันทีถ้าต้องการ — เพิ่ม
+    used_amount/balance ต่อท้ายอีก 2 คอลัมน์ไว้ดูอ้างอิงเฉยๆ (Parser ด้านบนอ่านเฉพาะ
+    คอลัมน์ใน _ALL_COLUMNS ที่รู้จักจาก Header เท่านั้น ไม่กระทบการ Re-upload)"""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Budget"
+    ws.append([*_ALL_COLUMNS, "used_amount", "balance"])
+    for row in rows:
+        ws.append(
+            [
+                row.budget_no,
+                row.department,
+                row.budget_type.value,
+                row.account_code,
+                row.period_start,
+                row.period_end,
+                float(row.budgeted_amount),
+                row.budget_name or "",
+                float(row.used_amount),
+                float(row.budgeted_amount - row.used_amount),
+            ]
+        )
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 def _jsonable(row: dict) -> dict:
     out = {}
     for k, v in row.items():

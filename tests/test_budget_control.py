@@ -966,3 +966,193 @@ def test_approve_level_with_comment_stored(
     ar_obj = db_session.get(ApprovalRequest, ar_id)
     html = render_ar_html(db_session, ar_obj)
     assert "เร่งด่วน อนุมัติให้เลย" in html
+
+
+# ───────────────── Add/Edit Budget ด้วยตัวเอง (Correction 2026-09-11) ─────────────────
+def _sample_create_body(**overrides) -> dict:
+    body = {
+        "budget_no": "BGM001",
+        "department": "Manual Dept",
+        "budget_type": "expenses",
+        "account_code": "5900",
+        "period_start": "2026-01-01",
+        "period_end": "2026-12-31",
+        "budgeted_amount": "20000.00",
+        "budget_name": "เพิ่มเอง",
+    }
+    body.update(overrides)
+    return body
+
+
+def test_create_budget_master_requires_fa_or_admin(client: TestClient, plain_user: User):
+    _login_as(client, plain_user.email, "plainpass123")
+    res = client.post("/budget", json=_sample_create_body())
+    assert res.status_code == 403
+
+
+def test_create_budget_master_success(client: TestClient, db_session: Session):
+    fa = _make_user(db_session, name="FA Add", email="faadd@example.com", is_fa=True)
+    _login_as(client, fa.email)
+
+    res = client.post("/budget", json=_sample_create_body())
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert body["budget_no"] == "BGM001"
+    assert Decimal(str(body["budgeted_amount"])) == Decimal("20000.00")
+    assert Decimal(str(body["used_amount"])) == Decimal("0")
+    assert Decimal(str(body["balance"])) == Decimal("20000.00")
+
+    listed = client.get("/budget", params={"budget_no": "BGM001"}).json()
+    assert len(listed) == 1
+    assert listed[0]["department"] == "Manual Dept"
+
+
+def test_create_budget_master_duplicate_budget_no_rejected(client: TestClient, db_session: Session):
+    _make_budget_master(db_session, budget_no="BGM002")
+    fa = _make_user(db_session, name="FA Dup Add", email="fadupadd@example.com", is_fa=True)
+    _login_as(client, fa.email)
+
+    res = client.post("/budget", json=_sample_create_body(budget_no="BGM002"))
+    assert res.status_code == 409
+
+
+def test_create_budget_master_invalid_period_rejected(client: TestClient, db_session: Session):
+    fa = _make_user(db_session, name="FA Bad Period", email="fabadperiod@example.com", is_fa=True)
+    _login_as(client, fa.email)
+
+    res = client.post(
+        "/budget",
+        json=_sample_create_body(period_start="2026-12-31", period_end="2026-01-01"),
+    )
+    assert res.status_code == 400
+
+
+def test_create_budget_master_negative_amount_rejected(client: TestClient, db_session: Session):
+    fa = _make_user(db_session, name="FA Negative", email="fanegative@example.com", is_fa=True)
+    _login_as(client, fa.email)
+
+    res = client.post("/budget", json=_sample_create_body(budgeted_amount="-1"))
+    assert res.status_code == 422
+
+
+def test_update_budget_master_requires_fa_or_admin(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    row = _make_budget_master(db_session, budget_no="BGM003")
+    _login_as(client, plain_user.email, "plainpass123")
+    res = client.patch(f"/budget/{row.id}", json={"department": "Hacked"})
+    assert res.status_code == 403
+
+
+def test_update_budget_master_success(client: TestClient, db_session: Session):
+    row = _make_budget_master(db_session, budget_no="BGM004", department="Old Dept")
+    fa = _make_user(db_session, name="FA Edit", email="faedit@example.com", is_fa=True)
+    _login_as(client, fa.email)
+
+    res = client.patch(
+        f"/budget/{row.id}",
+        json={"department": "New Dept", "budgeted_amount": "99999.00"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["department"] == "New Dept"
+    assert Decimal(str(body["budgeted_amount"])) == Decimal("99999.00")
+    # budget_no ไม่ถูกส่งมาแก้ ต้องเหมือนเดิม
+    assert body["budget_no"] == "BGM004"
+
+
+def test_update_budget_master_not_found(client: TestClient, db_session: Session):
+    fa = _make_user(db_session, name="FA 404", email="fa404@example.com", is_fa=True)
+    _login_as(client, fa.email)
+    res = client.patch("/budget/999999", json={"department": "X"})
+    assert res.status_code == 404
+
+
+def test_update_budget_master_invalid_period_rejected(client: TestClient, db_session: Session):
+    row = _make_budget_master(db_session, budget_no="BGM005")
+    fa = _make_user(db_session, name="FA Bad Period2", email="fabadperiod2@example.com", is_fa=True)
+    _login_as(client, fa.email)
+
+    res = client.patch(
+        f"/budget/{row.id}",
+        json={"period_start": "2026-12-31", "period_end": "2026-01-01"},
+    )
+    assert res.status_code == 400
+
+
+def test_update_budget_master_cannot_change_budget_no_or_used_amount(
+    client: TestClient, db_session: Session
+):
+    row = _make_budget_master(db_session, budget_no="BGM006", used_amount=Decimal("500.00"))
+    fa = _make_user(db_session, name="FA Protect", email="faprotect@example.com", is_fa=True)
+    _login_as(client, fa.email)
+
+    # Schema BudgetMasterUpdate ไม่มี Field budget_no/used_amount เลย — ส่งมาก็ถูก
+    # Pydantic ตัดทิ้งเงียบๆ ไม่มีผลอะไร
+    res = client.patch(
+        f"/budget/{row.id}",
+        json={
+            "budget_no": "SHOULD-NOT-CHANGE",
+            "used_amount": "999999.00",
+            "department": "Still Works",
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["budget_no"] == "BGM006"
+    assert Decimal(str(body["used_amount"])) == Decimal("500.00")
+    assert body["department"] == "Still Works"
+
+
+# ───────────────────────── Export Budget ─────────────────────────
+def test_export_budget_master_requires_fa_or_admin(client: TestClient, plain_user: User):
+    _login_as(client, plain_user.email, "plainpass123")
+    res = client.get("/budget/export")
+    assert res.status_code == 403
+
+
+def test_export_budget_master_success(client: TestClient, db_session: Session):
+    _make_budget_master(
+        db_session,
+        budget_no="BGX001",
+        department="Export Dept",
+        budgeted_amount=Decimal("10000.00"),
+        used_amount=Decimal("1500.00"),
+    )
+    fa = _make_user(db_session, name="FA Export", email="faexport@example.com", is_fa=True)
+    _login_as(client, fa.email)
+
+    res = client.get("/budget/export")
+    assert res.status_code == 200
+    assert (
+        res.headers["content-type"]
+        == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert "attachment" in res.headers["content-disposition"]
+
+    import io
+
+    wb = openpyxl.load_workbook(io.BytesIO(res.content))
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    header = rows[0]
+    assert header[:8] == (
+        "budget_no",
+        "department",
+        "budget_type",
+        "account_code",
+        "period_start",
+        "period_end",
+        "budgeted_amount",
+        "budget_name",
+    )
+    assert header[8] == "used_amount"
+    assert header[9] == "balance"
+
+    data_rows = [r for r in rows[1:] if r[0] == "BGX001"]
+    assert len(data_rows) == 1
+    row = data_rows[0]
+    assert row[1] == "Export Dept"
+    assert row[6] == 10000.0
+    assert row[8] == 1500.0
+    assert row[9] == 8500.0

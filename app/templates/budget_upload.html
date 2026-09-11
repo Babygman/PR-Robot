@@ -26,7 +26,36 @@
 </div>
 
 <div class="card">
-  <h2>Search Budget (ค้นหางบประมาณ)</h2>
+  <h2>Add Budget (เพิ่มรายการงบประมาณเอง)</h2>
+  <p class="muted">เพิ่มทีละรายการโดยไม่ต้อง Upload Excel — Budget No. ต้องไม่ซ้ำกับที่มีอยู่แล้วในระบบ</p>
+  <form id="add-budget-form">
+    <div class="row">
+      <div class="field"><label for="a-budget-no">Budget No.</label><input type="text" id="a-budget-no" required></div>
+      <div class="field"><label for="a-department">Department</label><input type="text" id="a-department" required></div>
+      <div class="field"><label for="a-budget-type">Type</label>
+        <select id="a-budget-type">
+          <option value="expenses">expenses</option>
+          <option value="assets">assets</option>
+        </select>
+      </div>
+      <div class="field"><label for="a-account-code">Account Code</label><input type="text" id="a-account-code" required></div>
+    </div>
+    <div class="row">
+      <div class="field"><label for="a-period-start">Period Start</label><input type="date" id="a-period-start" required></div>
+      <div class="field"><label for="a-period-end">Period End</label><input type="date" id="a-period-end" required></div>
+      <div class="field"><label for="a-budgeted-amount">Budgeted Amount</label><input type="number" step="0.01" min="0" id="a-budgeted-amount" required></div>
+      <div class="field"><label for="a-budget-name">Budget Name (Optional)</label><input type="text" id="a-budget-name"></div>
+    </div>
+    <div class="error hidden" id="add-budget-error"></div>
+    <div class="actions"><button type="submit">Add</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="topbar" style="margin-bottom:16px;">
+    <h2 style="margin:0;">Search Budget (ค้นหางบประมาณ)</h2>
+    <a class="btn secondary" href="/budget/export">Export Excel</a>
+  </div>
   <div class="row">
     <div class="field"><label for="s-budget-no">Budget No.</label><input type="text" id="s-budget-no"></div>
     <div class="field"><label for="s-department">Department</label><input type="text" id="s-department"></div>
@@ -34,8 +63,8 @@
     <div class="field" style="display:flex; align-items:flex-end;"><button type="button" id="search-btn" class="secondary">Search</button></div>
   </div>
   <table>
-    <thead><tr><th>Budget No.</th><th>Department</th><th>Type</th><th>Account Code</th><th>Name</th><th>Period</th><th>Budget</th><th>Used</th><th>Balance</th></tr></thead>
-    <tbody id="budget-body"><tr><td colspan="9" class="muted">ค้นหาเพื่อแสดงผล</td></tr></tbody>
+    <thead><tr><th>Budget No.</th><th>Department</th><th>Type</th><th>Account Code</th><th>Name</th><th>Period</th><th>Budget</th><th>Used</th><th>Balance</th><th>Action</th></tr></thead>
+    <tbody id="budget-body"><tr><td colspan="10" class="muted">ค้นหาเพื่อแสดงผล</td></tr></tbody>
   </table>
 </div>
 
@@ -78,6 +107,49 @@ async function loadHistory() {
     : '<tr><td colspan="6" class="muted">ยังไม่มีการ Upload</td></tr>';
 }
 
+let BUDGET_CACHE = [];
+
+function budgetRowHtml(r) {
+  return `<tr data-id="${r.id}">
+        <td class="mono">${escapeHtml(r.budget_no)}</td>
+        <td>${escapeHtml(r.department)}</td>
+        <td>${escapeHtml(r.budget_type)}</td>
+        <td class="mono">${escapeHtml(r.account_code)}</td>
+        <td>${escapeHtml(r.budget_name || "-")}</td>
+        <td class="mono">${formatDateDMY(r.period_start)} - ${formatDateDMY(r.period_end)}</td>
+        <td class="mono">${fmtMoney(r.budgeted_amount)}</td>
+        <td class="mono">${fmtMoney(r.used_amount)}</td>
+        <td class="mono">${fmtMoney(r.balance)}</td>
+        <td><button type="button" class="secondary edit-budget-btn">Edit</button></td>
+      </tr>`;
+}
+
+function budgetEditRowHtml(r) {
+  return `<tr data-id="${r.id}">
+        <td class="mono">${escapeHtml(r.budget_no)}</td>
+        <td><input type="text" class="b-department" value="${escapeHtml(r.department)}" style="width:120px;"></td>
+        <td>
+          <select class="b-budget-type">
+            <option value="expenses" ${r.budget_type === "expenses" ? "selected" : ""}>expenses</option>
+            <option value="assets" ${r.budget_type === "assets" ? "selected" : ""}>assets</option>
+          </select>
+        </td>
+        <td><input type="text" class="b-account-code" value="${escapeHtml(r.account_code)}" style="width:90px;"></td>
+        <td><input type="text" class="b-budget-name" value="${escapeHtml(r.budget_name || "")}" style="width:120px;"></td>
+        <td>
+          <input type="date" class="b-period-start" value="${r.period_start}" style="width:130px;">
+          <input type="date" class="b-period-end" value="${r.period_end}" style="width:130px;">
+        </td>
+        <td><input type="number" step="0.01" min="0" class="b-budgeted-amount" value="${r.budgeted_amount}" style="width:110px;"></td>
+        <td class="mono">${fmtMoney(r.used_amount)}</td>
+        <td class="mono">${fmtMoney(r.balance)}</td>
+        <td>
+          <button type="button" class="save-budget-btn">Save</button>
+          <button type="button" class="secondary cancel-budget-btn">Cancel</button>
+        </td>
+      </tr>`;
+}
+
 async function searchBudget() {
   const params = new URLSearchParams();
   const budgetNo = document.getElementById("s-budget-no").value.trim();
@@ -89,30 +161,93 @@ async function searchBudget() {
   const res = await apiFetch("/budget?" + params.toString());
   const body = document.getElementById("budget-body");
   if (!res.ok) {
-    body.innerHTML = '<tr><td colspan="9" class="error">ค้นหาไม่สำเร็จ</td></tr>';
+    body.innerHTML = '<tr><td colspan="10" class="error">ค้นหาไม่สำเร็จ</td></tr>';
     return;
   }
-  const rows = await res.json();
-  body.innerHTML = rows.length
-    ? rows
-        .map(
-          (r) => `<tr>
-        <td class="mono">${escapeHtml(r.budget_no)}</td>
-        <td>${escapeHtml(r.department)}</td>
-        <td>${escapeHtml(r.budget_type)}</td>
-        <td class="mono">${escapeHtml(r.account_code)}</td>
-        <td>${escapeHtml(r.budget_name || "-")}</td>
-        <td class="mono">${formatDateDMY(r.period_start)} - ${formatDateDMY(r.period_end)}</td>
-        <td class="mono">${fmtMoney(r.budgeted_amount)}</td>
-        <td class="mono">${fmtMoney(r.used_amount)}</td>
-        <td class="mono">${fmtMoney(r.balance)}</td>
-      </tr>`
-        )
-        .join("")
-    : '<tr><td colspan="9" class="muted">ไม่พบรายการ</td></tr>';
+  BUDGET_CACHE = await res.json();
+  body.innerHTML = BUDGET_CACHE.length
+    ? BUDGET_CACHE.map(budgetRowHtml).join("")
+    : '<tr><td colspan="10" class="muted">ไม่พบรายการ</td></tr>';
 }
 
 document.getElementById("search-btn").addEventListener("click", searchBudget);
+
+// Edit/Save/Cancel ต่อแถว (Correction 2026-09-11) — ใช้ Event Delegation ที่ tbody
+// จุดเดียว (Bind ครั้งเดียวตอนโหลดหน้า) แทนการ Bind ปุ่มทีละใบใหม่ทุกครั้งที่ Render
+// แถว ถ้า Bind ซ้ำทุกครั้งจะเกิด Listener ซ้อนสะสมบนปุ่มของแถวที่ไม่ได้ถูกแก้ไข
+// (outerHTML แทนที่เฉพาะแถวที่เปลี่ยน แถวอื่นเป็น DOM Node เดิม)
+document.getElementById("budget-body").addEventListener("click", async (e) => {
+  const editBtn = e.target.closest(".edit-budget-btn");
+  if (editBtn) {
+    const tr = editBtn.closest("tr");
+    const r = BUDGET_CACHE.find((x) => x.id === Number(tr.dataset.id));
+    if (r) tr.outerHTML = budgetEditRowHtml(r);
+    return;
+  }
+
+  const cancelBtn = e.target.closest(".cancel-budget-btn");
+  if (cancelBtn) {
+    const tr = cancelBtn.closest("tr");
+    const r = BUDGET_CACHE.find((x) => x.id === Number(tr.dataset.id));
+    if (r) tr.outerHTML = budgetRowHtml(r);
+    return;
+  }
+
+  const saveBtn = e.target.closest(".save-budget-btn");
+  if (saveBtn) {
+    const tr = saveBtn.closest("tr");
+    const id = Number(tr.dataset.id);
+    const payload = {
+      department: tr.querySelector(".b-department").value.trim(),
+      budget_type: tr.querySelector(".b-budget-type").value,
+      account_code: tr.querySelector(".b-account-code").value.trim(),
+      period_start: tr.querySelector(".b-period-start").value,
+      period_end: tr.querySelector(".b-period-end").value,
+      budgeted_amount: tr.querySelector(".b-budgeted-amount").value,
+      budget_name: tr.querySelector(".b-budget-name").value.trim() || null,
+    };
+    saveBtn.disabled = true;
+    const res = await apiFetch(`/budget/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+    saveBtn.disabled = false;
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      alert(errBody.detail ? JSON.stringify(errBody.detail) : "บันทึกไม่สำเร็จ");
+      return;
+    }
+    const updated = await res.json();
+    const idx = BUDGET_CACHE.findIndex((x) => x.id === id);
+    if (idx >= 0) BUDGET_CACHE[idx] = updated;
+    tr.outerHTML = budgetRowHtml(updated);
+  }
+});
+
+document.getElementById("add-budget-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById("add-budget-error");
+  errEl.classList.add("hidden");
+
+  const payload = {
+    budget_no: document.getElementById("a-budget-no").value.trim(),
+    department: document.getElementById("a-department").value.trim(),
+    budget_type: document.getElementById("a-budget-type").value,
+    account_code: document.getElementById("a-account-code").value.trim(),
+    period_start: document.getElementById("a-period-start").value,
+    period_end: document.getElementById("a-period-end").value,
+    budgeted_amount: document.getElementById("a-budgeted-amount").value,
+    budget_name: document.getElementById("a-budget-name").value.trim() || null,
+  };
+
+  const res = await apiFetch("/budget", { method: "POST", body: JSON.stringify(payload) });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    errEl.textContent = typeof body.detail === "string" ? body.detail : "เพิ่มรายการไม่สำเร็จ";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  document.getElementById("add-budget-form").reset();
+  document.getElementById("a-budget-type").value = "expenses";
+  await searchBudget();
+});
 
 document.getElementById("upload-form").addEventListener("submit", async (e) => {
   e.preventDefault();

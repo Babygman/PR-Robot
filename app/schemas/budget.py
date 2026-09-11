@@ -34,6 +34,39 @@ class BudgetMasterRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class BudgetMasterCreate(BaseModel):
+    """POST /budget — เพิ่มรายการ Budget เองทีละแถว (ไม่ผ่าน Excel) — Correction
+    2026-09-11 (User Feedback: "Budget ต้องสามารถเพิ่มรายการใหม่ได้ ไม่ใช่จากการ
+    upload ได้อย่างเดียว") ใช้กฎ Validate เดียวกับ Excel Upload — budget_no ซ้ำกับ
+    ที่มีอยู่แล้ว Route จะปฏิเสธด้วย 409 (ต่างจาก Excel Upload ที่ Upsert ทับให้เลย
+    เพราะการเพิ่มทีละแถวแบบนี้ไม่มีขั้นตอน Confirm ก่อนเหมือน Batch Upload)"""
+
+    budget_no: str = Field(min_length=1, max_length=50)
+    department: str = Field(min_length=1, max_length=255)
+    budget_type: ARBudgetType
+    account_code: str = Field(min_length=1, max_length=100)
+    period_start: date
+    period_end: date
+    budgeted_amount: Decimal = Field(ge=0)
+    budget_name: str | None = Field(default=None, max_length=255)
+
+
+class BudgetMasterUpdate(BaseModel):
+    """PATCH /budget/{id} — แก้ไขรายการ Budget ที่มีอยู่แล้วโดยตรงจากหน้าเว็บ
+    (Correction 2026-09-11) ทุก Field Optional — ส่งมาเฉพาะที่จะเปลี่ยน (Pattern
+    เดียวกับ UserUpdate) — "budget_no" และ "used_amount" ไม่อยู่ใน Schema นี้โดย
+    เจตนา: budget_no เป็น Key หลักที่ผูกกับ AR แล้วห้ามแก้, used_amount เป็นยอดที่
+    ระบบหักอัตโนมัติจากการอนุมัติ AR เท่านั้น แก้มือไม่ได้เด็ดขาด"""
+
+    department: str | None = Field(default=None, min_length=1, max_length=255)
+    budget_type: ARBudgetType | None = None
+    account_code: str | None = Field(default=None, min_length=1, max_length=100)
+    period_start: date | None = None
+    period_end: date | None = None
+    budgeted_amount: Decimal | None = Field(default=None, ge=0)
+    budget_name: str | None = Field(default=None, max_length=255)
+
+
 # ───────────────────────── Excel Upload ─────────────────────────
 class BudgetUploadRowResult(BaseModel):
     row_no: int
