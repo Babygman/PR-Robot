@@ -33,6 +33,9 @@
   --color-danger: #9c3a2c;
   --color-danger-tint: #f3e0dc;
 
+  /* Comment 2026-09-11: เพิ่ม Gradient กลาง ใช้แทนสีทึบเรียบๆ ตาม Feedback เรื่องสีสัน */
+  --gradient-primary: linear-gradient(160deg, var(--color-primary-soft), var(--color-primary));
+
   --radius: 11px;
   --radius-lg: 18px;
   --shadow-card: 0 1px 2px rgba(20, 20, 16, 0.04), 0 10px 24px -14px rgba(20, 20, 16, 0.16);
@@ -77,7 +80,7 @@ body {
   width: 40px;
   height: 40px;
   border-radius: 13px;
-  background: linear-gradient(160deg, var(--color-primary-soft), var(--color-primary));
+  background: var(--gradient-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -113,7 +116,7 @@ body {
 }
 .nav-item svg { flex: none; opacity: 0.8; }
 .nav-item:hover { background: var(--color-surface-2); color: var(--color-text); text-decoration: none; }
-.nav-item.active { background: var(--color-primary); color: #fff; font-weight: 600; }
+.nav-item.active { background: var(--gradient-primary); color: #fff; font-weight: 600; }
 .nav-item.active svg { opacity: 1; }
 
 /* My Approvals — Submenu ขยายลงจาก "การอนุมัติของฉัน" (Phase B/2, 2026-09-10, Mockup v4) */
@@ -137,7 +140,7 @@ body {
 }
 .submenu .submenu-item:hover { background: var(--color-surface-2); color: var(--color-text); text-decoration: none; }
 .submenu .submenu-item.active {
-  background: var(--color-primary);
+  background: var(--gradient-primary);
   border-left-color: var(--color-primary-hover);
   color: #fff;
   font-weight: 600;
@@ -310,7 +313,7 @@ button, .btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: var(--color-primary);
+  background: var(--gradient-primary);
   color: #fff;
   border: 1px solid transparent;
   padding: 9px 17px;
@@ -320,8 +323,9 @@ button, .btn {
   cursor: pointer;
   text-decoration: none;
   font-family: inherit;
+  transition: filter 0.15s;
 }
-button:hover, .btn:hover { background: var(--color-primary-hover); }
+button:hover, .btn:hover { filter: brightness(0.93); }
 button.secondary, .btn.secondary { background: transparent; border-color: var(--color-border-strong); color: var(--color-text); }
 button.secondary:hover, .btn.secondary:hover { background: transparent; border-color: var(--color-primary); color: var(--color-primary); }
 button.danger { background: var(--color-danger); }
@@ -578,20 +582,36 @@ td.center { text-align: center; }
   white-space: nowrap;
 }
 
-.ar-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 16px; }
+/* Comment 2026-09-11: ปรับตามรีวิว UI (กว้างขึ้นกันตกบรรทัด, เรียงแนวตั้ง, ขอบมีสีตามหมวด,
+   Hover ลอย+เงาแทนการถมสี — เดิมเป็น <button> จึงโดน `button, .btn { display:inline-flex }`
+   บังคับให้เนื้อหาเรียงแนวนอนผิดตั้งใจ, และโดน `button:hover` ถมสีทับจนอ่านไม่ออก) */
+.ar-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 16px; }
 .ar-stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   text-align: left;
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: 1.5px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: 16px 18px;
   cursor: pointer;
   font-family: inherit;
-  transition: box-shadow 0.15s, border-color 0.15s;
+  transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
 }
-.ar-stat-card:hover { box-shadow: var(--shadow-card); }
+.ar-stat-card.stat-total { border-color: color-mix(in srgb, var(--color-primary) 32%, white); }
+.ar-stat-card.stat-draft { border-color: color-mix(in srgb, var(--color-brass) 32%, white); }
+.ar-stat-card.stat-waiting { border-color: color-mix(in srgb, var(--color-primary) 32%, white); }
+.ar-stat-card.stat-approved { border-color: color-mix(in srgb, var(--color-success) 32%, white); }
+.ar-stat-card.stat-rejected { border-color: color-mix(in srgb, var(--color-danger) 32%, white); }
+.ar-stat-card:hover {
+  background: var(--color-surface);
+  filter: none;
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-card);
+}
 .ar-stat-card.active { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary-tint); }
-.ar-stat-card .ar-stat-label { font-size: 12.5px; font-weight: 600; letter-spacing: 0.01em; }
+.ar-stat-card .ar-stat-label { font-size: 12.5px; font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; }
 .ar-stat-card .ar-stat-value { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; color: var(--color-text); margin-top: 12px; }
 .ar-stat-card .ar-stat-sub { font-size: 11.5px; color: var(--color-text-faint); margin-top: 2px; }
 .ar-stat-card.stat-total .ar-stat-label { color: var(--color-primary); }
