@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}{% if pr_id %}แก้ไข PR{% else %}สร้าง PR ใหม่{% endif %} — PR-Robot{% endblock %}
+{% block title %}{% if pr_id %}Edit PR (แก้ไข PR){% else %}New PR (สร้าง PR ใหม่){% endif %} — PR-Robot{% endblock %}
 {% block content %}
-<h1 id="page-title">{% if pr_id %}แก้ไข PR{% else %}สร้าง PR ใหม่{% endif %}</h1>
+<h1 id="page-title">{% if pr_id %}Edit PR (แก้ไข PR){% else %}New PR (สร้าง PR ใหม่){% endif %}</h1>
 
 <div class="error hidden" id="load-error"></div>
 
@@ -10,13 +10,13 @@
     <div class="row">
       <div class="field"><label for="f-section">Section</label><input type="text" id="f-section" required></div>
       <div class="field"><label for="f-division">Division</label><input type="text" id="f-division" required></div>
-      <div class="field"><label for="f-docdate">วันที่เอกสาร</label><input type="text" id="f-docdate" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off"></div>
+      <div class="field"><label for="f-docdate">Document Date</label><input type="text" id="f-docdate" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off"></div>
     </div>
     <div class="field"><label for="f-remark">Remark</label><textarea id="f-remark"></textarea></div>
   </div>
 
   <div class="card" id="source-doc-card">
-    <h2>แนบเอกสารต้นทาง (ถ้ามี)</h2>
+    <h2>Attach Source Documents (แนบเอกสารต้นทาง ถ้ามี)</h2>
     <p class="muted">
       เลือกเอกสารที่อัปโหลดไว้เพื่อผูกกับ PR นี้ — เลือกได้หลายรายการ AI จะรวมรายการสินค้าจาก
       ทุกเอกสารที่เลือกไว้ในตารางด้านล่างให้อัตโนมัติ (เปลี่ยนตัวเลือกแล้วรายการจะปรับใหม่ทันที
@@ -26,14 +26,14 @@
   </div>
 
   <div class="card">
-    <h2>รายการสินค้า</h2>
+    <h2>Items (รายการสินค้า)</h2>
     <div id="items-container"></div>
-    <button type="button" class="secondary" id="add-item-btn">+ เพิ่มรายการ</button>
+    <button type="button" class="secondary" id="add-item-btn">+ Add Item</button>
   </div>
 
   <div class="card">
     <label style="display:flex; align-items:center; gap:6px; font-size:14px; text-transform:none; color:var(--color-text); margin-bottom: 10px;">
-      <input type="checkbox" id="has-budget" style="width:auto;"> มี Budget Control
+      <input type="checkbox" id="has-budget" style="width:auto;"> Has Budget Control
     </label>
     <div id="budget-fields" class="hidden">
       <div class="row">
@@ -51,7 +51,7 @@
 
   <div class="error hidden" id="submit-error"></div>
   <div class="actions">
-    <button type="submit">{% if pr_id %}บันทึกการแก้ไข{% else %}สร้าง PR{% endif %}</button>
+    <button type="submit">{% if pr_id %}Save Changes{% else %}Create PR{% endif %}</button>
   </div>
 </form>
 {% endblock %}
@@ -71,7 +71,7 @@ let allDocs = [];
 function itemRowHtml(item) {
   item = item || {};
   return `<div class="item-row">
-    <button type="button" class="remove-item">ลบ</button>
+    <button type="button" class="remove-item">Remove</button>
     <div class="row">
       <div class="field"><label>Account Code</label><input type="text" class="it-account" value="${escapeHtml(item.account_code)}"></div>
       <div class="field" style="flex:2;"><label>Description</label><input type="text" class="it-desc" value="${escapeHtml(item.description)}" required></div>
@@ -150,7 +150,7 @@ function renderSourceDocList() {
           <input type="checkbox" class="source-doc-checkbox" value="${doc.id}" style="width:auto;" ${checked}>
           #${doc.id} — ${escapeHtml(DOC_TYPE_LABEL[doc.doc_type] || doc.doc_type || "ไม่ระบุประเภท")} — ${escapeHtml(label)}
         </label>
-        <a href="#" class="doc-delete-link" data-doc-id="${doc.id}" style="color:var(--color-danger); white-space:nowrap;">ลบ</a>
+        <a href="#" class="doc-delete-link" data-doc-id="${doc.id}" style="color:var(--color-danger); white-space:nowrap;">Remove</a>
       </div>`;
     })
     .join("");
@@ -219,7 +219,7 @@ async function loadForEdit() {
     return false;
   }
   if (pr.revision) {
-    document.getElementById("page-title").textContent = `แก้ไข PR ${pr.pr_no} Rev.${pr.revision}`;
+    document.getElementById("page-title").textContent = `Edit PR ${pr.pr_no} Rev.${pr.revision}`;
   }
   document.getElementById("f-section").value = pr.section;
   document.getElementById("f-division").value = pr.division;

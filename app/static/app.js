@@ -3,18 +3,20 @@
 
 // Scope Revision (Phase 9, 2026-09-03): เหลือ 2 สถานะ — draft (แก้ไขได้) และ
 // finalized (ล็อกแล้ว เปลี่ยนอัตโนมัติตอนกดพิมพ์/ดาวน์โหลด PDF ครั้งแรก)
+// Localization Phase 2 (2026-09-11): Badge/Dropdown เป็น English ล้วนตาม Scope ที่
+// Confirm ไว้ (จัดกลุ่มเดียวกับปุ่ม/Label — ไม่ใช่ Header ที่ใช้ Bilingual)
 const PR_STATUS_LABEL = {
-  draft: "Draft (แก้ไขได้)",
-  finalized: "Finalized (สรุปแล้ว)",
+  draft: "Draft (Editable)",
+  finalized: "Finalized",
 };
 
 // ประเภทเอกสารต้นทาง (Phase 9, 2026-09-03): AI เดาเองจากเนื้อหา ผู้ใช้แก้ไขทีหลังได้
 const DOC_TYPE_LABEL = {
-  quotation: "ใบเสนอราคา",
-  receiving_note: "ใบรับของ",
-  borrow_note: "ใบยืมสินค้า",
-  delivery_note: "ใบส่งสินค้า",
-  other: "อื่นๆ",
+  quotation: "Quotation",
+  receiving_note: "Receiving Note",
+  borrow_note: "Borrow Note",
+  delivery_note: "Delivery Note",
+  other: "Other",
 };
 
 /**

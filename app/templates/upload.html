@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}อัปโหลดเอกสาร — PR-Robot{% endblock %}
+{% block title %}Upload Document (อัปโหลดเอกสาร) — PR-Robot{% endblock %}
 {% block content %}
 <div class="topbar">
   <div>
-    <h1>อัปโหลดเอกสารต้นทาง</h1>
+    <h1>Upload Source Documents (อัปโหลดเอกสารต้นทาง)</h1>
     <p class="muted">
       อัปโหลดเอกสารได้พร้อมกันหลายไฟล์ (ใบเสนอราคา / ใบยืมสินค้า / ใบส่งสินค้า / ใบรับของ —
       PDF/PNG/JPEG/WEBP/DOCX/XLSX/CSV/TXT) AI จะอ่านข้อมูลและเดาประเภทเอกสารให้อัตโนมัติ แก้ไขประเภทได้ถ้า AI เดาผิด
@@ -16,7 +16,7 @@
 <div class="card">
   <form id="upload-form">
     <div class="field">
-      <label for="doc-files">ไฟล์เอกสาร (เลือกได้หลายไฟล์)</label>
+      <label for="doc-files">Document Files (Multiple Allowed)</label>
       <input type="file" id="doc-files" accept="application/pdf,image/png,image/jpeg,image/webp,.docx,.xlsx,.csv,.txt" multiple>
     </div>
     <div id="drop-zone" class="drop-zone">
@@ -32,7 +32,7 @@
       <p class="muted">ไฟล์ที่เตรียมอัปโหลด — ลากวาง/Paste เพิ่มได้อีก หรือกดลบทีละรายการ แล้วค่อยกด "อัปโหลด" ด้านล่างเมื่อพร้อม</p>
       <div id="pending-list" class="pending-list"></div>
     </div>
-    <button type="submit" id="upload-btn">อัปโหลดและให้ AI อ่านข้อมูล</button>
+    <button type="submit" id="upload-btn">Upload & Let AI Read Data</button>
   </form>
   <div class="muted hidden" id="upload-loading">
     <span id="upload-progress-text">กำลังเตรียมอัปโหลด...</span><br>
@@ -48,11 +48,11 @@
 </div>
 
 <div class="card hidden" id="results-card">
-  <h2>เอกสารที่อัปโหลดแล้ว</h2>
+  <h2>Uploaded Documents (เอกสารที่อัปโหลดแล้ว)</h2>
   <p class="muted">เลือกเอกสารที่ต้องการนำไปสร้าง PR (เลือกได้หลายรายการ) แก้ไข "ประเภทเอกสาร" ได้ถ้า AI เดาผิด</p>
   <div id="doc-results"></div>
   <div class="actions">
-    <button type="button" id="create-pr-btn">สร้าง PR จากเอกสารที่เลือก →</button>
+    <button type="button" id="create-pr-btn">Create PR from Selected Documents →</button>
   </div>
 </div>
 {% endblock %}
@@ -93,10 +93,10 @@ function docResultRowHtml(doc, errorMsg) {
         <strong>#${doc.id} — ${escapeHtml(doc.file_path.split("/").pop())}</strong>
       </label>
       <div class="field">
-        <label>ประเภทเอกสาร</label>
+        <label>Document Type</label>
         <select class="doc-type-select" data-doc-id="${doc.id}">${typeOptions}</select>
       </div>
-      <a href="#" class="doc-delete-link" data-doc-id="${doc.id}" style="color:var(--color-danger); white-space:nowrap; align-self:center;">ลบ</a>
+      <a href="#" class="doc-delete-link" data-doc-id="${doc.id}" style="color:var(--color-danger); white-space:nowrap; align-self:center;">Remove</a>
     </div>
     <div>${statusNote}</div>
   </div>`;
