@@ -96,8 +96,11 @@
       <div class="card">
         <h2>Attachments (เอกสารแนบ)</h2>
         <ul class="history-list" id="attachment-list"></ul>
-        <div class="row hidden" id="attachment-upload-row" style="margin-top:8px; gap:8px; align-items:center;">
-          <input type="file" id="attachment-file-input" multiple accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg,.webp" style="flex:1;">
+        <!-- Comment 2026-09-11 (Audit): เดิมวางแนวนอนคู่กับปุ่ม การ์ดฝั่งนี้แคบ ทำให้
+             ข้อความ Native "No file chosen" ของ Input ถูกตัด ("No...en") — สลับเป็นวาง
+             ซ้อนแนวตั้งให้ Input มีพื้นที่เต็มความกว้างการ์ดเสมอ -->
+        <div class="row hidden" id="attachment-upload-row" style="margin-top:8px; gap:8px; flex-direction:column; align-items:stretch;">
+          <input type="file" id="attachment-file-input" aria-label="Attach Document" multiple accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg,.webp">
           <button type="button" class="secondary" id="attachment-upload-btn">Attach Document</button>
         </div>
         <div class="error hidden" id="attachment-error"></div>

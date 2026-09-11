@@ -61,12 +61,14 @@
     AR = เมนู Approval Request (เห็นเฉพาะของตัวเอง) |
     เห็น PR/AR ทั้งหมด = เห็นได้ทุกใบ + เห็นเมนู Log PR/Log AR (แต่แก้ไข/พิมพ์/ลบได้เฉพาะของตัวเองเสมอ)
   </p>
-  <table>
+  <div class="table-scroll">
+  <table class="users-table">
     <thead>
       <tr><th>Name</th><th>Email</th><th>Department</th><th>Position</th><th>Admin</th><th>FA</th><th>Approve</th><th>PR</th><th>AR</th><th>View All<br>PR</th><th>View All<br>AR</th><th>Active</th><th></th></tr>
     </thead>
     <tbody id="users-body"><tr><td colspan="13" class="muted">กำลังโหลด...</td></tr></tbody>
   </table>
+  </div>
 </div>
 {% endblock %}
 {% block scripts %}
@@ -76,17 +78,17 @@ let USERS_CACHE = [];
 function userRowHtml(u) {
   return `<tr data-id="${u.id}">
     <td>${escapeHtml(u.name)}</td>
-    <td><input type="email" class="u-email mono" value="${escapeHtml(u.email)}"></td>
-    <td><input type="text" class="u-department" value="${escapeHtml(u.department || "")}" placeholder="(None)"></td>
-    <td><input type="text" class="u-position" value="${escapeHtml(u.position || "")}" placeholder="(None)"></td>
-    <td style="text-align:center;"><input type="checkbox" class="u-is-admin" ${u.is_admin ? "checked" : ""}></td>
-    <td style="text-align:center;"><input type="checkbox" class="u-is-fa" ${u.is_fa ? "checked" : ""}></td>
-    <td style="text-align:center;"><input type="checkbox" class="u-can-view-approvals" ${u.can_view_approvals ? "checked" : ""}></td>
-    <td style="text-align:center;"><input type="checkbox" class="u-can-view-pr" ${u.can_view_pr ? "checked" : ""}></td>
-    <td style="text-align:center;"><input type="checkbox" class="u-can-view-ar" ${u.can_view_ar ? "checked" : ""}></td>
-    <td style="text-align:center;"><input type="checkbox" class="u-can-view-all-pr" ${u.can_view_all_pr ? "checked" : ""}></td>
-    <td style="text-align:center;"><input type="checkbox" class="u-can-view-all-ar" ${u.can_view_all_ar ? "checked" : ""}></td>
-    <td style="text-align:center;"><input type="checkbox" class="u-is-active" ${u.is_active ? "checked" : ""}></td>
+    <td><input type="email" class="u-email mono" aria-label="Email for ${escapeHtml(u.name)}" value="${escapeHtml(u.email)}"></td>
+    <td><input type="text" class="u-department" aria-label="Department for ${escapeHtml(u.name)}" value="${escapeHtml(u.department || "")}" placeholder="(None)"></td>
+    <td><input type="text" class="u-position" aria-label="Position for ${escapeHtml(u.name)}" value="${escapeHtml(u.position || "")}" placeholder="(None)"></td>
+    <td style="text-align:center;"><input type="checkbox" class="u-is-admin" aria-label="Admin for ${escapeHtml(u.name)}" ${u.is_admin ? "checked" : ""}></td>
+    <td style="text-align:center;"><input type="checkbox" class="u-is-fa" aria-label="FA for ${escapeHtml(u.name)}" ${u.is_fa ? "checked" : ""}></td>
+    <td style="text-align:center;"><input type="checkbox" class="u-can-view-approvals" aria-label="Approve for ${escapeHtml(u.name)}" ${u.can_view_approvals ? "checked" : ""}></td>
+    <td style="text-align:center;"><input type="checkbox" class="u-can-view-pr" aria-label="PR for ${escapeHtml(u.name)}" ${u.can_view_pr ? "checked" : ""}></td>
+    <td style="text-align:center;"><input type="checkbox" class="u-can-view-ar" aria-label="AR for ${escapeHtml(u.name)}" ${u.can_view_ar ? "checked" : ""}></td>
+    <td style="text-align:center;"><input type="checkbox" class="u-can-view-all-pr" aria-label="View All PR for ${escapeHtml(u.name)}" ${u.can_view_all_pr ? "checked" : ""}></td>
+    <td style="text-align:center;"><input type="checkbox" class="u-can-view-all-ar" aria-label="View All AR for ${escapeHtml(u.name)}" ${u.can_view_all_ar ? "checked" : ""}></td>
+    <td style="text-align:center;"><input type="checkbox" class="u-is-active" aria-label="Active for ${escapeHtml(u.name)}" ${u.is_active ? "checked" : ""}></td>
     <td style="white-space:nowrap; display:flex; gap:6px;">
       <button type="button" class="secondary save-user-btn">Save</button>
       <button type="button" class="secondary reset-pw-btn" style="color:var(--color-danger); border-color:var(--color-danger);">Reset Password</button>

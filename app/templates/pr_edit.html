@@ -73,14 +73,14 @@ function itemRowHtml(item) {
   return `<div class="item-row">
     <button type="button" class="remove-item">Remove</button>
     <div class="row">
-      <div class="field"><label>Account Code</label><input type="text" class="it-account" value="${escapeHtml(item.account_code)}"></div>
-      <div class="field" style="flex:2;"><label>Description</label><input type="text" class="it-desc" value="${escapeHtml(item.description)}" required></div>
-      <div class="field"><label>Quantity</label><input type="text" class="it-qty" value="${escapeHtml(item.quantity)}"></div>
+      <div class="field"><label>Account Code</label><input type="text" class="it-account" aria-label="Account Code" value="${escapeHtml(item.account_code)}"></div>
+      <div class="field" style="flex:2;"><label>Description</label><input type="text" class="it-desc" aria-label="Description" value="${escapeHtml(item.description)}" required></div>
+      <div class="field"><label>Quantity</label><input type="text" class="it-qty" aria-label="Quantity" value="${escapeHtml(item.quantity)}"></div>
     </div>
     <div class="row">
-      <div class="field"><label>Required Date</label>${dateFieldHtml("it-reqdate", item.required_date)}</div>
-      <div class="field" style="flex:2;"><label>Reason</label><input type="text" class="it-reason" value="${escapeHtml(item.reason)}"></div>
-      <div class="field"><label>Ref. PO</label><input type="text" class="it-refpo" value="${escapeHtml(item.ref_po)}"></div>
+      <div class="field"><label>Required Date</label>${dateFieldHtml("it-reqdate", item.required_date, "Required Date")}</div>
+      <div class="field" style="flex:2;"><label>Reason</label><input type="text" class="it-reason" aria-label="Reason" value="${escapeHtml(item.reason)}"></div>
+      <div class="field"><label>Ref. PO</label><input type="text" class="it-refpo" aria-label="Ref. PO" value="${escapeHtml(item.ref_po)}"></div>
     </div>
   </div>`;
 }

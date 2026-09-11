@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}PR-Robot{% endblock %}</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/static/style.css">
@@ -141,6 +142,11 @@
   </div>
 </div>
 <div class="content-area">
+{# Comment 2026-09-11 (Audit): เดิม Top-Header ไม่มี Block ห่อ ทำให้หน้า Login (ซึ่งปิด
+   block nav ไปแล้วเพื่อซ่อน Sidebar) ยังโชว์ "Welcome back," ว่างเปล่า + Avatar วงกลม
+   ว่างๆ อยู่ดี แม้ยังไม่ได้ Login เลยก็ตาม (ยืนยันด้วย Browser Session ใหม่ล้วนๆ) — ห่อ
+   ด้วย block header ให้ login.html ปิดได้เหมือน block nav #}
+{% block header %}
 <div class="top-header">
   <div>
     <div class="top-header-eyebrow">Welcome back,</div>
@@ -164,6 +170,7 @@
     </div>
   </div>
 </div>
+{% endblock %}
 <div class="container">
 {% block content %}{% endblock %}
 </div>

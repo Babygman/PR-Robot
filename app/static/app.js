@@ -437,9 +437,10 @@ function formatDateTimeDMY(value) {
 // เท่านั้น (กันพิมพ์ผิดรูปแบบ/วันที่ไม่มีจริง) ค่าจริงเก็บเป็น yyyy-mm-dd ใน data-iso
 // เสมอ ใช้ getDateFieldIso()/setDateFieldIso() อ่าน-เขียนแทนการยุ่งกับ .value ตรงๆ
 
-function dateFieldHtml(extraClass, isoValue) {
+function dateFieldHtml(extraClass, isoValue, ariaLabel) {
   const display = formatDateDMY(isoValue) || "";
-  return `<input type="text" class="date-field ${extraClass || ""}" data-iso="${isoValue || ""}" value="${display}" placeholder="dd/mm/yyyy" readonly autocomplete="off">`;
+  const ariaAttr = ariaLabel ? ` aria-label="${ariaLabel}"` : "";
+  return `<input type="text" class="date-field ${extraClass || ""}" data-iso="${isoValue || ""}" value="${display}" placeholder="dd/mm/yyyy" readonly autocomplete="off"${ariaAttr}>`;
 }
 
 function getDateFieldIso(el) {

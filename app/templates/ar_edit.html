@@ -104,8 +104,8 @@ function amountItemRowHtml(item) {
   return `<div class="item-row">
     <button type="button" class="remove-item">Remove</button>
     <div class="row">
-      <div class="field" style="flex:2;"><label>Item (Label)</label><input type="text" class="it-label" value="${escapeHtml(item.label)}" required></div>
-      <div class="field"><label>Amount (Baht)</label><input type="text" class="it-amount" value="${item.amount ?? ""}"></div>
+      <div class="field" style="flex:2;"><label>Item (Label)</label><input type="text" class="it-label" aria-label="Item (Label)" value="${escapeHtml(item.label)}" required></div>
+      <div class="field"><label>Amount (Baht)</label><input type="text" class="it-amount" aria-label="Amount (Baht)" value="${item.amount ?? ""}"></div>
     </div>
   </div>`;
 }
