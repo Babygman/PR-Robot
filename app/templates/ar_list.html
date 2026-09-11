@@ -1,50 +1,50 @@
 {% extends "base.html" %}
-{% block title %}รายการ Approval Request — PR-Robot{% endblock %}
+{% block title %}Approval Request List (รายการ Approval Request) — PR-Robot{% endblock %}
 {% block content %}
 <div class="topbar">
   <div>
-    <h1>รายการ Approval Request</h1>
+    <h1>Approval Request List (รายการ Approval Request)</h1>
     <p class="muted" style="margin-top:-10px;">เอกสารขออนุมัติ (AR) ทั้งหมด — กรอกข้อมูลในระบบเพื่อพิมพ์ไปเซ็นอนุมัติสดนอกระบบ</p>
   </div>
   <a class="btn" href="/app/ars/new">
     <svg width="13" height="13" viewBox="0 0 16 16"><line x1="8" y1="3" x2="8" y2="13" stroke="#fff" stroke-width="1.8"/><line x1="3" y1="8" x2="13" y2="8" stroke="#fff" stroke-width="1.8"/></svg>
-    สร้าง Approval Request ใหม่
+    New Approval Request
   </a>
 </div>
 
 <div class="card">
   <form id="filter-form" class="filters">
     <div class="field">
-      <label for="f-q">ค้นหา (Subject)</label>
+      <label for="f-q">Search (Subject)</label>
       <input type="text" id="f-q">
     </div>
     <div class="field">
-      <label for="f-ar-no">เลขที่ AR</label>
+      <label for="f-ar-no">AR No.</label>
       <input type="number" id="f-ar-no">
     </div>
     <div class="field">
-      <label for="f-status">สถานะ</label>
+      <label for="f-status">Status</label>
       <select id="f-status">
-        <option value="">ทั้งหมด</option>
-        <option value="draft">Draft (แก้ไขได้)</option>
-        <option value="finalized">Finalized (สรุปแล้ว)</option>
+        <option value="">All</option>
+        <option value="draft">Draft (Editable)</option>
+        <option value="finalized">Finalized</option>
       </select>
     </div>
     <div class="field">
-      <label for="f-date-from">วันที่เอกสาร (จาก)</label>
+      <label for="f-date-from">Document Date (From)</label>
       <input type="text" id="f-date-from" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off">
     </div>
     <div class="field">
-      <label for="f-date-to">วันที่เอกสาร (ถึง)</label>
+      <label for="f-date-to">Document Date (To)</label>
       <input type="text" id="f-date-to" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off">
     </div>
     <div class="field" style="min-width: auto;">
       <label for="f-mine">&nbsp;</label>
       <label style="display:flex; align-items:center; gap:6px; font-size:13.5px; text-transform:none; color:var(--color-text);">
-        <input type="checkbox" id="f-mine" style="width:auto;"> ที่ฉันสร้างเท่านั้น
+        <input type="checkbox" id="f-mine" style="width:auto;"> Created by Me Only
       </label>
     </div>
-    <button type="submit">ค้นหา</button>
+    <button type="submit">Search</button>
   </form>
 </div>
 
@@ -103,7 +103,7 @@ async function loadArs() {
       <td>${formatDateDMY(ar.application_date)}</td>
       <td>${arTopStatusBadge(ar)}</td>
       <td class="center">${ar.budget_approval_status === "approved" ? '<span class="fa-check" title="FA Acknowledge แล้ว">✓</span>' : ""}</td>
-      <td><a href="/app/ars/${ar.id}">ดูรายละเอียด →</a></td>
+      <td><a href="/app/ars/${ar.id}">View Details →</a></td>
     </tr>`
     )
     .join("");

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}รายละเอียด Approval Request — PR-Robot{% endblock %}
+{% block title %}Approval Request Details (รายละเอียด Approval Request) — PR-Robot{% endblock %}
 {% block content %}
 <div id="loading" class="muted">กำลังโหลด...</div>
 <div id="error" class="error hidden"></div>
@@ -10,7 +10,7 @@
       <h1 class="mono">AR <span id="ar-no"></span> <span id="ar-status-badge"></span></h1>
       <div class="meta-strip">
         <div class="m-field"><div class="m-label">Subject</div><div class="m-value" id="ar-subject"></div></div>
-        <div class="m-field"><div class="m-label">วันที่ยื่นคำขอ</div><div class="m-value mono" id="ar-date"></div></div>
+        <div class="m-field"><div class="m-label">Application Date</div><div class="m-value mono" id="ar-date"></div></div>
         <div class="m-field"><div class="m-label">Requested by</div><div class="m-value" id="ar-requested"></div></div>
       </div>
     </div>
@@ -70,7 +70,7 @@
       </div>
 
       <div class="card">
-        <h2>Suppliers / เงื่อนไข</h2>
+        <h2>Suppliers / Terms (เงื่อนไข)</h2>
         <table>
           <tbody>
             <tr><th>Suppliers / Vendor</th><td id="ar-suppliers"></td></tr>
@@ -83,33 +83,33 @@
 
     <div>
       <div class="card">
-        <h2>การดำเนินการ</h2>
+        <h2>Actions (การดำเนินการ)</h2>
         <div class="actions" style="flex-direction: column;">
-          <a class="btn secondary" id="pdf-link" href="#" target="_blank">พิมพ์ / ดาวน์โหลด PDF</a>
-          <a class="btn secondary hidden" id="edit-link" href="#">แก้ไข Approval Request</a>
-          <button type="button" class="hidden" id="submit-approval-btn">ส่งขออนุมัติ</button>
-          <button type="button" class="secondary hidden" id="revise-btn">สร้าง Revision</button>
+          <a class="btn secondary" id="pdf-link" href="#" target="_blank">Print / Download PDF</a>
+          <a class="btn secondary hidden" id="edit-link" href="#">Edit Approval Request</a>
+          <button type="button" class="hidden" id="submit-approval-btn">Submit for Approval</button>
+          <button type="button" class="secondary hidden" id="revise-btn">Create Revision</button>
         </div>
         <div class="error hidden" id="submit-approval-error"></div>
       </div>
 
       <div class="card">
-        <h2>เอกสารแนบ</h2>
+        <h2>Attachments (เอกสารแนบ)</h2>
         <ul class="history-list" id="attachment-list"></ul>
         <div class="row hidden" id="attachment-upload-row" style="margin-top:8px; gap:8px; align-items:center;">
           <input type="file" id="attachment-file-input" multiple accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg,.webp" style="flex:1;">
-          <button type="button" class="secondary" id="attachment-upload-btn">แนบเอกสาร</button>
+          <button type="button" class="secondary" id="attachment-upload-btn">Attach Document</button>
         </div>
         <div class="error hidden" id="attachment-error"></div>
       </div>
 
       <div class="card">
-        <h2>ประวัติ</h2>
+        <h2>History (ประวัติ)</h2>
         <ul class="history-list" id="history-list"></ul>
       </div>
 
       <div class="card hidden" id="approval-card">
-        <h2>สถานะการอนุมัติ Budget <span id="budget-status-badge"></span></h2>
+        <h2>Budget Approval Status (สถานะการอนุมัติ Budget) <span id="budget-status-badge"></span></h2>
         <ul class="history-list" id="approval-steps"></ul>
         <div class="error hidden" id="approval-action-error"></div>
         <div class="actions" id="approval-actions"></div>
@@ -136,13 +136,13 @@ const BUDGET_TYPE_LABEL = { expenses: "Expenses", assets: "Assets" };
 // สายอนุมัติจริง ส่วน FA Acknowledge เป็นขั้นตอนบัญชีหักงบเบื้องหลัง ไม่ถือเป็น "รอ"
 // อีกต่อไป (ปุ่ม FA Acknowledge ใน approval-actions ยังโชว์ให้ FA กดตามปกติ)
 const BUDGET_STATUS_LABEL = {
-  not_submitted: "ยังไม่เข้าสู่ Workflow",
-  pending: "รออนุมัติ Level",
+  not_submitted: "Not Submitted",
+  pending: "Pending Approval",
   pending_fa_acknowledge: "Approved",
-  approved: "Approved (หักงบแล้ว)",
-  rejected: "ถูกปฏิเสธ",
+  approved: "Approved (Budget Deducted)",
+  rejected: "Rejected",
 };
-const STEP_STATUS_LABEL = { waiting: "รอดำเนินการ", approved: "อนุมัติแล้ว", rejected: "ปฏิเสธ" };
+const STEP_STATUS_LABEL = { waiting: "Waiting", approved: "Approved", rejected: "Rejected" };
 
 // Feedback ผู้ใช้ 2026-09-11: Badge "รออนุมัติ Level" เดิมไม่บอกว่ารอ Level ไหน ทำให้ไม่
 // ชัดเจน — รับ levelName เข้ามาต่อท้าย Label เฉพาะตอน status == pending (Level อื่นๆ ไม่
@@ -158,7 +158,7 @@ function budgetStatusBadge(status, levelName) {
 
 function approvalStepHtml(step) {
   const label = STEP_STATUS_LABEL[step.status] || step.status;
-  const who = step.step_type === "fa_acknowledge" ? "FA (Role กลาง)" : escapeHtml(step.approver_names || "-");
+  const who = step.step_type === "fa_acknowledge" ? "FA (Shared Role)" : escapeHtml(step.approver_names || "-");
   let html = `<strong>${escapeHtml(step.level_name)}</strong> — ${who} — <span class="mono">${label}</span>`;
   if (step.acted_by_name) {
     html += `<br><span class="muted">โดย ${escapeHtml(step.acted_by_name)} — ${formatDateTimeDMY(step.acted_at)}${step.acted_as_override ? " (Admin Override)" : ""}</span>`;
@@ -224,8 +224,8 @@ function renderApprovalActions(ar, steps) {
     const step = steps.find((s) => s.step_type === "level" && s.level_no === ar.current_approval_level);
     if (step && ME && ((step.approver_user_ids || []).includes(ME.id) || ME.is_admin)) {
       actionsEl.innerHTML = `
-        <button type="button" id="approve-level-btn">อนุมัติ "${escapeHtml(step.level_name)}"</button>
-        <button type="button" class="secondary" id="reject-level-btn">ปฏิเสธ</button>
+        <button type="button" id="approve-level-btn">Approve "${escapeHtml(step.level_name)}"</button>
+        <button type="button" class="secondary" id="reject-level-btn">Reject</button>
       `;
       document.getElementById("approve-level-btn").addEventListener("click", () => submitApprovalAction("approve-level"));
       document.getElementById("reject-level-btn").addEventListener("click", () => submitApprovalAction("reject-level"));
@@ -234,7 +234,7 @@ function renderApprovalActions(ar, steps) {
     if (ME && (ME.is_fa || ME.is_admin)) {
       actionsEl.innerHTML = `
         <button type="button" id="fa-ack-btn">FA Acknowledge</button>
-        <button type="button" class="secondary" id="reject-fa-btn">ปฏิเสธ</button>
+        <button type="button" class="secondary" id="reject-fa-btn">Reject</button>
       `;
       document.getElementById("fa-ack-btn").addEventListener("click", () => submitApprovalAction("fa-acknowledge"));
       document.getElementById("reject-fa-btn").addEventListener("click", () => submitApprovalAction("reject-fa"));
@@ -287,7 +287,7 @@ let CURRENT_ATTACHMENTS = [];
 function attachmentHtml(a, ar, index) {
   const canDelete = ME && (ME.id === a.uploaded_by_id || ME.id === ar.requested_by_id || ME.is_admin);
   const delBtn = canDelete
-    ? ` <button type="button" class="secondary att-del-btn" data-id="${a.id}" style="padding:1px 8px; font-size:12px;">ลบ</button>`
+    ? ` <button type="button" class="secondary att-del-btn" data-id="${a.id}" style="padding:1px 8px; font-size:12px;">Remove</button>`
     : "";
   return `<li>
     <a href="#" class="att-preview-link" data-index="${index}">${escapeHtml(a.file_name)}</a>

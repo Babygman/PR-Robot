@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}{% if ar_id %}แก้ไข Approval Request{% else %}สร้าง Approval Request ใหม่{% endif %} — PR-Robot{% endblock %}
+{% block title %}{% if ar_id %}Edit Approval Request (แก้ไข Approval Request){% else %}New Approval Request (สร้าง Approval Request ใหม่){% endif %} — PR-Robot{% endblock %}
 {% block content %}
-<h1 id="page-title">{% if ar_id %}แก้ไข Approval Request{% else %}สร้าง Approval Request ใหม่{% endif %}</h1>
+<h1 id="page-title">{% if ar_id %}Edit Approval Request (แก้ไข Approval Request){% else %}New Approval Request (สร้าง Approval Request ใหม่){% endif %}</h1>
 <p class="muted" style="margin-top:-10px;">
   กรอกข้อมูลทุกช่องที่จำเป็นเพื่อพิมพ์เอกสารไปขอลายเซ็นอนุมัติสดนอกระบบ — Total จะรวมให้อัตโนมัติจากรายการ Amount &amp; Quantity ถ้ากรอกจำนวนเงินครบทุกแถว (ถ้าแถวไหนยังไม่กรอก Total จะกลับมากรอกเองได้) ส่วน VAT/Grand Total/This Application/Balance ระบบคำนวณให้อัตโนมัติ กรุณาตรวจสอบตัวเลขก่อนส่งขออนุมัติทุกครั้ง
 </p>
@@ -11,7 +11,7 @@
 <form id="ar-form" class="hidden">
   <div class="card">
     <div class="row">
-      <div class="field"><label for="f-appdate">วันที่ยื่นคำขอ (Application Date)</label><input type="text" id="f-appdate" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off"></div>
+      <div class="field"><label for="f-appdate">Application Date</label><input type="text" id="f-appdate" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off"></div>
     </div>
     <div class="field"><label for="f-subject">Subject</label><input type="text" id="f-subject" required></div>
   </div>
@@ -31,13 +31,13 @@
         </div>
       </div>
       <div class="field" style="flex:2;">
-        <label for="f-budget-select">เลือกงบประมาณ (ถ้ามีใน Budget Control แล้ว)</label>
-        <select id="f-budget-select"><option value="">— เลือก หรือกรอก Budget No. เองด้านล่าง —</option></select>
+        <label for="f-budget-select">Select Budget (if already in Budget Control)</label>
+        <select id="f-budget-select"><option value="">— Select, or enter Budget No. below —</option></select>
       </div>
     </div>
     <div class="row">
-      <div class="field"><label for="f-budget-no">Budget No. (รหัส/เลขที่บัญชีงบประมาณ)</label><input type="text" id="f-budget-no" placeholder="เช่น 5100-01"></div>
-      <div class="field"><label for="f-budget-sub">หมวดย่อย (เช่น Mnt. Motor)</label><input type="text" id="f-budget-sub"></div>
+      <div class="field"><label for="f-budget-no">Budget No. (Budget Account Code)</label><input type="text" id="f-budget-no" placeholder="e.g. 5100-01"></div>
+      <div class="field"><label for="f-budget-sub">Sub-Category (e.g. Mnt. Motor)</label><input type="text" id="f-budget-sub"></div>
       <div class="field"><label for="f-budget-name">Budget Name</label><input type="text" id="f-budget-name"></div>
     </div>
     <div class="row">
@@ -62,7 +62,7 @@
   <div class="card">
     <h2>Amount &amp; Quantity</h2>
     <div id="items-container"></div>
-    <button type="button" class="secondary" id="add-item-btn">+ เพิ่มรายการ</button>
+    <button type="button" class="secondary" id="add-item-btn">+ Add Item</button>
     <div class="row" style="margin-top:14px;">
       <div class="field"><label for="f-total">Total</label><input type="text" id="f-total"></div>
       <div class="field"><label for="f-vat-rate">Vat %</label>
@@ -70,10 +70,10 @@
           <option value="7">7%</option>
           <option value="3">3%</option>
           <option value="0">0%</option>
-          <option value="custom">กรอกเอง</option>
+          <option value="custom">Custom</option>
         </select>
       </div>
-      <div class="field"><label for="f-vat">Vat (บาท)</label><input type="text" id="f-vat"></div>
+      <div class="field"><label for="f-vat">Vat (Baht)</label><input type="text" id="f-vat"></div>
       <div class="field"><label for="f-grand-total">Grand Total</label><input type="text" class="mono" id="f-grand-total" readonly></div>
     </div>
   </div>
@@ -91,7 +91,7 @@
 
   <div class="error hidden" id="submit-error"></div>
   <div class="actions">
-    <button type="submit">{% if ar_id %}บันทึกการแก้ไข{% else %}สร้าง Approval Request{% endif %}</button>
+    <button type="submit">{% if ar_id %}Save Changes{% else %}Create Approval Request{% endif %}</button>
   </div>
 </form>
 {% endblock %}
@@ -102,10 +102,10 @@ const AR_ID = {{ ar_id if ar_id is not none else "null" }};
 function amountItemRowHtml(item) {
   item = item || {};
   return `<div class="item-row">
-    <button type="button" class="remove-item">ลบ</button>
+    <button type="button" class="remove-item">Remove</button>
     <div class="row">
-      <div class="field" style="flex:2;"><label>รายการ (Label)</label><input type="text" class="it-label" value="${escapeHtml(item.label)}" required></div>
-      <div class="field"><label>จำนวนเงิน (Baht)</label><input type="text" class="it-amount" value="${item.amount ?? ""}"></div>
+      <div class="field" style="flex:2;"><label>Item (Label)</label><input type="text" class="it-label" value="${escapeHtml(item.label)}" required></div>
+      <div class="field"><label>Amount (Baht)</label><input type="text" class="it-amount" value="${item.amount ?? ""}"></div>
     </div>
   </div>`;
 }
@@ -221,7 +221,7 @@ document.getElementById("f-used-before").addEventListener("input", recalcBalance
 
 async function loadBudgetOptions(department, budgetType) {
   const select = document.getElementById("f-budget-select");
-  select.innerHTML = '<option value="">— เลือก หรือกรอก Budget No. เองด้านล่าง —</option>';
+  select.innerHTML = '<option value="">— Select, or enter Budget No. below —</option>';
   if (!department) return;
   const params = new URLSearchParams({ department, budget_type: budgetType });
   const res = await apiFetch("/budget?" + params.toString());
@@ -230,7 +230,7 @@ async function loadBudgetOptions(department, budgetType) {
   BUDGET_OPTIONS.forEach((b) => {
     const opt = document.createElement("option");
     opt.value = b.id;
-    opt.textContent = `${b.budget_no} — ${b.account_code}${b.budget_name ? " / " + b.budget_name : ""} (คงเหลือ ${fmtMoney(b.balance)})`;
+    opt.textContent = `${b.budget_no} — ${b.account_code}${b.budget_name ? " / " + b.budget_name : ""} (Balance ${fmtMoney(b.balance)})`;
     select.appendChild(opt);
   });
 }
@@ -282,7 +282,7 @@ async function loadForEdit() {
     document.getElementById("load-error").classList.add("muted");
   }
   if (ar.revision) {
-    document.getElementById("page-title").textContent = `แก้ไข ${ar.ar_no_display} Rev.${ar.revision}`;
+    document.getElementById("page-title").textContent = `Edit ${ar.ar_no_display} Rev.${ar.revision}`;
   }
   setDateFieldIso(document.getElementById("f-appdate"), ar.application_date);
   document.getElementById("f-subject").value = ar.subject;

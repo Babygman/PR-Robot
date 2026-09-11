@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}การอนุมัติของฉัน — PR-Robot{% endblock %}
+{% block title %}My Approvals (การอนุมัติของฉัน) — PR-Robot{% endblock %}
 {% block content %}
 <div class="topbar">
   <div>
-    <h1 id="ma-title">การอนุมัติของฉัน</h1>
+    <h1 id="ma-title">My Approvals (การอนุมัติของฉัน)</h1>
     <p class="muted" style="margin-top:-10px;" id="ma-sub">กำลังโหลด...</p>
   </div>
 </div>
@@ -15,10 +15,10 @@
     <thead>
       <tr>
         <th>AR No.</th>
-        <th>เรื่อง</th>
-        <th>แผนก</th>
-        <th>ขั้นตอนปัจจุบัน</th>
-        <th>ผู้ขอ</th>
+        <th>Subject</th>
+        <th>Department</th>
+        <th>Current Step</th>
+        <th>Requested By</th>
         <th></th>
       </tr>
     </thead>
@@ -41,7 +41,7 @@
         </div>
       </div>
       <div class="ma-side-pane">
-        <h4>รายละเอียด</h4>
+        <h4>Details (รายละเอียด)</h4>
         <div id="ma-kv-list"></div>
         <div class="error hidden" id="ma-action-error"></div>
         <div id="ma-action-area"></div>
@@ -59,18 +59,18 @@ let POPUP_ITEM = null;
 let POPUP_ATTACHMENTS = [];
 
 const MA_TAB_META = {
-  waiting: { title: "📥 กล่องรออนุมัติ", sub: "ทุกรายการ AR ที่คุณเกี่ยวข้อง กำลังดำเนินอยู่ในขั้นตอนใดขั้นตอนหนึ่ง" },
-  mine: { title: "✅ รอการตัดสินใจของฉัน", sub: "ถึงคิวคุณอนุมัติ/Acknowledge แล้ว — ดำเนินการได้ทันที" },
-  history: { title: "🕒 ประวัติการอนุมัติ", sub: "AR ที่คุณเคยอนุมัติมาแล้ว (ไม่รวมที่ปฏิเสธ)" },
-  returned: { title: "↩️ ส่งกลับแก้ไข", sub: "AR ที่ถูกปฏิเสธไปแล้ว กำลังรอผู้ขอแก้ไขและส่งใหม่" },
+  waiting: { title: "📥 Waiting for Approval (กล่องรออนุมัติ)", sub: "ทุกรายการ AR ที่คุณเกี่ยวข้อง กำลังดำเนินอยู่ในขั้นตอนใดขั้นตอนหนึ่ง" },
+  mine: { title: "✅ Pending My Decision (รอการตัดสินใจของฉัน)", sub: "ถึงคิวคุณอนุมัติ/Acknowledge แล้ว — ดำเนินการได้ทันที" },
+  history: { title: "🕒 Approval History (ประวัติการอนุมัติ)", sub: "AR ที่คุณเคยอนุมัติมาแล้ว (ไม่รวมที่ปฏิเสธ)" },
+  returned: { title: "↩️ Returned for Revision (ส่งกลับแก้ไข)", sub: "AR ที่ถูกปฏิเสธไปแล้ว กำลังรอผู้ขอแก้ไขและส่งใหม่" },
 };
 
 const MA_STATUS_LABEL = {
-  not_submitted: "ยังไม่เข้าสู่ Workflow",
-  pending: "รออนุมัติ Level",
-  pending_fa_acknowledge: "รอ FA Acknowledge",
-  approved: "Approved (หักงบแล้ว)",
-  rejected: "ถูกปฏิเสธ",
+  not_submitted: "Not Submitted",
+  pending: "Pending Approval",
+  pending_fa_acknowledge: "Pending FA Acknowledge",
+  approved: "Approved (Budget Deducted)",
+  rejected: "Rejected",
 };
 
 function maStatusBadge(status) {
@@ -103,7 +103,7 @@ async function loadList() {
       <td>${escapeHtml(item.budget_department || "-")}</td>
       <td>${escapeHtml(item.current_level_name || "-")} ${maStatusBadge(item.budget_approval_status)}</td>
       <td>${escapeHtml(item.requested_by_name || "-")}</td>
-      <td><span class="ma-doc-link" data-id="${item.id}">${item.actionable ? "ตรวจสอบ / ดูเอกสาร →" : "ดูเอกสาร →"}</span></td>
+      <td><span class="ma-doc-link" data-id="${item.id}">${item.actionable ? "Review / View Documents →" : "View Documents →"}</span></td>
     </tr>`
     )
     .join("");
@@ -170,8 +170,8 @@ function renderActionArea() {
     area.innerHTML = `
       <textarea class="comment-box" id="ma-comment" placeholder="Comment (ถ้ามี — ไม่บังคับ)"></textarea>
       <div class="ma-popup-actions">
-        <button type="button" id="ma-approve-btn">อนุมัติ${POPUP_ITEM.current_level_name ? ` "${escapeHtml(POPUP_ITEM.current_level_name)}"` : ""}</button>
-        <button type="button" class="secondary" id="ma-reject-btn">ปฏิเสธ</button>
+        <button type="button" id="ma-approve-btn">Approve${POPUP_ITEM.current_level_name ? ` "${escapeHtml(POPUP_ITEM.current_level_name)}"` : ""}</button>
+        <button type="button" class="secondary" id="ma-reject-btn">Reject</button>
       </div>`;
     document.getElementById("ma-approve-btn").addEventListener("click", () => submitMaAction("approve-level"));
     document.getElementById("ma-reject-btn").addEventListener("click", () => submitMaAction("reject-level"));
@@ -180,7 +180,7 @@ function renderActionArea() {
       <textarea class="comment-box" id="ma-comment" placeholder="Comment (ถ้ามี — ไม่บังคับ)"></textarea>
       <div class="ma-popup-actions">
         <button type="button" id="ma-fa-btn">FA Acknowledge</button>
-        <button type="button" class="secondary" id="ma-reject-fa-btn">ปฏิเสธ</button>
+        <button type="button" class="secondary" id="ma-reject-fa-btn">Reject</button>
       </div>`;
     document.getElementById("ma-fa-btn").addEventListener("click", () => submitMaAction("fa-acknowledge"));
     document.getElementById("ma-reject-fa-btn").addEventListener("click", () => submitMaAction("reject-fa"));
@@ -235,12 +235,12 @@ async function openPopup(id) {
   if (!POPUP_ITEM) return;
   document.getElementById("ma-popup-title").textContent = `${POPUP_ITEM.ar_no_display} — ${POPUP_ITEM.subject}`;
   document.getElementById("ma-kv-list").innerHTML = `
-    <div class="ma-kv"><span>ผู้ขอ</span><span>${escapeHtml(POPUP_ITEM.requested_by_name || "-")}</span></div>
-    <div class="ma-kv"><span>แผนก</span><span>${escapeHtml(POPUP_ITEM.budget_department || "-")}</span></div>
-    <div class="ma-kv"><span>วันที่</span><span>${formatDateDMY(POPUP_ITEM.application_date)}</span></div>
-    <div class="ma-kv"><span>ขั้นตอนปัจจุบัน</span><span>${escapeHtml(POPUP_ITEM.current_level_name || "-")}</span></div>
-    <div class="ma-kv"><span>สถานะ</span><span>${maStatusBadge(POPUP_ITEM.budget_approval_status)}</span></div>
-    <div class="ma-kv"><span></span><span><a href="/app/ars/${POPUP_ITEM.id}" target="_blank">ดูหน้ารายละเอียดเต็ม (ประวัติ/พิมพ์ PDF) →</a></span></div>
+    <div class="ma-kv"><span>Requested By</span><span>${escapeHtml(POPUP_ITEM.requested_by_name || "-")}</span></div>
+    <div class="ma-kv"><span>Department</span><span>${escapeHtml(POPUP_ITEM.budget_department || "-")}</span></div>
+    <div class="ma-kv"><span>Date</span><span>${formatDateDMY(POPUP_ITEM.application_date)}</span></div>
+    <div class="ma-kv"><span>Current Step</span><span>${escapeHtml(POPUP_ITEM.current_level_name || "-")}</span></div>
+    <div class="ma-kv"><span>Status</span><span>${maStatusBadge(POPUP_ITEM.budget_approval_status)}</span></div>
+    <div class="ma-kv"><span></span><span><a href="/app/ars/${POPUP_ITEM.id}" target="_blank">View Full Details (History/Print PDF) →</a></span></div>
   `;
   renderActionArea();
   document.getElementById("ma-overlay").classList.add("open");
