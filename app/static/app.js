@@ -182,13 +182,16 @@ function markActiveNav() {
 }
 
 function setupLogout() {
-  const btn = document.getElementById("logout-link");
-  if (!btn) return;
-  btn.addEventListener("click", async (e) => {
+  // Comment 2026-09-11 (รอบ 3): มีปุ่ม Logout 2 จุดแล้ว (Sidebar Footer เดิม +
+  // เมนู Avatar ที่ Header ใหม่) ใช้ Handler เดียวกันทั้งคู่
+  const btns = document.querySelectorAll("#logout-link, #top-logout-link");
+  if (!btns.length) return;
+  const doLogout = async (e) => {
     e.preventDefault();
     await fetch("/auth/logout", { method: "POST" });
     window.location.href = "/app/login";
-  });
+  };
+  btns.forEach((btn) => btn.addEventListener("click", doLogout));
 }
 
 function statusBadge(status) {
@@ -573,16 +576,31 @@ function setupChangePassword() {
   const confirmEl = document.getElementById("cp-confirm");
   const saveBtn = document.getElementById("cp-save");
   const cancelBtn = document.getElementById("cp-cancel");
+  // Comment 2026-09-11 (รอบ 3): Avatar ที่ Header ก็ต้องเปิดเมนูนี้ได้เหมือนกัน
+  // ใช้ Modal เดียวกัน (change-password-modal) ไม่ได้สร้างซ้ำ
+  const topTrigger = document.getElementById("top-header-avatar-trigger");
+  const topMenu = document.getElementById("top-header-user-menu");
+  const topOpenBtn = document.getElementById("top-open-change-password");
   if (!trigger || !menu || !modal) return;
 
   const closeMenu = () => menu.classList.add("hidden");
+  const closeTopMenu = () => topMenu?.classList.add("hidden");
   trigger.addEventListener("click", (e) => {
     e.stopPropagation();
+    closeTopMenu();
     menu.classList.toggle("hidden");
+  });
+  topTrigger?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeMenu();
+    topMenu.classList.toggle("hidden");
   });
   document.addEventListener("click", (e) => {
     if (!menu.classList.contains("hidden") && !menu.contains(e.target) && e.target !== trigger) {
       closeMenu();
+    }
+    if (topMenu && !topMenu.classList.contains("hidden") && !topMenu.contains(e.target) && e.target !== topTrigger) {
+      closeTopMenu();
     }
   });
 
@@ -597,10 +615,12 @@ function setupChangePassword() {
     resetForm();
     modal.classList.remove("hidden");
     closeMenu();
+    closeTopMenu();
   };
   const closeModal = () => modal.classList.add("hidden");
 
   openBtn?.addEventListener("click", openModal);
+  topOpenBtn?.addEventListener("click", openModal);
   cancelBtn?.addEventListener("click", closeModal);
   modal.addEventListener("click", (e) => {
     if (e.target === modal) closeModal();

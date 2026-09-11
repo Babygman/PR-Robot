@@ -151,7 +151,18 @@
   </div>
   <!-- Avatar วงกลมที่ Header (Correction 2026-09-11 ตาม Design Mockup ใหม่ที่ผู้ใช้ส่งมา
        — คงข้อความ "Welcome back"/Online เดิมไว้ทั้งหมด แค่เพิ่ม Avatar เข้ามา) -->
-  <span class="top-header-avatar" id="top-header-avatar"></span>
+  <!-- Comment 2026-09-11 (รอบ 3): Avatar นี้ต้องกดได้ มีเมนู Change Password/Log out
+       เหมือนกับ Avatar ที่ Sidebar Footer — ใช้ Modal เดียวกัน (change-password-modal)
+       และ Logout Endpoint เดียวกัน ไม่ได้สร้างซ้ำ -->
+  <div class="top-header-user" id="top-header-user">
+    <button type="button" class="top-header-avatar-trigger" id="top-header-avatar-trigger">
+      <span class="top-header-avatar" id="top-header-avatar"></span>
+    </button>
+    <div class="top-header-user-menu hidden" id="top-header-user-menu">
+      <button type="button" class="sidebar-user-menu-item" id="top-open-change-password">🔒 Change Password</button>
+      <button type="button" class="sidebar-user-menu-item" id="top-logout-link">↪ Log out</button>
+    </div>
+  </div>
 </div>
 <div class="container">
 {% block content %}{% endblock %}
