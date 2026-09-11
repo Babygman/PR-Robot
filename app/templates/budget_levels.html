@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Level อนุมัติ Budget — PR-Robot{% endblock %}
+{% block title %}Approval Levels (Level อนุมัติ Budget) — PR-Robot{% endblock %}
 {% block content %}
 <div class="topbar">
   <div>
-    <h1>จัดการ Level อนุมัติ Budget</h1>
+    <h1>Manage Approval Levels (จัดการ Level อนุมัติ Budget)</h1>
     <p class="muted">
       Admin เท่านั้น — แต่ละแผนกกำหนดเองว่ามีกี่ Level อนุมัติ อะไรบ้าง ใครเป็นผู้อนุมัติ
       (ยืดหยุ่นได้อิสระ ไม่ต้องเท่ากันทุกแผนก) — 1 Level ตั้งผู้อนุมัติได้มากกว่า 1 คน
@@ -18,30 +18,30 @@
 <div class="card">
   <div class="row">
     <div class="field">
-      <label for="dept-select">แผนก</label>
+      <label for="dept-select">Department</label>
       <select id="dept-select">
-        <option value="">-- เลือกแผนก --</option>
+        <option value="">-- Select Department --</option>
       </select>
     </div>
     <div class="field hidden" id="new-dept-field">
-      <label for="new-dept-input">ชื่อแผนกใหม่</label>
-      <input type="text" id="new-dept-input" placeholder="พิมพ์ชื่อแผนกใหม่ แล้วกด Enter">
+      <label for="new-dept-input">New Department Name</label>
+      <input type="text" id="new-dept-input" placeholder="Type new department name, then press Enter">
     </div>
   </div>
 </div>
 
 <div class="hidden" id="levels-card">
-  <h2>Level ของแผนก <span id="current-dept" class="mono"></span></h2>
+  <h2>Levels for Department (Level ของแผนก) <span id="current-dept" class="mono"></span></h2>
   <p class="muted" id="no-levels-msg" style="display:none;">แผนกนี้ยังไม่มี Level (AR จะข้ามตรงไป FA Acknowledge ทันที)</p>
   <div id="levels-groups"></div>
 
   <div class="card" style="margin-top:16px;">
-    <h3 style="margin-top:0;">เพิ่ม Level ใหม่ (หรือเพิ่มผู้อนุมัติเข้า Level ที่มีอยู่แล้ว)</h3>
+    <h3 style="margin-top:0;">Add New Level (เพิ่ม Level ใหม่ หรือเพิ่มผู้อนุมัติเข้า Level ที่มีอยู่แล้ว)</h3>
     <div class="row">
       <div class="field"><label for="n-level-no">Level No.</label><input type="number" id="n-level-no" min="1" value="1"></div>
-      <div class="field" style="flex:2;"><label for="n-level-name">ชื่อ Level</label><input type="text" id="n-level-name" placeholder="เช่น Manager, Senior Manager, General Manager, President or Director"></div>
-      <div class="field" style="flex:2;"><label for="n-approver">ผู้อนุมัติ</label><select id="n-approver"></select></div>
-      <div class="field" style="display:flex; align-items:flex-end;"><button type="button" id="add-level-btn">เพิ่มผู้อนุมัติ</button></div>
+      <div class="field" style="flex:2;"><label for="n-level-name">Level Name</label><input type="text" id="n-level-name" placeholder="e.g. Manager, Senior Manager, General Manager, President or Director"></div>
+      <div class="field" style="flex:2;"><label for="n-approver">Approver</label><select id="n-approver"></select></div>
+      <div class="field" style="display:flex; align-items:flex-end;"><button type="button" id="add-level-btn">Add Approver</button></div>
     </div>
     <p class="muted" style="font-size:12px;">
       ถ้า Level No. ที่กรอกมีอยู่แล้ว ต้องพิมพ์ชื่อ Level ให้ตรงกับที่ตั้งไว้เป๊ะ ระบบจะเพิ่ม
@@ -78,8 +78,8 @@ function approverRowHtml(lv) {
     <td><select class="lv-approver"></select></td>
     <td style="text-align:center;"><input type="checkbox" class="lv-active" ${lv.is_active ? "checked" : ""}></td>
     <td>
-      <button type="button" class="secondary lv-save-btn">บันทึก</button>
-      <button type="button" class="secondary lv-remove-btn">ลบออกจาก Level</button>
+      <button type="button" class="secondary lv-save-btn">Save</button>
+      <button type="button" class="secondary lv-remove-btn">Remove from Level</button>
     </td>
   </tr>`;
 }
@@ -89,8 +89,8 @@ function levelGroupHtml(levelNo, group) {
   return `<div class="card" style="margin-top:12px;" data-level-no="${levelNo}">
     <div class="row" style="align-items:flex-end;">
       <div class="field" style="flex:0 0 90px;"><label>Level</label><div class="mono" style="padding:8px 0;">${levelNo}</div></div>
-      <div class="field" style="flex:2;"><label>ชื่อ Level</label><input type="text" class="lv-group-name" value="${escapeHtml(group[0].level_name)}"></div>
-      <div class="field" style="display:flex;"><button type="button" class="secondary lv-group-name-save">บันทึกชื่อ Level</button></div>
+      <div class="field" style="flex:2;"><label>Level Name</label><input type="text" class="lv-group-name" value="${escapeHtml(group[0].level_name)}"></div>
+      <div class="field" style="display:flex;"><button type="button" class="secondary lv-group-name-save">Save Level Name</button></div>
     </div>
     <table style="margin-top:8px;">
       <thead><tr><th>Approver</th><th>Active</th><th></th></tr></thead>
@@ -98,7 +98,7 @@ function levelGroupHtml(levelNo, group) {
     </table>
     <div class="row" style="margin-top:8px;">
       <div class="field" style="flex:2;"><select class="lv-add-approver"></select></div>
-      <div class="field" style="display:flex;"><button type="button" class="secondary lv-add-approver-btn">+ เพิ่มผู้อนุมัติใน Level นี้</button></div>
+      <div class="field" style="display:flex;"><button type="button" class="secondary lv-add-approver-btn">+ Add Approver to This Level</button></div>
     </div>
     <div class="error hidden lv-group-error"></div>
   </div>`;
@@ -116,9 +116,9 @@ async function loadDeptList() {
   const sel = document.getElementById("dept-select");
   const prev = currentDept || sel.value;
   sel.innerHTML =
-    '<option value="">-- เลือกแผนก --</option>' +
+    '<option value="">-- Select Department --</option>' +
     depts.map((d) => `<option value="${escapeHtml(d)}" ${d === prev ? "selected" : ""}>${escapeHtml(d)}</option>`).join("") +
-    '<option value="__new__">+ เพิ่มแผนกใหม่</option>';
+    '<option value="__new__">+ Add New Department</option>';
   // แผนกที่เพิ่งพิมพ์ใหม่ (ยังไม่มีใน DB เลย) จะไม่อยู่ใน depts จนกว่าจะมี Level แรก
   // ถูกสร้างจริง — พอปรากฏใน depts แล้ว (กลายเป็นแผนกจริง) ให้ซ่อนช่องพิมพ์กลับ
   if (depts.includes(prev)) {

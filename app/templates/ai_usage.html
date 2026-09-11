@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}ค่าใช้จ่าย AI — PR-Robot{% endblock %}
+{% block title %}AI Usage (ค่าใช้จ่าย AI) — PR-Robot{% endblock %}
 {% block content %}
 <div class="topbar">
   <div>
-    <h1>ค่าใช้จ่าย AI</h1>
+    <h1>AI Usage (ค่าใช้จ่าย AI)</h1>
     <p class="muted">
       ยอดค่าใช้จ่ายในหน้านี้เป็น <strong>ประมาณการ</strong> คำนวณจากจำนวน Token ที่ Gemini
       ตอบกลับมาจริงในแต่ละครั้ง x Rate ราคา ณ ตอนนั้น ไม่ใช่ยอด Bill จริงจาก Google Cloud
@@ -15,24 +15,24 @@
 
 <div class="stat-grid" style="margin-bottom:16px;">
   <div class="stat-box">
-    <div class="stat-label">วันนี้</div>
+    <div class="stat-label">Today</div>
     <div class="stat-value" id="stat-today-cost">-</div>
     <div class="stat-sub" id="stat-today-sub">-</div>
   </div>
   <div class="stat-box">
-    <div class="stat-label">เดือนนี้</div>
+    <div class="stat-label">This Month</div>
     <div class="stat-value" id="stat-month-cost">-</div>
     <div class="stat-sub" id="stat-month-sub">-</div>
   </div>
 </div>
 
 <div class="card chart-card" id="daily-chart-card">
-  <h2>ค่าใช้จ่ายรายวัน (14 วันล่าสุด)</h2>
+  <h2>Daily Cost (ค่าใช้จ่ายรายวัน 14 วันล่าสุด)</h2>
   <div id="daily-chart-wrap" class="muted">กำลังโหลด...</div>
 </div>
 
 <div class="card">
-  <h2>สรุปรายวัน (30 วันล่าสุด)</h2>
+  <h2>Daily Summary (สรุปรายวัน 30 วันล่าสุด)</h2>
   <table>
     <thead>
       <tr><th>Date</th><th>Count</th><th>Success/Fail</th><th>Total Tokens</th><th>Cost (USD)</th><th>Cost (THB)</th></tr>
@@ -44,7 +44,7 @@
 </div>
 
 <div class="card">
-  <h2>สรุปรายเดือน (12 เดือนล่าสุด)</h2>
+  <h2>Monthly Summary (สรุปรายเดือน 12 เดือนล่าสุด)</h2>
   <table>
     <thead>
       <tr><th>Month</th><th>Count</th><th>Success/Fail</th><th>Total Tokens</th><th>Cost (USD)</th><th>Cost (THB)</th></tr>
@@ -56,19 +56,19 @@
 </div>
 
 <div class="card">
-  <h2>รายการ Transaction</h2>
+  <h2>Transactions (รายการ Transaction)</h2>
   <form id="filter-form" class="filters">
     <div class="row">
       <div class="field">
-        <label for="f-date-from">ตั้งแต่วันที่</label>
+        <label for="f-date-from">From Date</label>
         <input type="text" id="f-date-from" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off">
       </div>
       <div class="field">
-        <label for="f-date-to">ถึงวันที่</label>
+        <label for="f-date-to">To Date</label>
         <input type="text" id="f-date-to" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off">
       </div>
       <div class="field" style="display:flex; align-items:flex-end;">
-        <button type="submit">กรอง</button>
+        <button type="submit">Filter</button>
       </div>
     </div>
   </form>
@@ -197,7 +197,7 @@ async function loadTransactions() {
       <td class="mono">${formatDateTimeDMY(row.created_at)}</td>
       <td>${escapeHtml(row.file_name)}</td>
       <td>${escapeHtml(row.uploaded_by_name || "-")}</td>
-      <td>${row.success ? '<span class="badge badge-finalized">สำเร็จ</span>' : `<span class="badge badge-draft" style="background:var(--color-danger-tint); color:var(--color-danger);" title="${escapeHtml(row.error_message || "")}">ไม่สำเร็จ</span>`}</td>
+      <td>${row.success ? '<span class="badge badge-finalized">Success</span>' : `<span class="badge badge-draft" style="background:var(--color-danger-tint); color:var(--color-danger);" title="${escapeHtml(row.error_message || "")}">Failed</span>`}</td>
       <td class="mono">${row.total_token_count.toLocaleString("en-US")}</td>
       <td class="mono">${fmtUsd(row.cost_usd)}</td>
       <td class="mono">${fmtThb(row.cost_thb)}</td>

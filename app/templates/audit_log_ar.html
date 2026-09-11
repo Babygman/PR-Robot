@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Log AR — PR-Robot{% endblock %}
+{% block title %}Log AR (บันทึกกิจกรรม AR) — PR-Robot{% endblock %}
 {% block content %}
 <div class="topbar">
   <div>
-    <h1>Log AR</h1>
+    <h1>Log AR (บันทึกกิจกรรม AR)</h1>
     <p class="muted" style="margin-top:-10px;">ประวัติกิจกรรมทั้งหมดของ Approval Request ในระบบ — Admin, FA, หรือผู้มีสิทธิ์ "เห็น AR ทั้งหมด" เท่านั้น</p>
   </div>
 </div>
@@ -13,18 +13,18 @@
 <div class="card">
   <form id="filter-form" class="filters">
     <div class="field">
-      <label for="f-q">ค้นหา (Action)</label>
+      <label for="f-q">Search (Action)</label>
       <input type="text" id="f-q">
     </div>
     <div class="field">
-      <label for="f-date-from">วันที่ (จาก)</label>
+      <label for="f-date-from">Date (From)</label>
       <input type="text" id="f-date-from" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off">
     </div>
     <div class="field">
-      <label for="f-date-to">วันที่ (ถึง)</label>
+      <label for="f-date-to">Date (To)</label>
       <input type="text" id="f-date-to" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off">
     </div>
-    <button type="submit">ค้นหา</button>
+    <button type="submit">Search</button>
   </form>
 </div>
 
@@ -32,11 +32,11 @@
   <table>
     <thead>
       <tr>
-        <th>วันที่/เวลา</th>
-        <th>เลขที่ AR</th>
-        <th>เรื่อง</th>
+        <th>Date/Time</th>
+        <th>AR No.</th>
+        <th>Subject</th>
         <th>Action</th>
-        <th>ผู้กระทำ</th>
+        <th>Actor</th>
       </tr>
     </thead>
     <tbody id="log-table-body">

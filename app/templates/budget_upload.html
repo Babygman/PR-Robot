@@ -17,7 +17,7 @@
 <div class="error hidden" id="page-error"></div>
 
 <div class="card">
-  <h2>Upload ไฟล์ Excel</h2>
+  <h2>Upload Excel File (Upload ไฟล์ Excel)</h2>
   <form id="upload-form">
     <div class="field"><input type="file" id="f-file" accept=".xlsx,.xlsm" required></div>
     <div class="actions"><button type="submit">Upload</button></div>
@@ -26,12 +26,12 @@
 </div>
 
 <div class="card">
-  <h2>ค้นหางบประมาณ</h2>
+  <h2>Search Budget (ค้นหางบประมาณ)</h2>
   <div class="row">
     <div class="field"><label for="s-budget-no">Budget No.</label><input type="text" id="s-budget-no"></div>
     <div class="field"><label for="s-department">Department</label><input type="text" id="s-department"></div>
     <div class="field"><label for="s-account-code">Account Code</label><input type="text" id="s-account-code"></div>
-    <div class="field" style="display:flex; align-items:flex-end;"><button type="button" id="search-btn" class="secondary">ค้นหา</button></div>
+    <div class="field" style="display:flex; align-items:flex-end;"><button type="button" id="search-btn" class="secondary">Search</button></div>
   </div>
   <table>
     <thead><tr><th>Budget No.</th><th>Department</th><th>Type</th><th>Account Code</th><th>Name</th><th>Period</th><th>Budget</th><th>Used</th><th>Balance</th></tr></thead>
@@ -40,7 +40,7 @@
 </div>
 
 <div class="card">
-  <h2>ประวัติการ Upload</h2>
+  <h2>Upload History (ประวัติการ Upload)</h2>
   <table>
     <thead><tr><th>Time</th><th>File</th><th>Uploaded By</th><th>Total</th><th>Success</th><th>Error</th></tr></thead>
     <tbody id="history-body"><tr><td colspan="6" class="muted">กำลังโหลด...</td></tr></tbody>
