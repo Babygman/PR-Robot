@@ -55,6 +55,20 @@ def get_department_levels(db: Session, department: str) -> list[BudgetApprovalLe
     )
 
 
+def resolve_current_level_name(db: Session, ar: ApprovalRequest) -> str | None:
+    """แปลง ar.current_approval_level (แค่ตัวเลข) เป็นชื่อ Level จริงๆ (เช่น "Manager",
+    "General Manager") — ใช้ร่วมกันทั้งใน MyApprovalItem (app/api/routes/approval_requests.py
+    _to_my_approval_item, ของเดิม) และ ARRead (_to_ar_read, เพิ่มใหม่ — Feedback ผู้ใช้
+    2026-09-11: Badge "รออนุมัติ Level" เดิมไม่บอกว่ารอ Level ไหน ทำให้ไม่ชัดเจน)"""
+    if ar.budget_approval_status == ARBudgetApprovalStatus.PENDING_FA_ACKNOWLEDGE:
+        return "FA Acknowledge"
+    if ar.current_approval_level is not None and ar.budget_department:
+        levels = get_department_levels(db, ar.budget_department)
+        match = next((lv for lv in levels if lv.level_no == ar.current_approval_level), None)
+        return match.level_name if match else None
+    return None
+
+
 def resolve_budget_master(
     db: Session,
     *,

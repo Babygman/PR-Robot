@@ -125,6 +125,9 @@ def _to_ar_read(db: Session, ar: ApprovalRequest) -> ARRead:
             "ar_no_display": format_ar_no(ar.ar_no),
             "requested_by_name": names.get(ar.requested_by_id),
             "superseded_by_id": superseded_by[0] if superseded_by else None,
+            # Feedback ผู้ใช้ 2026-09-11: Badge "รออนุมัติ Level" เดิมไม่บอกว่ารอ Level
+            # ไหน — เติมชื่อ Level จริงมาให้หน้า ar_detail.html เอาไปต่อท้าย Badge ได้เลย
+            "current_level_name": budget_workflow.resolve_current_level_name(db, ar),
         }
     )
 
@@ -228,13 +231,7 @@ def get_my_approval_counts(
 def _to_my_approval_item(
     db: Session, ar: ApprovalRequest, names: dict[int, str], actor: User
 ) -> MyApprovalItem:
-    level_name = None
-    if ar.budget_approval_status == ARBudgetApprovalStatus.PENDING_FA_ACKNOWLEDGE:
-        level_name = "FA Acknowledge"
-    elif ar.current_approval_level is not None and ar.budget_department:
-        levels = budget_workflow.get_department_levels(db, ar.budget_department)
-        match = next((lv for lv in levels if lv.level_no == ar.current_approval_level), None)
-        level_name = match.level_name if match else None
+    level_name = budget_workflow.resolve_current_level_name(db, ar)
 
     item = MyApprovalItem.model_validate(ar, from_attributes=True)
     return item.model_copy(

@@ -380,6 +380,10 @@ def test_two_level_then_fa_acknowledge_deducts_budget_once(
     assert ar_after_finalize["budget_approval_status"] == "pending"
     assert ar_after_finalize["current_approval_level"] == 1
     assert ar_after_finalize["budget_master_id"] == master.id
+    # Feedback ผู้ใช้ 2026-09-11: Badge "รออนุมัติ Level" เดิมไม่บอกว่ารอ Level ไหน — GET
+    # /ars/{id} ต้อง Resolve ชื่อ Level จริงมาให้ (current_level_name) เหมือนที่
+    # MyApprovalItem มีอยู่แล้ว ไม่ใช่แค่เลข current_approval_level เฉยๆ
+    assert ar_after_finalize["current_level_name"] == "Manager"
 
     # plain_user (ไม่ใช่ผู้อนุมัติ Level 1) กด Approve ไม่ได้
     forbidden = client.post(f"/ars/{ar_id}/approve-level")
@@ -390,6 +394,7 @@ def test_two_level_then_fa_acknowledge_deducts_budget_once(
     assert step1.status_code == 200, step1.text
     assert step1.json()["current_approval_level"] == 2
     assert step1.json()["budget_approval_status"] == "pending"
+    assert step1.json()["current_level_name"] == "General Manager"
 
     # ข้าม Level ไม่ได้ — gm ต้องรอจนกว่าจะถึงคิวตัวเอง (แต่ในเคสนี้ถึงคิวแล้วพอดี) ลอง
     # ให้ Manager กด Approve ซ้ำ (ไม่ใช่ผู้อนุมัติ Level ปัจจุบันอีกแล้ว) ต้องโดนบล็อก
@@ -402,6 +407,7 @@ def test_two_level_then_fa_acknowledge_deducts_budget_once(
     assert step2.status_code == 200, step2.text
     assert step2.json()["budget_approval_status"] == "pending_fa_acknowledge"
     assert step2.json()["current_approval_level"] is None
+    assert step2.json()["current_level_name"] == "FA Acknowledge"
 
     _login_as(client, plain_user.email, "plainpass123")
     forbidden_fa = client.post(f"/ars/{ar_id}/fa-acknowledge", json={"force": False})

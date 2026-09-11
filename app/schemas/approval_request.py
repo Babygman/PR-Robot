@@ -119,6 +119,12 @@ class ARRead(BaseModel):
     budget_master_id: int | None = None
     budget_approval_status: ARBudgetApprovalStatus
     current_approval_level: int | None = None
+    # Feedback ผู้ใช้ 2026-09-11: Badge "รออนุมัติ Level" เดิมไม่บอกว่ารอ Level ไหน ทำให้
+    # ไม่ชัดเจน — เติมชื่อ Level จริง (เช่น "Manager") มาให้ Frontend เอาไปต่อท้าย Badge ได้
+    # เลย ไม่ต้อง Restructure การโหลดข้อมูลของหน้า ar_detail.html (Resolve ที่ Route ใน
+    # _to_ar_read ด้วย budget_workflow.resolve_current_level_name — Logic เดียวกับที่
+    # MyApprovalItem ใช้อยู่แล้ว)
+    current_level_name: str | None = None
     budget_deducted_amount: Decimal | None = None
     budget_overridden: bool = False
 

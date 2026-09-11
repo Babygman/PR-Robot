@@ -144,8 +144,15 @@ const BUDGET_STATUS_LABEL = {
 };
 const STEP_STATUS_LABEL = { waiting: "รอดำเนินการ", approved: "อนุมัติแล้ว", rejected: "ปฏิเสธ" };
 
-function budgetStatusBadge(status) {
-  const label = BUDGET_STATUS_LABEL[status] || status;
+// Feedback ผู้ใช้ 2026-09-11: Badge "รออนุมัติ Level" เดิมไม่บอกว่ารอ Level ไหน ทำให้ไม่
+// ชัดเจน — รับ levelName เข้ามาต่อท้าย Label เฉพาะตอน status == pending (Level อื่นๆ ไม่
+// ต้องมี เพราะไม่ได้ "รอ" ใครแล้ว) ค่า levelName มาจาก ar.current_level_name ที่ Backend
+// Resolve ให้แล้ว (_to_ar_read ใน app/api/routes/approval_requests.py)
+function budgetStatusBadge(status, levelName) {
+  let label = BUDGET_STATUS_LABEL[status] || status;
+  if (status === "pending" && levelName) {
+    label = `${label}: ${levelName}`;
+  }
   return `<span class="badge badge-budget-${status}">${label}</span>`;
 }
 
@@ -244,7 +251,8 @@ async function loadApprovalProgress(ar) {
   card.classList.remove("hidden");
   document.getElementById("approval-action-error").classList.add("hidden");
   document.getElementById("budget-status-badge").innerHTML =
-    budgetStatusBadge(ar.budget_approval_status) + (ar.budget_overridden ? ' <span class="muted">(มีการอนุมัติแบบเกินงบประมาณ)</span>' : "");
+    budgetStatusBadge(ar.budget_approval_status, ar.current_level_name) +
+    (ar.budget_overridden ? ' <span class="muted">(มีการอนุมัติแบบเกินงบประมาณ)</span>' : "");
 
   const stepsEl = document.getElementById("approval-steps");
   const res = await apiFetch(`/ars/${AR_ID}/approval-progress`);
