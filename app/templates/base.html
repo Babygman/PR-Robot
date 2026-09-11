@@ -5,8 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}PR-Robot{% endblock %}</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+{# Comment 2026-09-12 (Audit follow-up): เดิมโหลด IBM Plex Sans Thai/Sans/Mono จาก
+   fonts.googleapis.com + fonts.gstatic.com ของ Google โดยตรง (External CDN Dependency
+   ที่ไม่จำเป็นสำหรับระบบภายในที่เกี่ยว TISAX) — Self-host ไฟล์ .woff2 จริงไว้ที่
+   /static/fonts/ แล้ว Serve เองทั้งหมดแทน ไม่มี Request ออกไปยัง Google อีกต่อไป #}
+<link rel="stylesheet" href="/static/fonts.css">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
