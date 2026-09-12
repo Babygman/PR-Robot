@@ -178,8 +178,15 @@ function markActiveNav() {
   const path = window.location.pathname;
   document.querySelectorAll(".sidebar .nav-item").forEach((link) => {
     const navPath = link.dataset.navPath;
-    const isActive =
-      navPath === path || (navPath !== "/app/" && path.startsWith(navPath));
+    // Bug Fix 2026-09-12: เดิมใช้ path.startsWith(navPath) เฉยๆ ทำให้ Prefix ชนกัน
+    // เช่น /app/budget-levels ผ่านเงื่อนไข startsWith("/app/budget") ไปด้วย (Budget
+    // Control ติด active พร้อมกับ Approval Levels) ต้องเช็คว่าตัวอักษรถัดจาก Prefix
+    // เป็นจบ String หรือ "/" เท่านั้น ถึงจะถือว่าเป็นหน้าเดียวกัน/หน้าลูกจริงๆ
+    const isPrefixMatch =
+      navPath !== "/app/" &&
+      path.startsWith(navPath) &&
+      (path.length === navPath.length || path[navPath.length] === "/");
+    const isActive = navPath === path || isPrefixMatch;
     link.classList.toggle("active", isActive);
   });
 }
