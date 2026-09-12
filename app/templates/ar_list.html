@@ -9,10 +9,16 @@
     </div>
     <p class="muted" style="margin-top:8px;">เอกสารขออนุมัติ (AR) ทั้งหมด — กรอกข้อมูลในระบบเพื่อพิมพ์ไปเซ็นอนุมัติสดนอกระบบ และติดตามสถานะแบบเรียลไทม์</p>
   </div>
-  <a class="btn" href="/app/ars/new">
-    <svg width="13" height="13" viewBox="0 0 16 16"><line x1="8" y1="3" x2="8" y2="13" stroke="#fff" stroke-width="1.8"/><line x1="3" y1="8" x2="13" y2="8" stroke="#fff" stroke-width="1.8"/></svg>
-    New Approval Request
-  </a>
+  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <a class="btn" href="/app/documents/upload?target=ar">
+      <svg width="13" height="13" viewBox="0 0 16 16"><path d="M8 2.5 9.4 6.6 13.5 8 9.4 9.4 8 13.5 6.6 9.4 2.5 8 6.6 6.6 8 2.5Z" fill="#fff"/></svg>
+      New Approval Request+AI
+    </a>
+    <a class="btn" href="/app/ars/new">
+      <svg width="13" height="13" viewBox="0 0 16 16"><line x1="8" y1="3" x2="8" y2="13" stroke="#fff" stroke-width="1.8"/><line x1="3" y1="8" x2="13" y2="8" stroke="#fff" stroke-width="1.8"/></svg>
+      New Approval Request
+    </a>
+  </div>
 </div>
 
 <div class="ar-stat-grid" id="ar-stat-grid"></div>

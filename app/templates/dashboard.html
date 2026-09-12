@@ -6,10 +6,16 @@
     <h1>Purchase Requisition List (รายการใบขอซื้อ)</h1>
     <p class="muted" style="margin-top:-10px;">Purchasing Requisition ทั้งหมดของทีมคุณ — กรองตาม Section, สถานะ หรือช่วงวันที่ได้</p>
   </div>
-  <a class="btn" href="/app/prs/new">
-    <svg width="13" height="13" viewBox="0 0 16 16"><line x1="8" y1="3" x2="8" y2="13" stroke="#fff" stroke-width="1.8"/><line x1="3" y1="8" x2="13" y2="8" stroke="#fff" stroke-width="1.8"/></svg>
-    New PR
-  </a>
+  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <a class="btn" href="/app/documents/upload?target=pr">
+      <svg width="13" height="13" viewBox="0 0 16 16"><path d="M8 2.5 9.4 6.6 13.5 8 9.4 9.4 8 13.5 6.6 9.4 2.5 8 6.6 6.6 8 2.5Z" fill="#fff"/></svg>
+      New PR+AI
+    </a>
+    <a class="btn" href="/app/prs/new">
+      <svg width="13" height="13" viewBox="0 0 16 16"><line x1="8" y1="3" x2="8" y2="13" stroke="#fff" stroke-width="1.8"/><line x1="3" y1="8" x2="13" y2="8" stroke="#fff" stroke-width="1.8"/></svg>
+      New PR
+    </a>
+  </div>
 </div>
 
 <div class="card">

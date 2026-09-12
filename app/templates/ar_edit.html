@@ -60,7 +60,7 @@
   </div>
 
   <div class="card" id="source-doc-card">
-    <h2>Attach Source Documents (แนบเอกสารต้นทาง ถ้ามี)</h2>
+    <h2>Document for reading by AI (เอกสารให้ AI อ่าน)</h2>
     <p class="muted">
       เลือกใบเสนอราคาที่อัปโหลดไว้เพื่อผูกกับ Approval Request นี้ — เลือกได้หลายรายการ AI จะรวมรายการ
       จากทุกเอกสารที่เลือกไว้เป็นตาราง Amount &amp; Quantity ด้านล่างให้อัตโนมัติ (เปลี่ยนตัวเลือกแล้ว
@@ -73,7 +73,6 @@
     <h2>Amount &amp; Quantity</h2>
     <div id="items-container"></div>
     <button type="button" class="secondary" id="add-item-btn">+ Add Item</button>
-    <a href="/app/documents/upload?target=ar" class="btn secondary" style="margin-left:8px;">Upload Document</a>
     <div class="row" style="margin-top:14px;">
       <div class="field"><label for="f-total">Total</label><input type="text" id="f-total"></div>
       <div class="field"><label for="f-vat-rate">Vat %</label>
@@ -162,7 +161,7 @@ function recomputeAmountItemsFromSelectedDocs() {
 function renderArSourceDocList() {
   const listEl = document.getElementById("source-doc-list");
   if (allArDocs.length === 0) {
-    listEl.textContent = "ไม่มีเอกสารที่ยังไม่ได้ใช้สร้าง PR/AR — อัปโหลดใหม่ได้ที่ปุ่ม Upload Document ด้านล่าง";
+    listEl.textContent = "ไม่มีเอกสารที่ยังไม่ได้ใช้สร้าง PR/AR — อัปโหลดใหม่ได้ที่ปุ่ม New Approval Request+AI จากหน้า Approval Request List";
     return;
   }
   listEl.innerHTML = allArDocs

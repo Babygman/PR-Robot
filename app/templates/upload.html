@@ -58,12 +58,13 @@
 {% endblock %}
 {% block scripts %}
 <script>
-// AI Extract for AR (2026-09-11) — หน้านี้ใช้ร่วมกันทั้ง PR และ AR (Entry Point ต่างกัน
-// เท่านั้น): ปุ่ม "Upload Document" ที่หน้า New/Edit PR ลิงก์มาด้วย ?target=pr (Default
-// ถ้าไม่ระบุ — เข้ากันได้กับ Link เก่าที่ไม่มี Query Param นี้) ส่วนปุ่มที่หน้า New/Edit AR
-// ลิงก์มาด้วย ?target=ar — เปลี่ยนแค่ Label/ปลายทางปุ่ม "Create X from Selected Documents"
-// เท่านั้น ตัว Upload/AI Extraction เบื้องหลังเหมือนกันทุกประการ (Schema เดียวกัน — ดู
-// Docstring app/models/source_document.py)
+// AI Extract for AR (2026-09-11, ย้ายปุ่มเข้า List Page 2026-09-12) — หน้านี้ใช้ร่วมกันทั้ง
+// PR และ AR (Entry Point ต่างกันเท่านั้น): ปุ่ม "New PR+AI" ที่หน้า Purchase Requisition
+// List ลิงก์มาด้วย ?target=pr (Default ถ้าไม่ระบุ — เข้ากันได้กับ Link เก่าที่ไม่มี Query
+// Param นี้) ส่วนปุ่ม "New Approval Request+AI" ที่หน้า Approval Request List ลิงก์มาด้วย
+// ?target=ar — เปลี่ยนแค่ Label/ปลายทางปุ่ม "Create X from Selected Documents" เท่านั้น
+// ตัว Upload/AI Extraction เบื้องหลังเหมือนกันทุกประการ (Schema เดียวกัน — ดู Docstring
+// app/models/source_document.py)
 const uploadTarget = new URLSearchParams(window.location.search).get("target") === "ar" ? "ar" : "pr";
 if (uploadTarget === "ar") {
   document.getElementById("upload-page-title").textContent =
