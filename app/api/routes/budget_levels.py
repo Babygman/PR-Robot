@@ -15,7 +15,7 @@ department+level_no มีได้หลายแถว (หลายคน) �
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -27,7 +27,7 @@ from app.schemas.budget import (
     BudgetApprovalLevelRead,
     BudgetApprovalLevelUpdate,
 )
-from app.services.system_log import log_event
+from app.services.system_log import get_client_ip, log_event, stringify_changes
 from app.services.user_lookup import resolve_user_names
 
 router = APIRouter(prefix="/budget-approval-levels", tags=["budget-levels"])
@@ -115,6 +115,7 @@ def list_departments_with_levels(
 @router.post("", response_model=BudgetApprovalLevelRead, status_code=status.HTTP_201_CREATED)
 def create_level(
     body: BudgetApprovalLevelCreate,
+    request: Request,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ) -> BudgetApprovalLevelRead:
@@ -156,6 +157,7 @@ def create_level(
             entity_type="budget_level",
             entity_id=dormant.id,
             detail={"department": dormant.department, "level_no": dormant.level_no},
+            ip_address=get_client_ip(request),
         )
         db.commit()
         db.refresh(dormant)
@@ -177,6 +179,7 @@ def create_level(
             entity_type="budget_level",
             entity_id=level.id,
             detail={"department": level.department, "level_no": level.level_no},
+            ip_address=get_client_ip(request),
         )
         db.commit()
     except IntegrityError:
@@ -192,6 +195,7 @@ def create_level(
 def update_level(
     level_id: int,
     body: BudgetApprovalLevelUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ) -> BudgetApprovalLevelRead:
@@ -239,6 +243,7 @@ def update_level(
         and not moving_slot
     )
 
+    before = {key: getattr(level, key) for key in updates}
     for key, value in updates.items():
         setattr(level, key, value)
 
@@ -252,7 +257,12 @@ def update_level(
         action="budget_level.updated",
         entity_type="budget_level",
         entity_id=level.id,
-        detail={"fields": sorted(updates.keys())} if updates else None,
+        detail={
+            "department": level.department,
+            "level_no": level.level_no,
+            "changes": stringify_changes(before, updates),
+        },
+        ip_address=get_client_ip(request),
     )
 
     try:
@@ -269,6 +279,7 @@ def update_level(
 @router.delete("/{level_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_level(
     level_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ) -> None:
@@ -285,5 +296,6 @@ def delete_level(
         entity_type="budget_level",
         entity_id=level.id,
         detail={"department": level.department, "level_no": level.level_no},
+        ip_address=get_client_ip(request),
     )
     db.commit()

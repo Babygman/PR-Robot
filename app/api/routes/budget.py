@@ -9,7 +9,17 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_fa_or_admin
@@ -24,7 +34,7 @@ from app.schemas.budget import (
     BudgetUploadRowResult,
 )
 from app.services.budget_excel import build_export_workbook, parse_and_upsert
-from app.services.system_log import log_event
+from app.services.system_log import get_client_ip, log_event, stringify_changes
 from app.services.user_lookup import resolve_user_names
 
 router = APIRouter(prefix="/budget", tags=["budget"])
@@ -34,6 +44,7 @@ _MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB — ไฟล์ Excel งบปร�
 
 @router.post("/upload", response_model=BudgetUploadResult, status_code=status.HTTP_201_CREATED)
 async def upload_budget_excel(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_fa_or_admin),
@@ -62,6 +73,7 @@ async def upload_budget_excel(
             "success_rows": batch.success_rows,
             "error_rows": batch.error_rows,
         },
+        ip_address=get_client_ip(request),
     )
     db.commit()
     db.refresh(batch)
@@ -132,6 +144,7 @@ def export_budget_master(
 @router.post("", response_model=BudgetMasterRead, status_code=status.HTTP_201_CREATED)
 def create_budget_master(
     body: BudgetMasterCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_fa_or_admin),
 ) -> BudgetMasterRead:
@@ -167,6 +180,7 @@ def create_budget_master(
         entity_type="budget",
         entity_id=row.id,
         detail={"budget_no": row.budget_no, "department": row.department},
+        ip_address=get_client_ip(request),
     )
     db.commit()
     db.refresh(row)
@@ -208,6 +222,7 @@ def list_budget_master(
 def update_budget_master(
     budget_id: int,
     body: BudgetMasterUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_fa_or_admin),
 ) -> BudgetMasterRead:
@@ -223,6 +238,7 @@ def update_budget_master(
     if new_period_start > new_period_end:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "period_start ต้องไม่เกิน period_end")
 
+    before = {key: getattr(row, key) for key in updates}
     for key, value in updates.items():
         setattr(row, key, value)
 
@@ -232,7 +248,12 @@ def update_budget_master(
         action="budget.updated",
         entity_type="budget",
         entity_id=row.id,
-        detail={"fields": sorted(updates.keys())} if updates else None,
+        detail={
+            "budget_no": row.budget_no,
+            "department": row.department,
+            "changes": stringify_changes(before, updates),
+        },
+        ip_address=get_client_ip(request),
     )
     db.commit()
     db.refresh(row)

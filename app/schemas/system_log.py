@@ -20,6 +20,7 @@ class SystemLogListItem(BaseModel):
     actor_id: int | None
     actor_name: str | None = None
     detail: dict | None
+    ip_address: str | None = None  # audit_log (Legacy PR/AR) ไม่มีคอลัมน์นี้ จะเป็น None เสมอ
     created_at: datetime
 
     model_config = {"from_attributes": True}

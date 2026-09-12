@@ -155,6 +155,7 @@ def list_system_logs(
                 actor_id=r.actor_id,
                 actor_name=names.get(r.actor_id) if r.actor_id else None,
                 detail=r.detail,
+                ip_address=r.ip_address,
                 created_at=r.created_at,
             )
         )

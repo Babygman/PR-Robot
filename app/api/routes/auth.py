@@ -17,7 +17,7 @@ from app.db.session import get_db
 from app.models import User
 from app.schemas.auth import ChangePasswordRequest, LoginRequest
 from app.schemas.user import UserRead
-from app.services.system_log import log_event
+from app.services.system_log import get_client_ip, log_event
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -32,7 +32,9 @@ _SECURE_COOKIE = settings.app_env not in ("dev", "verify-sandbox", "test", "uat"
 
 
 @router.post("/login", response_model=UserRead)
-def login(body: LoginRequest, response: Response, db: Session = Depends(get_db)) -> User:
+def login(
+    body: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)
+) -> User:
     user = db.query(User).filter(User.email == body.email).first()
     if user is None or not user.is_active or not verify_password(body.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "อีเมลหรือรหัสผ่านไม่ถูกต้อง")
@@ -46,7 +48,15 @@ def login(body: LoginRequest, response: Response, db: Session = Depends(get_db))
         samesite="lax",
         max_age=settings.access_token_expire_minutes * 60,
     )
-    log_event(db, actor_id=user.id, action="auth.login", entity_type="user", entity_id=user.id)
+    log_event(
+        db,
+        actor_id=user.id,
+        action="auth.login",
+        entity_type="user",
+        entity_id=user.id,
+        detail={"name": user.name, "email": user.email},
+        ip_address=get_client_ip(request),
+    )
     db.commit()
     return user
 
@@ -60,8 +70,15 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)) 
     actor_id = decode_access_token(token) if token else None
     response.delete_cookie(COOKIE_NAME)
     if actor_id is not None:
+        actor = db.get(User, actor_id)
         log_event(
-            db, actor_id=actor_id, action="auth.logout", entity_type="user", entity_id=actor_id
+            db,
+            actor_id=actor_id,
+            action="auth.logout",
+            entity_type="user",
+            entity_id=actor_id,
+            detail={"name": actor.name, "email": actor.email} if actor else None,
+            ip_address=get_client_ip(request),
         )
         db.commit()
     return {"status": "ok"}
@@ -75,6 +92,7 @@ def me(current_user: User = Depends(get_current_user)) -> User:
 @router.patch("/password")
 def change_own_password(
     body: ChangePasswordRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -95,6 +113,8 @@ def change_own_password(
         action="user.password_changed_self",
         entity_type="user",
         entity_id=current_user.id,
+        detail={"name": current_user.name, "email": current_user.email},
+        ip_address=get_client_ip(request),
     )
     db.commit()
     return {"status": "ok"}

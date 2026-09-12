@@ -50,11 +50,12 @@
           <th>Entity</th>
           <th>Action</th>
           <th>Actor</th>
+          <th>IP</th>
           <th>Detail</th>
         </tr>
       </thead>
       <tbody id="log-table-body">
-        <tr><td colspan="6" class="muted">กำลังโหลด...</td></tr>
+        <tr><td colspan="7" class="muted">กำลังโหลด...</td></tr>
       </tbody>
     </table>
   </div>
@@ -70,9 +71,19 @@ const ENTITY_LINK = {
 function renderDetail(detail) {
   if (!detail) return "";
   try {
-    const parts = Object.entries(detail)
-      .filter(([, v]) => v !== null && v !== undefined && v !== "")
-      .map(([k, v]) => `${escapeHtml(k)}: ${escapeHtml(String(v))}`);
+    const parts = [];
+    for (const [k, v] of Object.entries(detail)) {
+      if (v === null || v === undefined || v === "") continue;
+      if (k === "changes" && typeof v === "object") {
+        // เปลี่ยนแปลงจริง (ค่าเดิม -> ค่าใหม่) — Flatten แยกทีละ Field ให้อ่านง่าย
+        // แทนที่จะโชว์ [object Object] (2026-09-12, ตอบ "อย่างไร" ใน Log)
+        for (const [field, change] of Object.entries(v)) {
+          parts.push(`${escapeHtml(field)}: ${escapeHtml(String(change))}`);
+        }
+        continue;
+      }
+      parts.push(`${escapeHtml(k)}: ${escapeHtml(String(v))}`);
+    }
     return parts.join(", ");
   } catch {
     return "";
@@ -95,15 +106,15 @@ async function loadLogs() {
   const res = await apiFetch("/system-log?" + params.toString());
   if (!res.ok) {
     if (res.status === 403) {
-      tbody.innerHTML = '<tr><td colspan="6" class="error">หน้านี้สำหรับ Admin เท่านั้น</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="error">หน้านี้สำหรับ Admin เท่านั้น</td></tr>';
     } else {
-      tbody.innerHTML = '<tr><td colspan="6" class="error">โหลด Log ไม่สำเร็จ</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="error">โหลด Log ไม่สำเร็จ</td></tr>';
     }
     return;
   }
   const logs = await res.json();
   if (logs.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="muted">ไม่พบรายการ</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="muted">ไม่พบรายการ</td></tr>';
     return;
   }
   tbody.innerHTML = logs
@@ -120,6 +131,7 @@ async function loadLogs() {
       <td>${entityCell}</td>
       <td class="mono">${escapeHtml(log.action)}</td>
       <td>${escapeHtml(log.actor_name || "-")}</td>
+      <td class="mono" style="font-size:12px;">${escapeHtml(log.ip_address || "-")}</td>
       <td class="muted" style="font-size:12px;">${renderDetail(log.detail)}</td>
     </tr>`;
     })

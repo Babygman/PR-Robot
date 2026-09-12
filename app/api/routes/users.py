@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_admin
@@ -36,7 +36,7 @@ from app.schemas.user import (
     UserRead,
     UserUpdate,
 )
-from app.services.system_log import log_event
+from app.services.system_log import get_client_ip, log_event, stringify_changes
 from app.services.user_excel import build_export_workbook, parse_and_upsert
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -45,6 +45,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def create_user(
     body: UserCreate,
+    request: Request,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ) -> User:
@@ -76,6 +77,7 @@ def create_user(
         entity_type="user",
         entity_id=user.id,
         detail={"name": user.name, "email": user.email},
+        ip_address=get_client_ip(request),
     )
     db.commit()
     db.refresh(user)
@@ -91,6 +93,7 @@ def list_users(db: Session = Depends(get_db), _admin: User = Depends(require_adm
 def update_user(
     user_id: int,
     body: UserUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ) -> User:
@@ -105,6 +108,11 @@ def update_user(
         if clash is not None:
             raise HTTPException(status.HTTP_409_CONFLICT, "อีเมลนี้มีผู้ใช้ในระบบแล้ว")
 
+    # เก็บค่าเดิมไว้ก่อน setattr เพื่อ Log "อย่างไร" ให้เห็นค่าเดิม -> ค่าใหม่จริง (Feedback
+    # 2026-09-12: เดิม Log เก็บแค่รายชื่อ Field ที่เปลี่ยน ไม่บอกค่า และไม่บอกว่าแก้ User
+    # คนไหน — ต้องดู entity_id เดา ไม่สะดวก)
+    before = {key: getattr(user, key) for key in updates}
+
     # exclude_unset=True: อัปเดตเฉพาะ Field ที่ Client ส่งมาจริงๆ (รวมถึงกรณีส่ง null
     # มาตั้งใจล้างค่า เช่น เคลียร์ department ของผู้อนุมัติ Cross-department) — Field ที่
     # ไม่ได้ส่งมาเลยจะไม่ถูกแตะต้อง
@@ -117,7 +125,12 @@ def update_user(
         action="user.updated",
         entity_type="user",
         entity_id=user.id,
-        detail={"fields": sorted(updates.keys())} if updates else None,
+        detail={
+            "name": user.name,
+            "email": user.email,
+            "changes": stringify_changes(before, updates),
+        },
+        ip_address=get_client_ip(request),
     )
     db.commit()
     db.refresh(user)
@@ -128,6 +141,7 @@ def update_user(
 def reset_user_password(
     user_id: int,
     body: UserPasswordReset,
+    request: Request,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ) -> Response:
@@ -146,6 +160,8 @@ def reset_user_password(
         action="user.password_reset_by_admin",
         entity_type="user",
         entity_id=user.id,
+        detail={"name": user.name, "email": user.email},
+        ip_address=get_client_ip(request),
     )
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -168,6 +184,7 @@ def export_users(db: Session = Depends(get_db), _admin: User = Depends(require_a
 
 @router.post("/upload", response_model=UserExcelUploadResult, status_code=status.HTTP_201_CREATED)
 def upload_users(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
@@ -190,6 +207,7 @@ def upload_users(
             "success_rows": success_rows,
             "error_rows": error_rows,
         },
+        ip_address=get_client_ip(request),
     )
     db.commit()
     return UserExcelUploadResult(
@@ -229,6 +247,7 @@ def _user_has_history(db: Session, user_id: int) -> str | None:
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
     user_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ) -> Response:
@@ -254,6 +273,7 @@ def delete_user(
         entity_type="user",
         entity_id=user.id,
         detail={"name": user.name, "email": user.email},
+        ip_address=get_client_ip(request),
     )
     db.delete(user)
     db.commit()

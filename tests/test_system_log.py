@@ -198,3 +198,74 @@ def test_pr_entity_type_filter_only_returns_audit_log_rows(
     assert len(rows) == 1
     assert rows[0]["action"] == "pr.created"
     assert rows[0]["source"] == "audit"
+
+
+def test_login_captures_ip_from_x_forwarded_for(client: TestClient, db_session: Session):
+    # ระบบรันหลัง Nginx Proxy Manager เสมอ — request.client.host จริงจะเป็น IP ของ Proxy
+    # ไม่ใช่ผู้ใช้ ต้องอ่านจาก X-Forwarded-For (Feedback จริง 2026-09-12: Log ต้องบอก
+    # "ที่ไหน" ด้วย ไม่ใช่แค่ใคร/ทำอะไร)
+    admin = _make_admin(db_session)
+    res = client.post(
+        "/auth/login",
+        json={"email": admin.email, "password": _PASSWORD},
+        headers={"X-Forwarded-For": "203.0.113.10, 10.0.0.1"},
+    )
+    assert res.status_code == 200, res.text
+
+    res = client.get("/system-log")
+    assert res.status_code == 200, res.text
+    login_row = next(row for row in res.json() if row["action"] == "auth.login")
+    # ตัวแรกสุดใน X-Forwarded-For คือ Client ตัวจริง (ตัวหลังเป็น Proxy ที่ต่อกันมา)
+    assert login_row["ip_address"] == "203.0.113.10"
+
+
+def test_user_update_detail_shows_target_name_and_changes(
+    client: TestClient, db_session: Session
+):
+    # จุดที่ผู้ใช้แจ้งจริง: แก้ไขสิทธิ์ User คนหนึ่งแล้ว Log ไม่บอกว่าทำอะไรกับใคร (เห็นแค่
+    # #5 กับรายชื่อ Field ที่เปลี่ยน ไม่มีค่าเดิม/ค่าใหม่ให้เห็นเลย)
+    admin = _make_admin(db_session)
+    target = User(
+        name="Khwan",
+        email="khwan@example.com",
+        password_hash=hash_password(_PASSWORD),
+        position="Officer",
+    )
+    db_session.add(target)
+    db_session.commit()
+    db_session.refresh(target)
+
+    _login_as(client, admin.email)
+    res = client.patch(f"/users/{target.id}", json={"position": "Manager"})
+    assert res.status_code == 200, res.text
+
+    res = client.get("/system-log", params={"entity_type": "user"})
+    assert res.status_code == 200, res.text
+    updated_row = next(row for row in res.json() if row["action"] == "user.updated")
+    assert updated_row["entity_label"] == "khwan@example.com"
+    assert updated_row["detail"]["name"] == "Khwan"
+    assert updated_row["detail"]["email"] == "khwan@example.com"
+    assert updated_row["detail"]["changes"]["position"] == "Officer -> Manager"
+
+
+def test_password_reset_by_admin_detail_shows_target(client: TestClient, db_session: Session):
+    admin = _make_admin(db_session)
+    target = User(
+        name="Khwan",
+        email="khwan-reset@example.com",
+        password_hash=hash_password(_PASSWORD),
+    )
+    db_session.add(target)
+    db_session.commit()
+    db_session.refresh(target)
+
+    _login_as(client, admin.email)
+    res = client.patch(f"/users/{target.id}/password", json={"password": "newpass123456"})
+    assert res.status_code == 204, res.text
+
+    res = client.get("/system-log", params={"entity_type": "user"})
+    assert res.status_code == 200, res.text
+    reset_row = next(
+        row for row in res.json() if row["action"] == "user.password_reset_by_admin"
+    )
+    assert reset_row["entity_label"] == "khwan-reset@example.com"

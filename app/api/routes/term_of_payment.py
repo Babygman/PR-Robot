@@ -8,7 +8,7 @@ Active จากที่นี่มาแสดงเป็น Dropdown (GET ?
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -20,7 +20,7 @@ from app.schemas.term_of_payment import (
     TermOfPaymentOptionRead,
     TermOfPaymentOptionUpdate,
 )
-from app.services.system_log import log_event
+from app.services.system_log import get_client_ip, log_event, stringify_changes
 
 router = APIRouter(prefix="/term-of-payment-options", tags=["term-of-payment"])
 
@@ -43,6 +43,7 @@ def list_term_of_payment_options(
 @router.post("", response_model=TermOfPaymentOptionRead, status_code=status.HTTP_201_CREATED)
 def create_term_of_payment_option(
     body: TermOfPaymentOptionCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ) -> TermOfPaymentOption:
@@ -57,6 +58,7 @@ def create_term_of_payment_option(
             entity_type="term_of_payment",
             entity_id=option.id,
             detail={"name": option.name},
+            ip_address=get_client_ip(request),
         )
         db.commit()
     except IntegrityError as exc:
@@ -70,6 +72,7 @@ def create_term_of_payment_option(
 def update_term_of_payment_option(
     option_id: int,
     body: TermOfPaymentOptionUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ) -> TermOfPaymentOption:
@@ -79,6 +82,7 @@ def update_term_of_payment_option(
     updates = body.model_dump(exclude_unset=True)
     if "name" in updates and updates["name"] is not None:
         updates["name"] = updates["name"].strip()
+    before = {key: getattr(option, key) for key in updates}
     for key, value in updates.items():
         setattr(option, key, value)
     log_event(
@@ -87,7 +91,8 @@ def update_term_of_payment_option(
         action="term_of_payment.updated",
         entity_type="term_of_payment",
         entity_id=option.id,
-        detail={"fields": sorted(updates.keys())} if updates else None,
+        detail={"name": option.name, "changes": stringify_changes(before, updates)},
+        ip_address=get_client_ip(request),
     )
     try:
         db.commit()
@@ -101,6 +106,7 @@ def update_term_of_payment_option(
 @router.delete("/{option_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_term_of_payment_option(
     option_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ) -> None:
@@ -117,6 +123,7 @@ def delete_term_of_payment_option(
         entity_type="term_of_payment",
         entity_id=option.id,
         detail={"name": option.name},
+        ip_address=get_client_ip(request),
     )
     db.delete(option)
     db.commit()
