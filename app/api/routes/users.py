@@ -36,6 +36,7 @@ from app.schemas.user import (
     UserRead,
     UserUpdate,
 )
+from app.services.system_log import log_event
 from app.services.user_excel import build_export_workbook, parse_and_upsert
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -45,7 +46,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 def create_user(
     body: UserCreate,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ) -> User:
     existing = db.query(User).filter(User.email == body.email).first()
     if existing is not None:
@@ -67,6 +68,15 @@ def create_user(
         can_view_all_ar=body.can_view_all_ar,
     )
     db.add(user)
+    db.flush()
+    log_event(
+        db,
+        actor_id=admin.id,
+        action="user.created",
+        entity_type="user",
+        entity_id=user.id,
+        detail={"name": user.name, "email": user.email},
+    )
     db.commit()
     db.refresh(user)
     return user
@@ -82,7 +92,7 @@ def update_user(
     user_id: int,
     body: UserUpdate,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ) -> User:
     user = db.get(User, user_id)
     if user is None:
@@ -101,6 +111,14 @@ def update_user(
     for key, value in updates.items():
         setattr(user, key, value)
 
+    log_event(
+        db,
+        actor_id=admin.id,
+        action="user.updated",
+        entity_type="user",
+        entity_id=user.id,
+        detail={"fields": sorted(updates.keys())} if updates else None,
+    )
     db.commit()
     db.refresh(user)
     return user
@@ -111,7 +129,7 @@ def reset_user_password(
     user_id: int,
     body: UserPasswordReset,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ) -> Response:
     """Reset รหัสผ่านของ User คนอื่น — Admin เท่านั้น (User Management Redesign,
     2026-09-11 — ปุ่ม "Reset Password" แยกในหน้า /app/users ก่อนหน้านี้ไม่มี Endpoint
@@ -122,6 +140,13 @@ def reset_user_password(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "ไม่พบ User นี้")
 
     user.password_hash = hash_password(body.password)
+    log_event(
+        db,
+        actor_id=admin.id,
+        action="user.password_reset_by_admin",
+        entity_type="user",
+        entity_id=user.id,
+    )
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -145,7 +170,7 @@ def export_users(db: Session = Depends(get_db), _admin: User = Depends(require_a
 def upload_users(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ) -> UserExcelUploadResult:
     """Import Excel แบบ Partial-success — จับคู่ด้วย email เจอเดิม = Update (ไม่แตะ
     Password) ไม่เจอ = สร้างใหม่ (ต้องมีคอลัมน์ password ในไฟล์ อย่างน้อย 8 ตัวอักษร) —
@@ -153,6 +178,18 @@ def upload_users(
     content = file.file.read()
     outcomes, success_rows, error_rows = parse_and_upsert(
         db, filename=file.filename or "", file_bytes=content
+    )
+    log_event(
+        db,
+        actor_id=admin.id,
+        action="user.bulk_uploaded",
+        entity_type="user",
+        detail={
+            "filename": file.filename,
+            "total_rows": len(outcomes),
+            "success_rows": success_rows,
+            "error_rows": error_rows,
+        },
     )
     db.commit()
     return UserExcelUploadResult(
@@ -193,7 +230,7 @@ def _user_has_history(db: Session, user_id: int) -> str | None:
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ) -> Response:
     """ลบ User ถาวร — ลบได้ก็ต่อเมื่อไม่มีประวัติอะไรเลยในระบบเท่านั้น (ยืนยันจากผู้ใช้ —
     ดู _user_has_history) ถ้ามีประวัติ ให้ใช้ปุ่ม Active/Inactive (Toggle) แทนเสมอ"""
@@ -208,6 +245,16 @@ def delete_user(
             f"ลบไม่ได้ — {reason} กรุณาใช้ปุ่ม Active/Inactive แทนถ้าต้องการปิดการใช้งาน User นี้",
         )
 
+    # Log ก่อน Delete จริง (entity_id ยังผูก User ที่ถูกลบได้ แม้ FK จะเป็น SET NULL —
+    # เก็บ email/name ไว้ใน detail ด้วยเพราะหลังลบจริงจะ Join ชื่อกลับไม่ได้อีกแล้ว)
+    log_event(
+        db,
+        actor_id=admin.id,
+        action="user.deleted",
+        entity_type="user",
+        entity_id=user.id,
+        detail={"name": user.name, "email": user.email},
+    )
     db.delete(user)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

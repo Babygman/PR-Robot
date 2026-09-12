@@ -24,6 +24,7 @@ from app.schemas.budget import (
     BudgetUploadRowResult,
 )
 from app.services.budget_excel import build_export_workbook, parse_and_upsert
+from app.services.system_log import log_event
 from app.services.user_lookup import resolve_user_names
 
 router = APIRouter(prefix="/budget", tags=["budget"])
@@ -48,6 +49,19 @@ async def upload_budget_excel(
         filename=file.filename or "budget.xlsx",
         file_bytes=content,
         uploaded_by_id=current_user.id,
+    )
+    log_event(
+        db,
+        actor_id=current_user.id,
+        action="budget.bulk_uploaded",
+        entity_type="budget",
+        entity_id=batch.id,
+        detail={
+            "filename": batch.filename,
+            "total_rows": batch.total_rows,
+            "success_rows": batch.success_rows,
+            "error_rows": batch.error_rows,
+        },
     )
     db.commit()
     db.refresh(batch)
@@ -119,7 +133,7 @@ def export_budget_master(
 def create_budget_master(
     body: BudgetMasterCreate,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_fa_or_admin),
+    current_user: User = Depends(require_fa_or_admin),
 ) -> BudgetMasterRead:
     """เพิ่มรายการ Budget เองทีละแถว (Correction 2026-09-11) — ดู Docstring
     BudgetMasterCreate สำหรับที่มา — budget_no ซ้ำ = ปฏิเสธด้วย 409 (ไม่ Upsert ทับ
@@ -145,6 +159,15 @@ def create_budget_master(
         used_amount=Decimal("0"),
     )
     db.add(row)
+    db.flush()
+    log_event(
+        db,
+        actor_id=current_user.id,
+        action="budget.created",
+        entity_type="budget",
+        entity_id=row.id,
+        detail={"budget_no": row.budget_no, "department": row.department},
+    )
     db.commit()
     db.refresh(row)
     item = BudgetMasterRead.model_validate(row, from_attributes=True)
@@ -186,7 +209,7 @@ def update_budget_master(
     budget_id: int,
     body: BudgetMasterUpdate,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_fa_or_admin),
+    current_user: User = Depends(require_fa_or_admin),
 ) -> BudgetMasterRead:
     """แก้ไขรายการ Budget ที่มีอยู่แล้ว (Correction 2026-09-11) — ดู Docstring
     BudgetMasterUpdate: budget_no/used_amount แก้ทางนี้ไม่ได้โดยเจตนา"""
@@ -203,6 +226,14 @@ def update_budget_master(
     for key, value in updates.items():
         setattr(row, key, value)
 
+    log_event(
+        db,
+        actor_id=current_user.id,
+        action="budget.updated",
+        entity_type="budget",
+        entity_id=row.id,
+        detail={"fields": sorted(updates.keys())} if updates else None,
+    )
     db.commit()
     db.refresh(row)
     item = BudgetMasterRead.model_validate(row, from_attributes=True)

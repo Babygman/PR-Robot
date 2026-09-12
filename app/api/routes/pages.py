@@ -122,3 +122,8 @@ def page_budget(request: Request):
 @router.get("/term-of-payment")
 def page_term_of_payment(request: Request):
     return templates.TemplateResponse(request=request, name="term_of_payment.html", context={})
+
+
+@router.get("/system-log")
+def page_system_log(request: Request):
+    return templates.TemplateResponse(request=request, name="system_log.html", context={})

@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}System Log (บันทึกการเปลี่ยนแปลงทั้งระบบ) — PR-Robot{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>System Log (บันทึกการเปลี่ยนแปลงทั้งระบบ)</h1>
+    <p class="muted" style="margin-top:-10px;">ทุกการ Login/Logout, Create/Update/Delete ในระบบ — Admin เท่านั้น</p>
+  </div>
+</div>
+
+<div class="error hidden" id="page-error"></div>
+
+<div class="card">
+  <form id="filter-form" class="filters">
+    <div class="field">
+      <label for="f-q">Search (Action)</label>
+      <input type="text" id="f-q" placeholder="เช่น user.created, auth.login">
+    </div>
+    <div class="field">
+      <label for="f-entity-type">Entity Type</label>
+      <select id="f-entity-type">
+        <option value="">— All —</option>
+        <option value="user">User</option>
+        <option value="budget">Budget</option>
+        <option value="budget_level">Budget Level</option>
+        <option value="term_of_payment">Term of Payment</option>
+        <option value="pr">PR</option>
+        <option value="ar">Approval Request</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="f-date-from">Date (From)</label>
+      <input type="text" id="f-date-from" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="f-date-to">Date (To)</label>
+      <input type="text" id="f-date-to" class="date-field" data-iso="" placeholder="dd/mm/yyyy" readonly autocomplete="off">
+    </div>
+    <button type="submit">Search</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Date/Time</th>
+          <th>Type</th>
+          <th>Entity</th>
+          <th>Action</th>
+          <th>Actor</th>
+          <th>Detail</th>
+        </tr>
+      </thead>
+      <tbody id="log-table-body">
+        <tr><td colspan="6" class="muted">กำลังโหลด...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const ENTITY_LINK = {
+  pr: (id) => `/app/prs/${id}`,
+  ar: (id) => `/app/ars/${id}`,
+};
+
+function renderDetail(detail) {
+  if (!detail) return "";
+  try {
+    const parts = Object.entries(detail)
+      .filter(([, v]) => v !== null && v !== undefined && v !== "")
+      .map(([k, v]) => `${escapeHtml(k)}: ${escapeHtml(String(v))}`);
+    return parts.join(", ");
+  } catch {
+    return "";
+  }
+}
+
+async function loadLogs() {
+  const params = new URLSearchParams();
+  const q = document.getElementById("f-q").value.trim();
+  const entityType = document.getElementById("f-entity-type").value;
+  const from = getDateFieldIso(document.getElementById("f-date-from"));
+  const to = getDateFieldIso(document.getElementById("f-date-to"));
+  if (q) params.set("q", q);
+  if (entityType) params.set("entity_type", entityType);
+  if (from) params.set("date_from", from);
+  if (to) params.set("date_to", to);
+  params.set("limit", "200");
+
+  const tbody = document.getElementById("log-table-body");
+  const res = await apiFetch("/system-log?" + params.toString());
+  if (!res.ok) {
+    if (res.status === 403) {
+      tbody.innerHTML = '<tr><td colspan="6" class="error">หน้านี้สำหรับ Admin เท่านั้น</td></tr>';
+    } else {
+      tbody.innerHTML = '<tr><td colspan="6" class="error">โหลด Log ไม่สำเร็จ</td></tr>';
+    }
+    return;
+  }
+  const logs = await res.json();
+  if (logs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="muted">ไม่พบรายการ</td></tr>';
+    return;
+  }
+  tbody.innerHTML = logs
+    .map((log) => {
+      const linkFn = log.entity_type ? ENTITY_LINK[log.entity_type] : null;
+      const entityText = escapeHtml(log.entity_label || (log.entity_id ? `#${log.entity_id}` : "-"));
+      const entityCell = linkFn && log.entity_id
+        ? `<a href="${linkFn(log.entity_id)}">${entityText}</a>`
+        : entityText;
+      return `
+    <tr>
+      <td class="mono">${formatDateTimeDMY(log.created_at)}</td>
+      <td class="mono">${escapeHtml(log.entity_type || "-")}</td>
+      <td>${entityCell}</td>
+      <td class="mono">${escapeHtml(log.action)}</td>
+      <td>${escapeHtml(log.actor_name || "-")}</td>
+      <td class="muted" style="font-size:12px;">${renderDetail(log.detail)}</td>
+    </tr>`;
+    })
+    .join("");
+}
+
+document.getElementById("filter-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  loadLogs();
+});
+
+bindDateFieldsIn(document);
+
+(async () => {
+  const me = await requireLogin();
+  if (!me) return;
+  if (!me.is_admin) {
+    document.getElementById("page-error").textContent = "หน้านี้สำหรับ Admin เท่านั้น";
+    document.getElementById("page-error").classList.remove("hidden");
+    return;
+  }
+  await loadLogs();
+})();
+</script>
+{% endblock %}

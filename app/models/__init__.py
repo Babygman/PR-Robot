@@ -28,6 +28,7 @@ from app.models.purchasing_requisition import (
     PurchasingRequisition,
 )
 from app.models.source_document import SourceDocType, SourceDocument
+from app.models.system_log import SystemLog
 from app.models.term_of_payment import TermOfPaymentOption
 from app.models.user import User
 
@@ -55,6 +56,7 @@ __all__ = [
     "PurchasingRequisition",
     "SourceDocType",
     "SourceDocument",
+    "SystemLog",
     "TermOfPaymentOption",
     "User",
 ]

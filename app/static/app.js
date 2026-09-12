@@ -69,7 +69,9 @@ async function requireLogin() {
   // "hidden") เปิดให้เฉพาะคนมีสิทธิ์ตรงนี้ที่เดียว ดู Docstring app/models/user.py และ
   // app/core/deps.py สำหรับความหมายของแต่ละ Field/เงื่อนไขแต่ละเมนู
   const canViewPr = me.is_admin || me.can_view_pr || me.can_view_all_pr;
-  ["nav-pr-list", "nav-pr-new"].forEach((id) => {
+  // Comment 2026-09-12: เอาเมนู "New PR" ออกจาก Sidebar เพราะมีปุ่ม "+New PR"
+  // บนหน้า Purchase Request List อยู่แล้ว (ซ้ำซ้อน) เหลือแค่เมนู List เดียว
+  ["nav-pr-list"].forEach((id) => {
     if (canViewPr) document.getElementById(id)?.classList.remove("hidden");
   });
 
@@ -102,6 +104,10 @@ async function requireLogin() {
   const canViewLogAr = me.is_admin || me.is_fa || me.can_view_all_ar;
   const navLogAr = document.getElementById("nav-log-ar");
   if (canViewLogAr) navLogAr?.classList.remove("hidden");
+
+  // System Log (2026-09-12) — Admin เท่านั้น ดูรวมทุกการเปลี่ยนแปลงในระบบ
+  const navSystemLog = document.getElementById("nav-system-log");
+  if (me.is_admin) navSystemLog?.classList.remove("hidden");
 
   // My Approvals (Phase B/2, 2026-09-10; Correction — Full RBAC, 2026-09-10) — เมนู
   // "การอนุมัติของฉัน" โชว์ให้ Admin เสมอ หรือ User ที่ถูก Admin เปิด can_view_approvals

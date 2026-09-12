@@ -28,11 +28,7 @@
     <nav class="sidebar-nav">
       <a href="/app/" class="nav-item hidden" id="nav-pr-list" data-nav-path="/app/">
         <svg width="16" height="16" viewBox="0 0 16 16"><rect x="1.5" y="1.5" width="6" height="6" rx="1.5" stroke="currentColor" fill="none"/><rect x="8.5" y="1.5" width="6" height="6" rx="1.5" stroke="currentColor" fill="none"/><rect x="1.5" y="8.5" width="6" height="6" rx="1.5" stroke="currentColor" fill="none"/><rect x="8.5" y="8.5" width="6" height="6" rx="1.5" stroke="currentColor" fill="none"/></svg>
-        PR List
-      </a>
-      <a href="/app/prs/new" class="nav-item hidden" id="nav-pr-new" data-nav-path="/app/prs/new">
-        <svg width="16" height="16" viewBox="0 0 16 16"><line x1="8" y1="3" x2="8" y2="13" stroke="currentColor" stroke-width="1.6"/><line x1="3" y1="8" x2="13" y2="8" stroke="currentColor" stroke-width="1.6"/></svg>
-        New PR
+        Purchase Request
       </a>
       <a href="/app/ars" class="nav-item hidden" id="nav-ar" data-nav-path="/app/ars">
         <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 2h6l3 3v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><path d="M10 2v3h3" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><path d="m5.7 10.3 1.4 1.4 3.2-3.2" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -103,6 +99,10 @@
         <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 2.5h7l3 3v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><path d="M9.5 2.5v3h3" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><line x1="4.3" y1="8.3" x2="10.5" y2="8.3" stroke="currentColor" stroke-width="1.2"/><line x1="4.3" y1="10.6" x2="10.5" y2="10.6" stroke="currentColor" stroke-width="1.2"/></svg>
         Log AR
       </a>
+      <a href="/app/system-log" class="nav-item hidden" id="nav-system-log" data-nav-path="/app/system-log">
+        <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.3" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M8 4.7V8l2.4 1.4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        System Log
+      </a>
     </nav>
   </div>
 
@@ -151,25 +151,28 @@
    ด้วย block header ให้ login.html ปิดได้เหมือน block nav #}
 {% block header %}
 <div class="top-header">
-  <div>
-    <div class="top-header-eyebrow">Welcome back,</div>
-    <div class="top-header-name-row">
-      <span class="top-header-name" id="top-header-name"></span>
-      <span class="status-pill"><span class="status-dot"></span>Online</span>
+  <!-- Comment 2026-09-12: ย้าย "Welcome back, ชื่อ + Online" ไปชิดขวาติด Avatar แทน
+       (เดิมอยู่ชิดซ้าย ห่างจาก Avatar ที่ชิดขวาสุด) เอาชื่อบริษัทมาใส่ฝั่งซ้ายแทน -->
+  <div class="top-header-org">Sunstar Chemical Thailand</div>
+  <div class="top-header-right">
+    <div class="top-header-welcome">
+      <div class="top-header-eyebrow">Welcome back,</div>
+      <div class="top-header-name-row">
+        <span class="top-header-name" id="top-header-name"></span>
+        <span class="status-pill"><span class="status-dot"></span>Online</span>
+      </div>
     </div>
-  </div>
-  <!-- Avatar วงกลมที่ Header (Correction 2026-09-11 ตาม Design Mockup ใหม่ที่ผู้ใช้ส่งมา
-       — คงข้อความ "Welcome back"/Online เดิมไว้ทั้งหมด แค่เพิ่ม Avatar เข้ามา) -->
-  <!-- Comment 2026-09-11 (รอบ 3): Avatar นี้ต้องกดได้ มีเมนู Change Password/Log out
-       เหมือนกับ Avatar ที่ Sidebar Footer — ใช้ Modal เดียวกัน (change-password-modal)
-       และ Logout Endpoint เดียวกัน ไม่ได้สร้างซ้ำ -->
-  <div class="top-header-user" id="top-header-user">
-    <button type="button" class="top-header-avatar-trigger" id="top-header-avatar-trigger">
-      <span class="top-header-avatar" id="top-header-avatar"></span>
-    </button>
-    <div class="top-header-user-menu hidden" id="top-header-user-menu">
-      <button type="button" class="sidebar-user-menu-item" id="top-open-change-password">🔒 Change Password</button>
-      <button type="button" class="sidebar-user-menu-item" id="top-logout-link">↪ Log out</button>
+    <!-- Comment 2026-09-11 (รอบ 3): Avatar นี้ต้องกดได้ มีเมนู Change Password/Log out
+         เหมือนกับ Avatar ที่ Sidebar Footer — ใช้ Modal เดียวกัน (change-password-modal)
+         และ Logout Endpoint เดียวกัน ไม่ได้สร้างซ้ำ -->
+    <div class="top-header-user" id="top-header-user">
+      <button type="button" class="top-header-avatar-trigger" id="top-header-avatar-trigger">
+        <span class="top-header-avatar" id="top-header-avatar"></span>
+      </button>
+      <div class="top-header-user-menu hidden" id="top-header-user-menu">
+        <button type="button" class="sidebar-user-menu-item" id="top-open-change-password">🔒 Change Password</button>
+        <button type="button" class="sidebar-user-menu-item" id="top-logout-link">↪ Log out</button>
+      </div>
     </div>
   </div>
 </div>

@@ -20,6 +20,7 @@ from app.schemas.term_of_payment import (
     TermOfPaymentOptionRead,
     TermOfPaymentOptionUpdate,
 )
+from app.services.system_log import log_event
 
 router = APIRouter(prefix="/term-of-payment-options", tags=["term-of-payment"])
 
@@ -43,11 +44,20 @@ def list_term_of_payment_options(
 def create_term_of_payment_option(
     body: TermOfPaymentOptionCreate,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ) -> TermOfPaymentOption:
     option = TermOfPaymentOption(name=body.name.strip())
     db.add(option)
     try:
+        db.flush()
+        log_event(
+            db,
+            actor_id=current_user.id,
+            action="term_of_payment.created",
+            entity_type="term_of_payment",
+            entity_id=option.id,
+            detail={"name": option.name},
+        )
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -61,7 +71,7 @@ def update_term_of_payment_option(
     option_id: int,
     body: TermOfPaymentOptionUpdate,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ) -> TermOfPaymentOption:
     option = db.get(TermOfPaymentOption, option_id)
     if option is None:
@@ -71,6 +81,14 @@ def update_term_of_payment_option(
         updates["name"] = updates["name"].strip()
     for key, value in updates.items():
         setattr(option, key, value)
+    log_event(
+        db,
+        actor_id=current_user.id,
+        action="term_of_payment.updated",
+        entity_type="term_of_payment",
+        entity_id=option.id,
+        detail={"fields": sorted(updates.keys())} if updates else None,
+    )
     try:
         db.commit()
     except IntegrityError as exc:
@@ -84,7 +102,7 @@ def update_term_of_payment_option(
 def delete_term_of_payment_option(
     option_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ) -> None:
     """ลบออกจากรายการ Master ได้ตรงๆ ไม่มี Foreign Key ผูกกับ AR เลย (ดู Docstring
     app/models/term_of_payment.py) — AR เก่าที่เคยเลือกชื่อนี้ไว้ยังคงเก็บ Text เดิมอยู่
@@ -92,5 +110,13 @@ def delete_term_of_payment_option(
     option = db.get(TermOfPaymentOption, option_id)
     if option is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "ไม่พบรายการนี้")
+    log_event(
+        db,
+        actor_id=current_user.id,
+        action="term_of_payment.deleted",
+        entity_type="term_of_payment",
+        entity_id=option.id,
+        detail={"name": option.name},
+    )
     db.delete(option)
     db.commit()

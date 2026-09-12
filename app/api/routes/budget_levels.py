@@ -27,6 +27,7 @@ from app.schemas.budget import (
     BudgetApprovalLevelRead,
     BudgetApprovalLevelUpdate,
 )
+from app.services.system_log import log_event
 from app.services.user_lookup import resolve_user_names
 
 router = APIRouter(prefix="/budget-approval-levels", tags=["budget-levels"])
@@ -115,7 +116,7 @@ def list_departments_with_levels(
 def create_level(
     body: BudgetApprovalLevelCreate,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ) -> BudgetApprovalLevelRead:
     """เพิ่มผู้อนุมัติ 1 คนเข้า Level นี้ — ถ้า department+level_no มีคนอยู่แล้ว จะเพิ่ม
     เป็นคนที่ 2, 3, ... เข้ากลุ่มเดียวกันได้เลย (Multi-approver, OR — ดู Docstring บนสุด
@@ -148,6 +149,14 @@ def create_level(
     if dormant is not None:
         dormant.level_name = body.level_name
         dormant.is_active = True
+        log_event(
+            db,
+            actor_id=admin.id,
+            action="budget_level.reactivated",
+            entity_type="budget_level",
+            entity_id=dormant.id,
+            detail={"department": dormant.department, "level_no": dormant.level_no},
+        )
         db.commit()
         db.refresh(dormant)
         return _to_read(db, dormant)
@@ -160,6 +169,15 @@ def create_level(
     )
     db.add(level)
     try:
+        db.flush()
+        log_event(
+            db,
+            actor_id=admin.id,
+            action="budget_level.created",
+            entity_type="budget_level",
+            entity_id=level.id,
+            detail={"department": level.department, "level_no": level.level_no},
+        )
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -175,7 +193,7 @@ def update_level(
     level_id: int,
     body: BudgetApprovalLevelUpdate,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ) -> BudgetApprovalLevelRead:
     """แก้ 1 แถว (1 คน) — ถ้าเปลี่ยนแค่ level_name เฉยๆ (ไม่ย้าย Level/ไม่เปลี่ยนคน) จะ
     Sync ชื่อใหม่ให้ทุกคนในกลุ่ม department+level_no เดียวกันอัตโนมัติ (กันชื่อไม่ตรง
@@ -228,6 +246,15 @@ def update_level(
         for sib in _active_group(db, level.department, level.level_no, exclude_id=level.id):
             sib.level_name = level.level_name
 
+    log_event(
+        db,
+        actor_id=admin.id,
+        action="budget_level.updated",
+        entity_type="budget_level",
+        entity_id=level.id,
+        detail={"fields": sorted(updates.keys())} if updates else None,
+    )
+
     try:
         db.commit()
     except IntegrityError:
@@ -243,7 +270,7 @@ def update_level(
 def delete_level(
     level_id: int,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ) -> None:
     """Soft-delete เท่านั้น (is_active=False) — กันประวัติ Audit เก่า
     (ARBudgetApproval.level_name_snapshot) อ้างอิง Level ที่ถูกลบไปแล้วพัง"""
@@ -251,4 +278,12 @@ def delete_level(
     if level is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "ไม่พบ Level นี้")
     level.is_active = False
+    log_event(
+        db,
+        actor_id=admin.id,
+        action="budget_level.deleted",
+        entity_type="budget_level",
+        entity_id=level.id,
+        detail={"department": level.department, "level_no": level.level_no},
+    )
     db.commit()

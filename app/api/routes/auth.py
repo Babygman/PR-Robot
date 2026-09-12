@@ -1,16 +1,23 @@
 """Auth Routes — Login ตั้ง Cookie แบบ HttpOnly, Logout ล้าง Cookie, /me คืนข้อมูลตัวเอง"""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.deps import get_current_user
-from app.core.security import COOKIE_NAME, create_access_token, hash_password, verify_password
+from app.core.security import (
+    COOKIE_NAME,
+    create_access_token,
+    decode_access_token,
+    hash_password,
+    verify_password,
+)
 from app.db.session import get_db
 from app.models import User
 from app.schemas.auth import ChangePasswordRequest, LoginRequest
 from app.schemas.user import UserRead
+from app.services.system_log import log_event
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -39,12 +46,24 @@ def login(body: LoginRequest, response: Response, db: Session = Depends(get_db))
         samesite="lax",
         max_age=settings.access_token_expire_minutes * 60,
     )
+    log_event(db, actor_id=user.id, action="auth.login", entity_type="user", entity_id=user.id)
+    db.commit()
     return user
 
 
 @router.post("/logout")
-def logout(response: Response) -> dict:
+def logout(request: Request, response: Response, db: Session = Depends(get_db)) -> dict:
+    # หา actor แบบ Best-Effort จาก Cookie เดิม (ไม่ใช้ Depends(get_current_user) เพราะจะ
+    # Raise 401 ถ้า Session หมดอายุ/ไม่ถูกต้องไปแล้ว — Logout ต้องล้าง Cookie สำเร็จเสมอ
+    # ไม่ว่า Session จะยังใช้ได้จริงหรือไม่ก็ตาม)
+    token = request.cookies.get(COOKIE_NAME)
+    actor_id = decode_access_token(token) if token else None
     response.delete_cookie(COOKIE_NAME)
+    if actor_id is not None:
+        log_event(
+            db, actor_id=actor_id, action="auth.logout", entity_type="user", entity_id=actor_id
+        )
+        db.commit()
     return {"status": "ok"}
 
 
@@ -70,5 +89,12 @@ def change_own_password(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "รหัสผ่านเดิมไม่ถูกต้อง")
 
     current_user.password_hash = hash_password(body.new_password)
+    log_event(
+        db,
+        actor_id=current_user.id,
+        action="user.password_changed_self",
+        entity_type="user",
+        entity_id=current_user.id,
+    )
     db.commit()
     return {"status": "ok"}
