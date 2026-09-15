@@ -248,7 +248,7 @@ document.getElementById("ma-overlay").addEventListener("click", (e) => {
 (async () => {
   ME = await requireLogin();
   if (!ME) return;
-  if (!(ME.is_admin || ME.can_view_approvals)) {
+  if (!(ME.is_admin || ME.can_view_pr_approvals)) {
     document.getElementById("page-error").textContent = "หน้านี้สำหรับผู้มีสิทธิ์อนุมัติเท่านั้น";
     document.getElementById("page-error").classList.remove("hidden");
     return;

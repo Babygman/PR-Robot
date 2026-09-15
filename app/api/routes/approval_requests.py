@@ -41,7 +41,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.deps import get_current_user, require_can_view_approvals, require_can_view_ar
+from app.core.deps import get_current_user, require_can_view_ar, require_can_view_ar_approvals
 from app.db.session import get_db
 from app.models import (
     ApprovalRequest,
@@ -323,7 +323,7 @@ def get_ar_list_stats(
 @router.get("/my-approvals/counts", response_model=MyApprovalCounts)
 def get_my_approval_counts(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_can_view_approvals),
+    current_user: User = Depends(require_can_view_ar_approvals),
 ) -> MyApprovalCounts:
     """เติมเลข Badge ทั้ง 4 หมวดที่ Sidebar Submenu (base.html) — เรียกทุกหน้าที่มีเมนูนี้
     โชว์อยู่ ไม่ใช่แค่หน้า My Approvals เอง"""
@@ -352,7 +352,7 @@ def list_my_approvals_route(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_can_view_approvals),
+    current_user: User = Depends(require_can_view_ar_approvals),
 ) -> list[MyApprovalItem]:
     ars = budget_workflow.list_my_approvals(db, current_user, bucket)
     page = ars[offset : offset + limit]

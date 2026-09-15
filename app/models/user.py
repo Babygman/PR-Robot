@@ -17,16 +17,27 @@ Workflow อนุมัติ "หักงบประมาณ" ของ AR 
   Department เฉพาะตอน "สร้าง AR" เท่านั้น (Validate ที่ app/api/routes/approval_requests.py)
 
 My Approvals (Phase B/2, 2026-09-10, ตาม Mockup v4 ที่ผู้ใช้ Confirm แล้ว):
-- `can_view_approvals`: เปิดเมนู "การอนุมัติของฉัน" (Sidebar Submenu ขยายลง 4 หมวด) ให้
-  User คนนี้เห็น — Field นี้มีไว้สำหรับ "ผู้อนุมัติ Level ปกติ" ที่ถูกตั้งเป็น
-  approver_user_id ใน BudgetApprovalLevel ของแผนกใดแผนกหนึ่ง — Admin เป็นคนกดเปิดให้จาก
-  หน้า "จัดการ User" (ดู app/core/deps.py: require_can_view_approvals สำหรับ Gate จริง)
+- `can_view_approvals`: (ตัดออกแล้ว — ดู Correction ด้านล่าง) เดิมเปิดเมนู "การอนุมัติของ
+  ฉัน" (Sidebar Submenu ขยายลง 4 หมวด) ให้ User คนนี้เห็น — Field นี้มีไว้สำหรับ "ผู้อนุมัติ
+  Level ปกติ" ที่ถูกตั้งเป็น approver_user_id ใน BudgetApprovalLevel ของแผนกใดแผนกหนึ่ง —
+  Admin เป็นคนกดเปิดให้จากหน้า "จัดการ User"
 
   Correction (Full RBAC, 2026-09-10): เดิม is_admin/is_fa เห็นเมนูนี้เสมอโดยอัตโนมัติ —
   ผู้ใช้แจ้งว่าเข้าใจผิด "FA ยังหมายถึง FA Acknowledge อยู่" เท่านั้น ไม่ได้แปลว่ามีสิทธิ์
   เข้าเมนู My Approvals ด้วยอัตโนมัติ — ตัด is_fa ออกจากเงื่อนไขนี้แล้ว เหลือแค่ is_admin
   หรือ can_view_approvals เท่านั้น (Admin ที่ต้องการให้ FA คนหนึ่งใช้ My Approvals ได้จริง
   ต้องติ๊กทั้ง FA และ "Approve" (can_view_approvals) ให้ 2 อันแยกกัน)
+
+  Correction 2 (แยก PR/AR, Feedback ระหว่างรีวิว Phase 4 PR Approval Level, 2026-09-15):
+  ผู้ใช้แจ้งว่า Field เดียวเปิดทั้ง 2 เมนูพร้อมกันสับสน "ต้องมีเรื่องสิทธ์ Approve PR,
+  Approve AR แยกกัน" (ผู้อนุมัติ Level ของ PR กับ AR อาจเป็นคนละคนกัน) — ตัด
+  `can_view_approvals` ออก แยกเป็น 2 Field แทน (Pattern เดียวกับที่เคยแยก can_view_all มา
+  ก่อนหน้า — ดู Migration d4f8a2c6e9b3):
+  - `can_view_pr_approvals`: เปิดเมนู "My PR Approvals" ให้เห็น (Gate จริงที่
+    require_can_view_pr_approvals)
+  - `can_view_ar_approvals`: เปิดเมนู "My AR Approvals" ให้เห็น (Gate จริงที่
+    require_can_view_ar_approvals) — is_fa ยังคงเห็นเมนูนี้ได้เองแม้ไม่ติ๊ก Field นี้
+    (Business Logic เดิมของหน้า AR My Approvals เอง ไม่ได้ผูกกับ Field นี้)
 
 Full RBAC — 9 เมนู (Correction 2026-09-10, ตาม Matrix Admin/FA/Approve/PR/AR/ALL ที่ผู้ใช้
 ยืนยัน): ตัด `approver_only` ออก (ไม่ได้ใช้แล้ว — Mockup ล่าสุดไม่มีคอลัมน์นี้) เพิ่ม 4 Field
@@ -96,7 +107,8 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_fa: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    can_view_approvals: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    can_view_pr_approvals: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    can_view_ar_approvals: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     can_view_pr: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     can_view_ar: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     can_view_all_pr: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

@@ -38,7 +38,10 @@
         <input type="checkbox" id="c-is-fa" style="width:auto;"> FA
       </label>
       <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
-        <input type="checkbox" id="c-can-view-approvals" style="width:auto;"> Approve
+        <input type="checkbox" id="c-can-view-pr-approvals" style="width:auto;"> Approve PR
+      </label>
+      <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
+        <input type="checkbox" id="c-can-view-ar-approvals" style="width:auto;"> Approve AR
       </label>
       <label style="display:flex; align-items:center; gap:5px; font-size:13.5px; text-transform:none; color:var(--color-text);">
         <input type="checkbox" id="c-can-view-pr" style="width:auto;"> PR
@@ -62,7 +65,8 @@
   <h2>All Users (รายชื่อ User ทั้งหมด)</h2>
   <p class="muted" style="margin-top:-6px;">
     Admin = จัดการระบบทั้งหมด เห็น/แก้ไขได้ทุกอย่าง | FA = FA Acknowledge + Budget Control + AI Costs + Log AR |
-    Approve = เมนู "การอนุมัติของฉัน" | PR = เมนู PR List/New PR (เห็นเฉพาะของตัวเอง) |
+    Approve PR = เมนู "My PR Approvals" | Approve AR = เมนู "My AR Approvals" |
+    PR = เมนู PR List/New PR (เห็นเฉพาะของตัวเอง) |
     AR = เมนู Approval Request (เห็นเฉพาะของตัวเอง) |
     เห็น PR/AR ทั้งหมด = เห็นได้ทุกใบ + เห็นเมนู Log PR/Log AR (แต่แก้ไข/พิมพ์/ลบได้เฉพาะของตัวเองเสมอ) |
     Delete ลบถาวรได้เฉพาะ User ที่ไม่เคยมีประวัติอะไรในระบบเลยเท่านั้น — มีประวัติแล้วใช้ Active/Inactive แทน
@@ -75,7 +79,7 @@
     <h3 style="margin:0 0 10px; font-size:16px;">Upload Users (Excel)</h3>
     <p class="muted" style="font-size:12.5px;">
       คอลัมน์: name | email | password (จำเป็นเฉพาะแถวสร้าง User ใหม่) | department | division |
-      position | is_admin | is_fa | can_view_approvals | can_view_pr | can_view_ar |
+      position | is_admin | is_fa | can_view_pr_approvals | can_view_ar_approvals | can_view_pr | can_view_ar |
       can_view_all_pr | can_view_all_ar | is_active — จับคู่ด้วย email เจอเดิม = Update
       (ไม่แตะ Password) ไม่เจอ = สร้างใหม่
     </p>
@@ -111,7 +115,8 @@ function userRowHtml(u) {
       <div class="user-perm-row">
         <label><input type="checkbox" class="u-is-admin" aria-label="Admin for ${escapeHtml(u.name)}" ${u.is_admin ? "checked" : ""}> Admin</label>
         <label><input type="checkbox" class="u-is-fa" aria-label="FA for ${escapeHtml(u.name)}" ${u.is_fa ? "checked" : ""}> FA</label>
-        <label><input type="checkbox" class="u-can-view-approvals" aria-label="Approve for ${escapeHtml(u.name)}" ${u.can_view_approvals ? "checked" : ""}> Approve</label>
+        <label><input type="checkbox" class="u-can-view-pr-approvals" aria-label="Approve PR for ${escapeHtml(u.name)}" ${u.can_view_pr_approvals ? "checked" : ""}> Approve PR</label>
+        <label><input type="checkbox" class="u-can-view-ar-approvals" aria-label="Approve AR for ${escapeHtml(u.name)}" ${u.can_view_ar_approvals ? "checked" : ""}> Approve AR</label>
         <label><input type="checkbox" class="u-can-view-pr" aria-label="PR for ${escapeHtml(u.name)}" ${u.can_view_pr ? "checked" : ""}> PR</label>
         <label><input type="checkbox" class="u-can-view-ar" aria-label="AR for ${escapeHtml(u.name)}" ${u.can_view_ar ? "checked" : ""}> AR</label>
         <label><input type="checkbox" class="u-can-view-all-pr" aria-label="View All PR for ${escapeHtml(u.name)}" ${u.can_view_all_pr ? "checked" : ""}> View All PR</label>
@@ -148,7 +153,8 @@ async function loadUsers() {
         position: row.querySelector(".u-position").value || null,
         is_admin: row.querySelector(".u-is-admin").checked,
         is_fa: row.querySelector(".u-is-fa").checked,
-        can_view_approvals: row.querySelector(".u-can-view-approvals").checked,
+        can_view_pr_approvals: row.querySelector(".u-can-view-pr-approvals").checked,
+        can_view_ar_approvals: row.querySelector(".u-can-view-ar-approvals").checked,
         can_view_pr: row.querySelector(".u-can-view-pr").checked,
         can_view_ar: row.querySelector(".u-can-view-ar").checked,
         can_view_all_pr: row.querySelector(".u-can-view-all-pr").checked,
@@ -232,7 +238,8 @@ document.getElementById("create-form").addEventListener("submit", async (e) => {
     position: document.getElementById("c-position").value || null,
     is_admin: document.getElementById("c-is-admin").checked,
     is_fa: document.getElementById("c-is-fa").checked,
-    can_view_approvals: document.getElementById("c-can-view-approvals").checked,
+    can_view_pr_approvals: document.getElementById("c-can-view-pr-approvals").checked,
+    can_view_ar_approvals: document.getElementById("c-can-view-ar-approvals").checked,
     can_view_pr: document.getElementById("c-can-view-pr").checked,
     can_view_ar: document.getElementById("c-can-view-ar").checked,
     can_view_all_pr: document.getElementById("c-can-view-all-pr").checked,

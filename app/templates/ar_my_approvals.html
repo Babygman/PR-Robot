@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}My Approvals (การอนุมัติของฉัน) — PR-Robot{% endblock %}
+{% block title %}My AR Approvals (การอนุมัติ AR ของฉัน) — PR-Robot{% endblock %}
 {% block content %}
 <div class="topbar">
   <div>
-    <h1 id="ma-title">My Approvals (การอนุมัติของฉัน)</h1>
+    <h1 id="ma-title">My AR Approvals (การอนุมัติ AR ของฉัน)</h1>
     <p class="muted" style="margin-top:-10px;" id="ma-sub">กำลังโหลด...</p>
   </div>
 </div>
@@ -261,7 +261,7 @@ document.getElementById("ma-overlay").addEventListener("click", (e) => {
 (async () => {
   ME = await requireLogin();
   if (!ME) return;
-  if (!(ME.is_admin || ME.is_fa || ME.can_view_approvals)) {
+  if (!(ME.is_admin || ME.is_fa || ME.can_view_ar_approvals)) {
     document.getElementById("page-error").textContent = "หน้านี้สำหรับผู้มีสิทธิ์อนุมัติเท่านั้น";
     document.getElementById("page-error").classList.remove("hidden");
     return;

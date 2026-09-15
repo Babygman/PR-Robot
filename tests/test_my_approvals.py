@@ -1,7 +1,7 @@
 """Test หน้า "การอนุมัติของฉัน" (My Approvals, Phase B/2, 2026-09-10)
 
 ครอบคลุม Logic ที่เสี่ยงที่สุดตาม Docstring ท้ายไฟล์ app/services/budget_workflow.py:
-- Permission Gate ของเมนู (is_admin/is_fa เห็นเสมอ, คนอื่นต้องเปิด can_view_approvals)
+- Permission Gate ของเมนู (is_admin/is_fa เห็นเสมอ, คนอื่นต้องเปิด can_view_ar_approvals)
 - Bucket "waiting" (กว้าง — ทุก Level ในแผนกที่เกี่ยวข้อง) เทียบกับ "mine" (แคบ — เฉพาะ
   Level ปัจจุบันตรงกับ actor เป๊ะ) ต้องไม่เท่ากันเมื่อมีหลาย Level
 - Admin เห็นทุกใบทั้งระบบใน waiting/mine/returned (ไม่ต้องเป็นผู้อนุมัติที่ Config ไว้จริง)
@@ -49,9 +49,9 @@ def test_admin_allowed_fa_alone_denied_without_flag(
     client: TestClient, admin_user: User, db_session: Session
 ):
     """Correction (Full RBAC, 2026-09-10): Admin เห็นเมนู My Approvals เสมอ แต่ FA เฉยๆ
-    (ไม่ได้ติ๊ก can_view_approvals ด้วย) ไม่มีสิทธิ์เข้าเมนูนี้อีกต่อไป — ผู้ใช้ยืนยันว่า
+    (ไม่ได้ติ๊ก can_view_ar_approvals ด้วย) ไม่มีสิทธิ์เข้าเมนูนี้อีกต่อไป — ผู้ใช้ยืนยันว่า
     FA หมายถึงแค่สิทธิ์ทำ FA Acknowledge เท่านั้น ไม่ได้แปลว่าเห็นเมนู My Approvals ด้วย
-    อัตโนมัติ (ดู app/core/deps.py: require_can_view_approvals)"""
+    อัตโนมัติ (ดู app/core/deps.py: require_can_view_ar_approvals)"""
     fa = _make_user(db_session, name="FA MA", email="fama@example.com", is_fa=True)
     _login_as(client, admin_user.email, "adminpass123")
     assert client.get("/ars/my-approvals/counts").status_code == 200
@@ -59,20 +59,20 @@ def test_admin_allowed_fa_alone_denied_without_flag(
     assert client.get("/ars/my-approvals/counts").status_code == 403
 
 
-def test_can_view_approvals_flag_grants_access(client: TestClient, db_session: Session):
+def test_can_view_ar_approvals_flag_grants_access(client: TestClient, db_session: Session):
     approver = _make_user(
         db_session,
         name="Approver Only",
         email="apponly@example.com",
         department="Production",
-        can_view_approvals=True,
+        can_view_ar_approvals=True,
     )
     _login_as(client, approver.email)
     assert client.get("/ars/my-approvals/counts").status_code == 200
 
 
 def test_invalid_bucket_rejected(client: TestClient, db_session: Session):
-    user = _make_user(db_session, name="U", email="u1@example.com", can_view_approvals=True)
+    user = _make_user(db_session, name="U", email="u1@example.com", can_view_ar_approvals=True)
     _login_as(client, user.email)
     res = client.get("/ars/my-approvals?bucket=not-a-real-bucket")
     assert res.status_code == 422
@@ -87,14 +87,14 @@ def test_waiting_is_broader_than_mine_across_levels(
         name="Manager MA",
         email="mgrma@example.com",
         department="Production",
-        can_view_approvals=True,
+        can_view_ar_approvals=True,
     )
     gm = _make_user(
         db_session,
         name="GM MA",
         email="gmma@example.com",
         department="Production",
-        can_view_approvals=True,
+        can_view_ar_approvals=True,
     )
     _make_level(
         db_session,
@@ -135,7 +135,7 @@ def test_unrelated_department_approver_sees_nothing(
         name="Other Dept",
         email="otherdept@example.com",
         department="QC",
-        can_view_approvals=True,
+        can_view_ar_approvals=True,
     )
     _make_level(
         db_session, department="QC", level_no=1, level_name="QC Manager", approver_user_id=other.id
@@ -186,7 +186,7 @@ def test_admin_history_is_personal_not_system_wide(
         name="Mgr3",
         email="mgr3@example.com",
         department="Production",
-        can_view_approvals=True,
+        can_view_ar_approvals=True,
     )
     _make_level(
         db_session,
@@ -219,10 +219,10 @@ def test_admin_history_is_personal_not_system_wide(
 def test_fa_waiting_only_when_reached_fa_stage(
     client: TestClient, plain_user: User, db_session: Session
 ):
-    # Correction (Full RBAC, 2026-09-10): FA ต้องเปิด can_view_approvals ด้วยถึงจะเข้าเมนู
+    # Correction (Full RBAC, 2026-09-10): FA ต้องเปิด can_view_ar_approvals ด้วยถึงจะเข้าเมนู
     # My Approvals ได้ (FA เฉยๆ ไม่พอแล้ว — ดู test_admin_allowed_fa_alone_denied_without_flag)
     fa = _make_user(
-        db_session, name="FA2", email="fa2@example.com", is_fa=True, can_view_approvals=True
+        db_session, name="FA2", email="fa2@example.com", is_fa=True, can_view_ar_approvals=True
     )
 
     _login(client)
@@ -241,10 +241,10 @@ def test_fa_returned_excludes_rejected_before_reaching_fa(
     client: TestClient, plain_user: User, db_session: Session
 ):
     manager = _make_user(db_session, name="Mgr4", email="mgr4@example.com", department="Production")
-    # Correction (Full RBAC, 2026-09-10): FA ต้องเปิด can_view_approvals ด้วยถึงจะเข้าเมนู
+    # Correction (Full RBAC, 2026-09-10): FA ต้องเปิด can_view_ar_approvals ด้วยถึงจะเข้าเมนู
     # My Approvals ได้ (FA เฉยๆ ไม่พอแล้ว)
     fa = _make_user(
-        db_session, name="FA3", email="fa3@example.com", is_fa=True, can_view_approvals=True
+        db_session, name="FA3", email="fa3@example.com", is_fa=True, can_view_ar_approvals=True
     )
     _make_level(
         db_session,
@@ -276,7 +276,7 @@ def test_returned_bucket_shows_rejected_ar_to_involved_approver(
         name="Mgr5",
         email="mgr5@example.com",
         department="Production",
-        can_view_approvals=True,
+        can_view_ar_approvals=True,
     )
     _make_level(
         db_session,
@@ -310,7 +310,7 @@ def test_counts_match_list_lengths(client: TestClient, plain_user: User, db_sess
         name="Mgr6",
         email="mgr6@example.com",
         department="Production",
-        can_view_approvals=True,
+        can_view_ar_approvals=True,
     )
     _make_level(
         db_session,

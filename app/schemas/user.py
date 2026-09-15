@@ -22,7 +22,8 @@ class UserCreate(BaseModel):
     position: str | None = None
     is_admin: bool = False
     is_fa: bool = False
-    can_view_approvals: bool = False
+    can_view_pr_approvals: bool = False
+    can_view_ar_approvals: bool = False
     can_view_pr: bool = False
     can_view_ar: bool = False
     can_view_all_pr: bool = False
@@ -39,9 +40,11 @@ class UserUpdate(BaseModel):
     Flow แยกออกไปเป็น UserPasswordReset/PATCH /users/{id}/password ด้านล่าง — User
     Management Redesign, 2026-09-11)
 
-    เพิ่ม `can_view_approvals`/`can_view_pr`/`can_view_ar`/`can_view_all_pr`/`can_view_all_ar`
-    (Full RBAC, 2026-09-10 — ตัด `approver_only` ออกแล้ว, แยก `can_view_all` เดิมเป็น 2 Field
-    ตาม PR/AR) — ดู Docstring app/models/user.py สำหรับความหมายแต่ละ Field
+    เพิ่ม `can_view_pr_approvals`/`can_view_ar_approvals`/`can_view_pr`/`can_view_ar`/
+    `can_view_all_pr`/`can_view_all_ar` (Full RBAC, 2026-09-10 — ตัด `approver_only` ออก
+    แล้ว, แยก `can_view_all` เดิมเป็น 2 Field ตาม PR/AR — Correction 2026-09-15: แยก
+    `can_view_approvals` เดิมเป็น `can_view_pr_approvals`/`can_view_ar_approvals` เพิ่มด้วย
+    เหตุผลเดียวกัน) — ดู Docstring app/models/user.py สำหรับความหมายแต่ละ Field
     """
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
@@ -52,7 +55,8 @@ class UserUpdate(BaseModel):
     is_active: bool | None = None
     is_admin: bool | None = None
     is_fa: bool | None = None
-    can_view_approvals: bool | None = None
+    can_view_pr_approvals: bool | None = None
+    can_view_ar_approvals: bool | None = None
     can_view_pr: bool | None = None
     can_view_ar: bool | None = None
     can_view_all_pr: bool | None = None
@@ -77,7 +81,8 @@ class UserRead(BaseModel):
     is_active: bool
     is_admin: bool
     is_fa: bool
-    can_view_approvals: bool
+    can_view_pr_approvals: bool
+    can_view_ar_approvals: bool
     can_view_pr: bool
     can_view_ar: bool
     can_view_all_pr: bool

@@ -60,7 +60,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.deps import get_current_user, require_can_view_approvals, require_can_view_pr
+from app.core.deps import get_current_user, require_can_view_pr, require_can_view_pr_approvals
 from app.db.session import get_db
 from app.models import (
     AuditLog,
@@ -290,7 +290,7 @@ def list_prs(
 @router.get("/my-approvals/counts", response_model=PRMyApprovalCounts)
 def get_my_pr_approval_counts(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_can_view_approvals),
+    current_user: User = Depends(require_can_view_pr_approvals),
 ) -> PRMyApprovalCounts:
     """เติมเลข Badge ทั้ง 4 หมวดที่ Sidebar Submenu "My PR Approvals" (base.html) — เรียก
     ทุกหน้าที่มีเมนูนี้โชว์อยู่ ไม่ใช่แค่หน้า PR My Approvals เอง (Pattern เดียวกับ
@@ -332,7 +332,7 @@ def list_my_pr_approvals_route(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_can_view_approvals),
+    current_user: User = Depends(require_can_view_pr_approvals),
 ) -> list[PRMyApprovalItem]:
     prs = pr_budget_workflow.list_my_approvals(db, current_user, bucket)
     page = prs[offset : offset + limit]

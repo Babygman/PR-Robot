@@ -419,8 +419,8 @@ def test_unrelated_user_cannot_upload_attachment(
 
 
 # ───────────────────────── My PR Approvals (Phase 11 Phase 4, 2026-09-15) ─────────────────────────
-def test_my_pr_approvals_requires_can_view_approvals(client: TestClient, plain_user: User):
-    """plain_user Default ไม่มี can_view_approvals (ดู conftest.plain_user) — ต้องโดน 403
+def test_my_pr_approvals_requires_can_view_pr_approvals(client: TestClient, plain_user: User):
+    """plain_user Default ไม่มี can_view_pr_approvals (ดู conftest.plain_user) — ต้องโดน 403
     เหมือน My Approvals ของ AR ทุกประการ (Reuse Flag เดียวกัน)"""
     _login(client)
     res = client.get("/prs/my-approvals", params={"bucket": "waiting"})
@@ -439,14 +439,14 @@ def test_my_pr_approvals_buckets_and_counts(
         name="MyApprovals Mgr",
         email="myapprovalsmgr@example.com",
         department="Production",
-        can_view_approvals=True,
+        can_view_pr_approvals=True,
     )
     gm = _make_user(
         db_session,
         name="MyApprovals GM",
         email="myapprovalsgm@example.com",
         department="Production",
-        can_view_approvals=True,
+        can_view_pr_approvals=True,
     )
     _make_pr_level(
         db_session,
@@ -515,7 +515,7 @@ def test_my_pr_approvals_returned_bucket(
         name="Returned Mgr PR",
         email="returnedmgrpr@example.com",
         department="Production",
-        can_view_approvals=True,
+        can_view_pr_approvals=True,
     )
     _make_pr_level(
         db_session,

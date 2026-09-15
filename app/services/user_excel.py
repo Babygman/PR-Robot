@@ -7,8 +7,8 @@ Pattern เดียวกับ app/services/budget_excel.py ทุกประ
 Format: name | email | password (จำเป็นเฉพาะแถวสร้าง User ใหม่ — แถว Update ไม่ใช้
 คอลัมน์นี้เลย ไม่ทับรหัสผ่านเดิม ต้องใช้ปุ่ม "Reset Password" แยกต่างหากเท่านั้นถ้าต้องการ
 เปลี่ยนรหัสผ่าน — กันบัค Excel เผลอมีคอลัมน์รหัสผ่านของ User อื่นหลุดไปทับโดยไม่ตั้งใจ)
-| department | division | position | is_admin | is_fa | can_view_approvals |
-can_view_pr | can_view_ar | can_view_all_pr | can_view_all_ar | is_active
+| department | division | position | is_admin | is_fa | can_view_pr_approvals |
+can_view_ar_approvals | can_view_pr | can_view_ar | can_view_all_pr | can_view_all_ar | is_active
 
 Boolean Column รับได้ทั้ง TRUE/FALSE, 1/0, Y/N (ไม่สนตัวพิมพ์ใหญ่เล็ก) ว่างเปล่า = False
 """
@@ -26,7 +26,8 @@ from app.models import User
 _BOOL_COLUMNS = [
     "is_admin",
     "is_fa",
-    "can_view_approvals",
+    "can_view_pr_approvals",
+    "can_view_ar_approvals",
     "can_view_pr",
     "can_view_ar",
     "can_view_all_pr",
@@ -175,7 +176,8 @@ def build_export_workbook(users: list[User]) -> bytes:
                 u.position or "",
                 u.is_admin,
                 u.is_fa,
-                u.can_view_approvals,
+                u.can_view_pr_approvals,
+                u.can_view_ar_approvals,
                 u.can_view_pr,
                 u.can_view_ar,
                 u.can_view_all_pr,

@@ -52,9 +52,20 @@ def require_fa_or_admin(user: User = Depends(get_current_user)) -> User:
 # is_fa ออกจากเงื่อนไขนี้แล้ว (ผู้ใช้ยืนยัน: FA หมายถึงแค่สิทธิ์ทำ FA Acknowledge เท่านั้น
 # ไม่ได้แปลว่ามีสิทธิ์เข้าเมนู My Approvals ด้วยอัตโนมัติ — Admin ที่ต้องการให้ FA คนหนึ่ง
 # ใช้ My Approvals ได้จริง ต้องติ๊กทั้ง FA และ "Approve" แยกกัน) ดู Docstring app/models/user.py
-def require_can_view_approvals(user: User = Depends(get_current_user)) -> User:
-    if not (user.is_admin or user.can_view_approvals):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "ไม่มีสิทธิ์เข้าถึงเมนู 'การอนุมัติของฉัน'")
+#
+# Correction (แยก PR/AR, Feedback ระหว่างรีวิว Phase 4 PR Approval Level, 2026-09-15): ผู้ใช้
+# แจ้งว่า "ต้องมีเรื่องสิทธ์ Approve PR, Approve AR แยกกัน" — เดิม Gate เดียว
+# require_can_view_approvals คุมทั้งเมนู My AR Approvals และ My PR Approvals พร้อมกัน แยกเป็น
+# 2 Gate อิสระ ผูกกับ Field ใหม่คนละตัว (ดู Migration d4f8a2c6e9b3)
+def require_can_view_pr_approvals(user: User = Depends(get_current_user)) -> User:
+    if not (user.is_admin or user.can_view_pr_approvals):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "ไม่มีสิทธิ์เข้าถึงเมนู 'My PR Approvals'")
+    return user
+
+
+def require_can_view_ar_approvals(user: User = Depends(get_current_user)) -> User:
+    if not (user.is_admin or user.can_view_ar_approvals):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "ไม่มีสิทธิ์เข้าถึงเมนู 'My AR Approvals'")
     return user
 
 

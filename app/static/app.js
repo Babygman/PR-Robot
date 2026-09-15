@@ -114,23 +114,24 @@ async function requireLogin() {
   const navSystemLog = document.getElementById("nav-system-log");
   if (me.is_admin) navSystemLog?.classList.remove("hidden");
 
-  // My Approvals (Phase B/2, 2026-09-10; Correction — Full RBAC, 2026-09-10) — เมนู
-  // "การอนุมัติของฉัน" โชว์ให้ Admin เสมอ หรือ User ที่ถูก Admin เปิด can_view_approvals
+  // My AR Approvals (Phase B/2, 2026-09-10; Correction — Full RBAC, 2026-09-10) — เมนู
+  // "My AR Approvals" โชว์ให้ Admin เสมอ หรือ User ที่ถูก Admin เปิด can_view_ar_approvals
   // ให้จากหน้า "จัดการ User" — ตัด is_fa ออกจากเงื่อนไขนี้แล้ว (FA หมายถึงแค่สิทธิ์ทำ FA
   // Acknowledge เท่านั้น ไม่ได้แปลว่าเห็นเมนูนี้ด้วยอัตโนมัติ — ดู app/core/deps.py)
-  const canSeeApprovals = me.is_admin || me.can_view_approvals;
+  const canSeeArApprovals = me.is_admin || me.can_view_ar_approvals;
   const navApprovalsToggle = document.getElementById("nav-approvals-toggle");
-  if (canSeeApprovals) {
+  if (canSeeArApprovals) {
     navApprovalsToggle?.classList.remove("hidden");
     await setupMyApprovalsNav();
   }
 
-  // My PR Approvals (Phase 11 Phase 4, 2026-09-15) — แยกกล่องจาก My Approvals (AR) ตาม
-  // ที่ยืนยันกับผู้ใช้แล้ว ใช้ Flag can_view_approvals ตัวเดียวกัน (ตั้งใจ Reuse — Flag นี้
-  // ออกแบบไว้ตั้งแต่แรกเป็น "เห็นเมนูอนุมัติ" ทั่วไป ไม่ได้ผูกกับ AR โดยเฉพาะ ไม่ต้องเพิ่ม
-  // Flag ใหม่)
+  // My PR Approvals (Phase 11 Phase 4, 2026-09-15; Correction แยก PR/AR, 2026-09-15) —
+  // เดิม Reuse Flag can_view_approvals ตัวเดียวกับ AR ทำให้เปิด/ปิด 2 เมนูพร้อมกันเสมอ —
+  // ผู้ใช้แจ้งว่า "ต้องมีเรื่องสิทธ์ Approve PR, Approve AR แยกกัน" แยก Flag เป็น
+  // can_view_pr_approvals ต่างหาก (ดู Migration d4f8a2c6e9b3)
+  const canSeePrApprovals = me.is_admin || me.can_view_pr_approvals;
   const navPrApprovalsToggle = document.getElementById("nav-pr-approvals-toggle");
-  if (canSeeApprovals) {
+  if (canSeePrApprovals) {
     navPrApprovalsToggle?.classList.remove("hidden");
     await setupMyPrApprovalsNav();
   }
