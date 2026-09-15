@@ -37,15 +37,12 @@
     </label>
     <div id="budget-fields" class="hidden">
       <div class="row">
-        <div class="field"><label for="bc-code1">Account Code 1</label><input type="text" id="bc-code1"></div>
-        <div class="field"><label for="bc-code2">Account Code 2</label><input type="text" id="bc-code2"></div>
-      </div>
-      <div class="row">
-        <div class="field"><label for="bc-budget">Budget</label><input type="text" id="bc-budget"></div>
-        <div class="field"><label for="bc-used">Used Before Amount</label><input type="text" id="bc-used"></div>
+        <div class="field"><label for="bc-budgetno">Budget No.</label><input type="text" id="bc-budgetno"></div>
         <div class="field"><label for="bc-this">This Application</label><input type="text" id="bc-this"></div>
-        <div class="field"><label for="bc-balance">Balance</label><input type="text" id="bc-balance"></div>
       </div>
+      <!-- Phase 11 (2026-09-15): Dropdown เลือก Budget No. + Auto-fill Account Code/
+           Balance (Pattern เดียวกับ ar_edit.html) เป็น Phase 3-4 ของรอบ PR Approval
+           Level — ตอนนี้ยังเป็นช่องกรอก Budget No. เปล่าๆ ก่อน -->
     </div>
   </div>
 
@@ -230,12 +227,8 @@ async function loadForEdit() {
   if (pr.budget_control) {
     document.getElementById("has-budget").checked = true;
     document.getElementById("budget-fields").classList.remove("hidden");
-    document.getElementById("bc-code1").value = pr.budget_control.account_code_1 || "";
-    document.getElementById("bc-code2").value = pr.budget_control.account_code_2 || "";
-    document.getElementById("bc-budget").value = pr.budget_control.budget ?? "";
-    document.getElementById("bc-used").value = pr.budget_control.used_before_amount ?? "";
+    document.getElementById("bc-budgetno").value = pr.budget_control.budget_no || "";
     document.getElementById("bc-this").value = pr.budget_control.this_application ?? "";
-    document.getElementById("bc-balance").value = pr.budget_control.balance ?? "";
   }
   document.getElementById("source-doc-card").classList.add("hidden"); // แก้ไขเอกสารที่ผูกไว้ ทำใน Phase หน้า
   return true;
@@ -266,12 +259,8 @@ document.getElementById("pr-form").addEventListener("submit", async (e) => {
   const hasBudget = document.getElementById("has-budget").checked;
   const budgetControl = hasBudget
     ? {
-        account_code_1: document.getElementById("bc-code1").value || null,
-        account_code_2: document.getElementById("bc-code2").value || null,
-        budget: document.getElementById("bc-budget").value || null,
-        used_before_amount: document.getElementById("bc-used").value || null,
+        budget_no: document.getElementById("bc-budgetno").value || null,
         this_application: document.getElementById("bc-this").value || null,
-        balance: document.getElementById("bc-balance").value || null,
       }
     : null;
 

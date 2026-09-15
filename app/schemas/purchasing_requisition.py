@@ -5,6 +5,13 @@ Decision 2026-09-01) ไม่ใช่ข้อมูลที่รับจ�
 
 Scope Revision (Phase 9, 2026-09-03): ตัด Reviewed/Approved/Received by ออกทั้งหมด
 — ไม่มี Workflow อนุมัติในระบบแล้ว (ลายเซ็นสดบนกระดาษล้วนๆ)
+
+Scope Revision (Phase 11, 2026-09-15): PRBudgetControlCreate/Read เปลี่ยนจากช่องกรอก
+มือ (account_code_1/2, budget, used_before_amount, balance) มาเป็น budget_no (เลือก
+Match กับ BudgetMaster) + this_application (ยังกรอกมือเหมือนเดิม) — account_code เป็น
+ค่า Snapshot ที่ Server เติมให้เอง ไม่รับจาก Client (Create ไม่มี Field นี้, Read มี)
+Field Workflow อนุมัติ (budget_approval_status/current_approval_level/ฯลฯ) อยู่ใน Read
+เท่านั้น เป็นค่าที่ Server จัดการทั้งหมด (Business Logic จริงเป็น Phase 2 ของรอบนี้)
 """
 from __future__ import annotations
 
@@ -13,7 +20,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
-from app.models.purchasing_requisition import PRStatus
+from app.models.purchasing_requisition import PRBudgetApprovalStatus, PRStatus
 
 
 class PRItemCreate(BaseModel):
@@ -28,12 +35,8 @@ class PRItemCreate(BaseModel):
 
 
 class PRBudgetControlCreate(BaseModel):
-    account_code_1: str | None = None
-    account_code_2: str | None = None
-    budget: Decimal | None = None
-    used_before_amount: Decimal | None = None
+    budget_no: str | None = None
     this_application: Decimal | None = None
-    balance: Decimal | None = None
 
 
 class PRCreate(BaseModel):
@@ -71,12 +74,15 @@ class PRItemRead(BaseModel):
 
 
 class PRBudgetControlRead(BaseModel):
-    account_code_1: str | None
-    account_code_2: str | None
-    budget: Decimal | None
-    used_before_amount: Decimal | None
+    budget_no: str | None
+    account_code: str | None
+    budget_master_id: int | None
     this_application: Decimal | None
-    balance: Decimal | None
+    budget_department: str | None
+    budget_approval_status: PRBudgetApprovalStatus
+    current_approval_level: int | None
+    budget_deducted_amount: Decimal | None
+    budget_overridden: bool
 
     model_config = {"from_attributes": True}
 

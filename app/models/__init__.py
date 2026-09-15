@@ -20,8 +20,11 @@ from app.models.budget import (
     BudgetUploadBatch,
     BudgetUploadRowError,
 )
+from app.models.pr_attachment import PRAttachment
+from app.models.pr_budget import PRApprovalLevel, PRBudgetApproval
 from app.models.pr_number_counter import PRNumberCounter
 from app.models.purchasing_requisition import (
+    PRBudgetApprovalStatus,
     PRBudgetControl,
     PRItem,
     PRStatus,
@@ -49,6 +52,10 @@ __all__ = [
     "BudgetMaster",
     "BudgetUploadBatch",
     "BudgetUploadRowError",
+    "PRApprovalLevel",
+    "PRAttachment",
+    "PRBudgetApproval",
+    "PRBudgetApprovalStatus",
     "PRBudgetControl",
     "PRItem",
     "PRNumberCounter",

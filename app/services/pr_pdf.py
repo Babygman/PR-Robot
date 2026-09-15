@@ -21,7 +21,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.orm import Session
 from weasyprint import HTML
 
-from app.models import PurchasingRequisition
+from app.models import BudgetMaster, PurchasingRequisition
 from app.services.user_lookup import resolve_user_names
 
 _TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
@@ -118,12 +118,24 @@ def render_pr_html(db: Session, pr: PurchasingRequisition) -> str:
     class _BudgetView:
         pass
 
+    # Phase 11 (2026-09-15): budget/used_before_amount/balance ไม่ Denormalize เก็บใน
+    # pr_budget_control แล้ว — อ่านสดจาก budget_master ผ่าน budget_master_id แทน (ยังไม่
+    # มีค่าจนกว่า Phase 2 จะเพิ่ม Endpoint Submit ที่ Resolve budget_no -> budget_master_id
+    # จริง — ตอนนี้จะว่างเปล่าเสมอ ไม่ใช่บั๊ก)
     budget_view = _BudgetView()
     bc = pr.budget_control
-    budget_view.budget = _fmt_money(bc.budget) if bc else ""
-    budget_view.used_before_amount = _fmt_money(bc.used_before_amount) if bc else ""
+    budget_view.budget_no = bc.budget_no if bc and bc.budget_no else ""
+    budget_view.account_code = bc.account_code if bc and bc.account_code else ""
     budget_view.this_application = _fmt_money(bc.this_application) if bc else ""
-    budget_view.balance = _fmt_money(bc.balance) if bc else ""
+    master = db.get(BudgetMaster, bc.budget_master_id) if bc and bc.budget_master_id else None
+    if master is not None:
+        budget_view.budget = _fmt_money(master.budgeted_amount)
+        budget_view.used_before_amount = _fmt_money(master.used_amount)
+        budget_view.balance = _fmt_money(master.budgeted_amount - master.used_amount)
+    else:
+        budget_view.budget = ""
+        budget_view.used_before_amount = ""
+        budget_view.balance = ""
 
     return template.render(
         pr=pr_view,

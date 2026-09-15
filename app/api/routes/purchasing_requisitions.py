@@ -85,24 +85,19 @@ def _apply_items_and_budget(pr: PurchasingRequisition, body: PRCreate | PRUpdate
         for index, item in enumerate(body.items, start=1)
     ]
     if body.budget_control is not None:
+        # Phase 11 (2026-09-15): account_code เป็นค่า Snapshot ที่ Server เติมให้เอง
+        # (ไม่รับจาก Client) — ยังไม่ Resolve budget_master_id จริงตอนนี้ (เป็น Phase 2
+        # ของรอบนี้ — ตอน Submit เข้า Workflow อนุมัติค่อย Resolve จาก budget_no)
         if pr.budget_control is not None:
             # แก้ไขแถวเดิมแทนการสร้างใหม่ทับ — ถ้าสร้าง PRBudgetControl() ใหม่ทับตรงๆ
             # SQLAlchemy จะพยายาม Insert แถวใหม่ก่อน Delete แถวเก่า (Unique Constraint บน
             # pr_id ชนกันเอง) เพราะเป็นความสัมพันธ์แบบ One-to-One (uselist=False)
-            pr.budget_control.account_code_1 = body.budget_control.account_code_1
-            pr.budget_control.account_code_2 = body.budget_control.account_code_2
-            pr.budget_control.budget = body.budget_control.budget
-            pr.budget_control.used_before_amount = body.budget_control.used_before_amount
+            pr.budget_control.budget_no = body.budget_control.budget_no
             pr.budget_control.this_application = body.budget_control.this_application
-            pr.budget_control.balance = body.budget_control.balance
         else:
             pr.budget_control = PRBudgetControl(
-                account_code_1=body.budget_control.account_code_1,
-                account_code_2=body.budget_control.account_code_2,
-                budget=body.budget_control.budget,
-                used_before_amount=body.budget_control.used_before_amount,
+                budget_no=body.budget_control.budget_no,
                 this_application=body.budget_control.this_application,
-                balance=body.budget_control.balance,
             )
     else:
         pr.budget_control = None
@@ -351,13 +346,13 @@ def revise_pr(
     ]
     if original.budget_control is not None:
         bc = original.budget_control
+        # Phase 11 (2026-09-15): คัดลอกแค่ budget_no/this_application (Input เดิมของ
+        # ผู้ใช้) — Field Workflow อนุมัติ (budget_approval_status/account_code/
+        # budget_master_id/ฯลฯ) รีเซ็ตเป็นค่าเริ่มต้นเสมอ (Pattern เดียวกับ AR
+        # reset_for_new_draft: Revise ต้องเข้าคิว Level 1 ใหม่หมด ไม่ข้าม Level เดิม)
         new_pr.budget_control = PRBudgetControl(
-            account_code_1=bc.account_code_1,
-            account_code_2=bc.account_code_2,
-            budget=bc.budget,
-            used_before_amount=bc.used_before_amount,
+            budget_no=bc.budget_no,
             this_application=bc.this_application,
-            balance=bc.balance,
         )
 
     db.add(new_pr)

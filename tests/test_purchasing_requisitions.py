@@ -28,12 +28,8 @@ def _sample_pr_body(**overrides) -> dict:
             }
         ],
         "budget_control": {
-            "account_code_1": "5100",
-            "account_code_2": None,
-            "budget": "150000.00",
-            "used_before_amount": "42300.00",
+            "budget_no": "BG0001",
             "this_application": "1500.00",
-            "balance": "106200.00",
         },
         "remark": "ต้องการด่วน",
     }
@@ -55,7 +51,8 @@ def test_create_pr_success(client: TestClient, plain_user: User):
     assert body["requested_by_id"] == plain_user.id
     assert len(body["items"]) == 1
     assert body["items"][0]["item_no"] == 1
-    assert body["budget_control"]["budget"] == "150000.00"
+    assert body["budget_control"]["budget_no"] == "BG0001"
+    assert body["budget_control"]["budget_approval_status"] == "not_submitted"
     assert isinstance(body["pr_no"], int)
 
 
@@ -147,7 +144,7 @@ def test_update_draft_pr_can_add_budget_control(client: TestClient, plain_user: 
 
     res = client.patch(f"/prs/{created['id']}", json=_sample_pr_body())
     assert res.status_code == 200
-    assert res.json()["budget_control"]["budget"] == "150000.00"
+    assert res.json()["budget_control"]["budget_no"] == "BG0001"
 
 
 def test_update_non_draft_pr_rejected(
@@ -234,7 +231,8 @@ def test_revise_finalized_pr_creates_draft_copy(client: TestClient, plain_user: 
     assert revised["requested_by_id"] == original["requested_by_id"]
     assert revised["section"] == original["section"]
     assert revised["items"][0]["description"] == original["items"][0]["description"]
-    assert revised["budget_control"]["budget"] == original["budget_control"]["budget"]
+    assert revised["budget_control"]["budget_no"] == original["budget_control"]["budget_no"]
+    assert revised["budget_control"]["budget_approval_status"] == "not_submitted"
 
     # ต้นฉบับต้องไม่ถูกแตะต้อง แต่รู้ตัวว่าถูก Revise ไปแล้วเป็นฉบับไหน
     orig_after = client.get(f"/prs/{original['id']}").json()
