@@ -416,3 +416,156 @@ def test_unrelated_user_cannot_upload_attachment(
         files={"file": ("quote.pdf", b"%PDF-1.4 fake", "application/pdf")},
     )
     assert res.status_code == 403
+
+
+# ───────────────────────── My PR Approvals (Phase 11 Phase 4, 2026-09-15) ─────────────────────────
+def test_my_pr_approvals_requires_can_view_approvals(client: TestClient, plain_user: User):
+    """plain_user Default ไม่มี can_view_approvals (ดู conftest.plain_user) — ต้องโดน 403
+    เหมือน My Approvals ของ AR ทุกประการ (Reuse Flag เดียวกัน)"""
+    _login(client)
+    res = client.get("/prs/my-approvals", params={"bucket": "waiting"})
+    assert res.status_code == 403
+    counts = client.get("/prs/my-approvals/counts")
+    assert counts.status_code == 403
+
+
+def test_my_pr_approvals_buckets_and_counts(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    """Bucket waiting/mine/history เดินตาม Level จริง — Join PRBudgetControl (Nested
+    Relation ไม่ใช่ Flat Field แบบ AR) ต้องได้ผลถูกต้องเหมือนกันทุกประการ"""
+    manager = _make_user(
+        db_session,
+        name="MyApprovals Mgr",
+        email="myapprovalsmgr@example.com",
+        department="Production",
+        can_view_approvals=True,
+    )
+    gm = _make_user(
+        db_session,
+        name="MyApprovals GM",
+        email="myapprovalsgm@example.com",
+        department="Production",
+        can_view_approvals=True,
+    )
+    _make_pr_level(
+        db_session,
+        department="Production",
+        level_no=1,
+        level_name="Manager",
+        approver_user_id=manager.id,
+    )
+    _make_pr_level(
+        db_session,
+        department="Production",
+        level_no=2,
+        level_name="General Manager",
+        approver_user_id=gm.id,
+    )
+    _pr_budget_master(db_session)
+
+    _login(client)
+    created = client.post("/prs", json=_sample_pr_body()).json()
+    pr_id = created["id"]
+    client.post(f"/prs/{pr_id}/submit-for-approval")
+
+    # Manager: PR นี้ต้องอยู่ทั้ง waiting และ mine (Level ปัจจุบันตรงกับตัวเอง) ยังไม่เคย
+    # อยู่ใน history/returned เลย
+    _login_as(client, manager.email)
+    counts = client.get("/prs/my-approvals/counts").json()
+    assert counts == {"waiting": 1, "mine": 1, "history": 0, "returned": 0}
+
+    waiting = client.get("/prs/my-approvals", params={"bucket": "waiting"}).json()
+    assert len(waiting) == 1
+    item = waiting[0]
+    assert item["id"] == pr_id
+    assert item["pr_no_display"] == str(created["pr_no"])
+    assert item["current_level_name"] == "Manager"
+    assert item["actionable"] is True
+    assert item["requested_by_name"] == "Plain User"
+
+    mine = client.get("/prs/my-approvals", params={"bucket": "mine"}).json()
+    assert [i["id"] for i in mine] == [pr_id]
+
+    # GM ยังไม่ถึงคิว (Level 1 ยังไม่ผ่าน) — ไม่ควรเห็นใน mine เลย
+    _login_as(client, gm.email)
+    gm_mine = client.get("/prs/my-approvals", params={"bucket": "mine"}).json()
+    assert gm_mine == []
+
+    # Manager อนุมัติ Level 1 ผ่าน -> ย้ายไป history ของ Manager, ขึ้น mine ของ GM แทน
+    _login_as(client, manager.email)
+    client.post(f"/prs/{pr_id}/approve-level")
+
+    mgr_counts = client.get("/prs/my-approvals/counts").json()
+    assert mgr_counts == {"waiting": 1, "mine": 0, "history": 1, "returned": 0}
+    mgr_history = client.get("/prs/my-approvals", params={"bucket": "history"}).json()
+    assert [i["id"] for i in mgr_history] == [pr_id]
+
+    _login_as(client, gm.email)
+    gm_mine_after = client.get("/prs/my-approvals", params={"bucket": "mine"}).json()
+    assert [i["id"] for i in gm_mine_after] == [pr_id]
+    assert gm_mine_after[0]["current_level_name"] == "General Manager"
+
+
+def test_my_pr_approvals_returned_bucket(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    manager = _make_user(
+        db_session,
+        name="Returned Mgr PR",
+        email="returnedmgrpr@example.com",
+        department="Production",
+        can_view_approvals=True,
+    )
+    _make_pr_level(
+        db_session,
+        department="Production",
+        level_no=1,
+        level_name="Manager",
+        approver_user_id=manager.id,
+    )
+    _pr_budget_master(db_session)
+
+    _login(client)
+    created = client.post("/prs", json=_sample_pr_body()).json()
+    client.post(f"/prs/{created['id']}/submit-for-approval")
+
+    _login_as(client, manager.email)
+    client.post(f"/prs/{created['id']}/reject-level", json={"reason": "ไม่อนุมัติ"})
+
+    counts = client.get("/prs/my-approvals/counts").json()
+    assert counts == {"waiting": 0, "mine": 0, "history": 0, "returned": 1}
+    returned = client.get("/prs/my-approvals", params={"bucket": "returned"}).json()
+    assert [i["id"] for i in returned] == [created["id"]]
+    assert returned[0]["budget_approval_status"] == "rejected"
+
+
+def test_admin_sees_all_pending_in_my_pr_approvals_waiting(
+    client: TestClient, admin_user: User, plain_user: User, db_session: Session
+):
+    """Admin เห็น Bucket waiting/returned ทั้งระบบเสมอ ไม่ต้องมี Level ผูกกับแผนกไหนเลย
+    (Pattern เดียวกับ AR)"""
+    manager = _make_user(
+        db_session,
+        name="Admin Scope Mgr PR",
+        email="adminscopemgrpr@example.com",
+        department="Production",
+    )
+    _make_pr_level(
+        db_session,
+        department="Production",
+        level_no=1,
+        level_name="Manager",
+        approver_user_id=manager.id,
+    )
+    _pr_budget_master(db_session)
+
+    _login(client)
+    created = client.post("/prs", json=_sample_pr_body()).json()
+    client.post(f"/prs/{created['id']}/submit-for-approval")
+
+    _login_as(client, admin_user.email, "adminpass123")
+    waiting = client.get("/prs/my-approvals", params={"bucket": "waiting"}).json()
+    assert [i["id"] for i in waiting] == [created["id"]]
+    counts = client.get("/prs/my-approvals/counts").json()
+    assert counts["waiting"] == 1

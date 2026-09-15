@@ -249,6 +249,22 @@
   }
   .sign-line.placeholder { color: #b7b9be; }
 
+  /* ---------------- Authority / Signature (Phase 11 Phase 4, 2026-09-15) ----------------
+     แทนที่กล่อง Reviewed by/Approved by/Received by แบบเซ็นสดเดิม (Phase 9) ด้วยตาราง
+     Authority Auto-fill ชื่อผู้อนุมัติจริงจาก Workflow ดิจิทัล — Pattern เดียวกับ
+     ar_form.html ทุกประการ (ดู app/services/pr_pdf.py: authority_signatures) */
+  .auth-title { font-size: 6.6px; text-transform: uppercase; letter-spacing: 0.13em; color: #8a8d94; margin: 3mm 0 1.5mm; }
+  table.auth-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+  .auth-table col.c-auth { width: 26%; }
+  .auth-table col.c-comment { width: 44%; }
+  .auth-table col.c-sig { width: 30%; }
+  .auth-table th { background: #f2efe9; border-bottom: 1px solid #dcd8d1; text-transform: uppercase; font-size: 6.6px; letter-spacing: 0.1em; font-weight: 600; text-align: left; padding: 1.4mm 2mm; }
+  .auth-table td { border-bottom: 1px solid #e6e2db; padding: 1.6mm 2mm; font-size: 8px; height: 6mm; }
+  .auth-table td.a-name { font-weight: 600; color: #16181c; }
+  .auth-table td.a-sig { font-weight: 600; color: #16181c; }
+  .a-sig-date { font-weight: 400; font-size: 6.4px; color: #6d7078; margin-top: 0.3mm; }
+  .req-only-row { margin-top: 3.5mm; max-width: 60mm; }
+
   .footer { display: flex; justify-content: space-between; margin-top: 5mm; font-size: 8px; color: #6d7078; }
 </style>
 </head>
@@ -358,23 +374,31 @@
 
     <div class="sign-gap"></div>
     <hr class="sign-rule">
-    <div class="sign-row">
-      <div>
-        <div class="sign-label">Requested by</div>
-        <div class="sign-line{{ '' if pr.requested_by_name else ' placeholder' }}">{{ pr.requested_by_name or "Signature" }}</div>
-      </div>
-      <div>
-        <div class="sign-label">Reviewed by</div>
-        <div class="sign-line placeholder">Signature</div>
-      </div>
-      <div>
-        <div class="sign-label">Approved by</div>
-        <div class="sign-line placeholder">Signature</div>
-      </div>
-      <div>
-        <div class="sign-label">Received by</div>
-        <div class="sign-line placeholder">Signature</div>
-      </div>
+
+    <!-- Phase 11 Phase 4 (2026-09-15): Authority Table Auto-fill จาก Workflow อนุมัติ
+         ดิจิทัลจริง (ไม่ใช่กล่องเซ็นสดเปล่าๆ แบบ Phase 9 เดิมอีกต่อไป) — ตั้งชื่อ Level
+         ให้ตรงกับ 4 ชื่อนี้เป๊ะที่หน้า "Approval Level-PR" ระบบจะ Auto-fill ให้เอง -->
+    <div class="auth-title">Authority</div>
+    <table class="auth-table">
+      <colgroup><col class="c-auth"><col class="c-comment"><col class="c-sig"></colgroup>
+      <thead>
+        <tr><th>Authority</th><th>Comments</th><th>Signature</th></tr>
+      </thead>
+      <tbody>
+        {% for rank in ["President / Director", "General Manager", "Senior Manager", "Manager"] %}
+        {% set sig = authority_signatures.get(rank) %}
+        <tr>
+          <td class="a-name">{{ rank }}</td>
+          <td class="a-comment">{{ sig.comment if sig else "" }}</td>
+          <td class="a-sig">{% if sig %}{{ sig.name }}<div class="a-sig-date">{{ sig.date }}</div>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="req-only-row">
+      <div class="sign-label">Requested by</div>
+      <div class="sign-line{{ '' if pr.requested_by_name else ' placeholder' }}">{{ pr.requested_by_name or "Signature" }}</div>
     </div>
 
     <div class="footer">

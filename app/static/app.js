@@ -90,6 +90,11 @@ async function requireLogin() {
   const navLevels = document.getElementById("nav-budget-levels");
   if (me.is_admin) navLevels?.classList.remove("hidden");
 
+  // PR Approval Level (Phase 11 Phase 4, 2026-09-15) — Admin เท่านั้นจัดการ Level ได้
+  // เหมือน Approval Level-AR ทุกประการ (ดู pr_approval_levels.py: require_admin)
+  const navPrLevels = document.getElementById("nav-pr-levels");
+  if (me.is_admin) navPrLevels?.classList.remove("hidden");
+
   const navTermOfPayment = document.getElementById("nav-term-of-payment");
   if (me.is_admin) navTermOfPayment?.classList.remove("hidden");
 
@@ -118,6 +123,16 @@ async function requireLogin() {
   if (canSeeApprovals) {
     navApprovalsToggle?.classList.remove("hidden");
     await setupMyApprovalsNav();
+  }
+
+  // My PR Approvals (Phase 11 Phase 4, 2026-09-15) — แยกกล่องจาก My Approvals (AR) ตาม
+  // ที่ยืนยันกับผู้ใช้แล้ว ใช้ Flag can_view_approvals ตัวเดียวกัน (ตั้งใจ Reuse — Flag นี้
+  // ออกแบบไว้ตั้งแต่แรกเป็น "เห็นเมนูอนุมัติ" ทั่วไป ไม่ได้ผูกกับ AR โดยเฉพาะ ไม่ต้องเพิ่ม
+  // Flag ใหม่)
+  const navPrApprovalsToggle = document.getElementById("nav-pr-approvals-toggle");
+  if (canSeeApprovals) {
+    navPrApprovalsToggle?.classList.remove("hidden");
+    await setupMyPrApprovalsNav();
   }
 
   // Shell Redesign (2026-09-11) — Sidebar แบ่งเป็น 3 หมวด (MAIN MENU/APPROVALS/
@@ -167,6 +182,49 @@ async function setupMyApprovalsNav() {
     const counts = await res.json();
     ["waiting", "mine", "history", "returned"].forEach((bucket) => {
       const el = document.getElementById(`badge-${bucket}`);
+      if (!el) return;
+      const n = counts[bucket] || 0;
+      el.textContent = String(n);
+      el.classList.toggle("zero", n === 0);
+    });
+  } catch (e) {
+    // เงียบไว้ — Badge เป็นแค่ตัวช่วยแสดงผล ไม่ใช่ข้อมูลสำคัญที่พังแล้ว Block การใช้งานหน้าอื่น
+  }
+}
+
+// My PR Approvals (Phase 11 Phase 4, 2026-09-15) — Pattern เดียวกับ setupMyApprovalsNav
+// ของ AR ทุกประการ แค่แยก Endpoint/Element ID เป็นชุดของ PR ("nav-pr-approvals-*",
+// "/prs/my-approvals/counts") — ดูเหตุผลที่แยกหน้าคนละหน้าใน Docstring บนสุดของ
+// pr_my_approvals.html
+async function setupMyPrApprovalsNav() {
+  const toggle = document.getElementById("nav-pr-approvals-toggle");
+  const submenu = document.getElementById("pr-approvals-submenu");
+  if (!toggle || !submenu || toggle.dataset.bound) {
+    // ยังต้อง Refresh Badge/Active Tab ทุกครั้งแม้ Bind Handler ไปแล้วรอบก่อน
+  } else {
+    toggle.dataset.bound = "1";
+    toggle.addEventListener("click", () => {
+      toggle.classList.toggle("expanded");
+      submenu.classList.toggle("open");
+    });
+  }
+
+  const onPrApprovalsPage = window.location.pathname.startsWith("/app/pr-my-approvals");
+  const currentTab = new URLSearchParams(window.location.search).get("tab");
+  submenu.querySelectorAll(".submenu-item").forEach((el) => {
+    el.classList.toggle("active", onPrApprovalsPage && el.dataset.tab === currentTab);
+  });
+  if (onPrApprovalsPage) {
+    toggle.classList.add("expanded");
+    submenu.classList.add("open");
+  }
+
+  try {
+    const res = await apiFetch("/prs/my-approvals/counts");
+    if (!res.ok) return;
+    const counts = await res.json();
+    ["waiting", "mine", "history", "returned"].forEach((bucket) => {
+      const el = document.getElementById(`badge-pr-${bucket}`);
       if (!el) return;
       const n = counts[bucket] || 0;
       el.textContent = String(n);
@@ -260,11 +318,17 @@ function escapeHtml(value) {
 // เดิมมีแค่ในหน้า "การอนุมัติของฉัน" (ar_my_approvals.html) — ผู้ใช้แจ้งว่าอยากให้เอกสาร
 // แนบในหน้า "รายละเอียด AR" (ar_detail.html) คลิกแล้ว Float Preview เหมือนกัน จึงย้าย
 // เครื่องยนต์ Lightbox มาไว้ในนี้เป็นฟังก์ชันกลาง เรียกใช้ผ่าน
-// openAttachmentLightbox(arId, attachments, index) — attachments คือ Array ของ
-// ARAttachmentRead ที่โหลดมาแล้ว (ต้องมี id/file_name/content_type/file_size) DOM ของ
-// Lightbox เองถูกสร้างแบบ Lazy (ensureLightboxDom) ตอนเปิดครั้งแรกเท่านั้น ไม่ต้องประกาศ
-// Markup ซ้ำในทุกหน้าที่ใช้
-let LIGHTBOX_AR_ID = null;
+// openAttachmentLightbox(basePath, attachments, index) — attachments คือ Array ของ
+// ARAttachmentRead/PRAttachmentRead ที่โหลดมาแล้ว (ต้องมี id/file_name/content_type/
+// file_size) DOM ของ Lightbox เองถูกสร้างแบบ Lazy (ensureLightboxDom) ตอนเปิดครั้งแรก
+// เท่านั้น ไม่ต้องประกาศ Markup ซ้ำในทุกหน้าที่ใช้
+//
+// PR Approval Level (Phase 11 Phase 4, 2026-09-15): เดิม Hardcode Path "/ars/{id}" ไว้
+// ตรงๆ (LIGHTBOX_AR_ID) — Generalize เป็น LIGHTBOX_BASE_PATH รับ Path เต็มมาเลย (เช่น
+// "/ars/42" หรือ "/prs/42") ให้ pr_detail.html เรียกใช้ Lightbox เดียวกันนี้ได้ด้วย — PR
+// ไม่มี xlsx-preview Endpoint (ดู pr_attachments.py) แต่ renderXlsxAttachmentPreview
+// Fallback ไปโชว์ลิงก์ดาวน์โหลดเฉยๆ เมื่อ Fetch ไม่ Ok อยู่แล้ว (บรรทัดล่าง) จึงไม่พัง
+let LIGHTBOX_BASE_PATH = null;
 let LIGHTBOX_ATTACHMENTS = [];
 let LIGHTBOX_ZOOM = 100;
 
@@ -348,7 +412,7 @@ function xlsxSheetTableHtml(sheet) {
 }
 
 async function renderXlsxAttachmentPreview(att, body, url) {
-  const res = await apiFetch(`/ars/${LIGHTBOX_AR_ID}/attachments/${att.id}/xlsx-preview`);
+  const res = await apiFetch(`${LIGHTBOX_BASE_PATH}/attachments/${att.id}/xlsx-preview`);
   if (!res.ok) {
     body.innerHTML = `<p class="muted">ไม่สามารถ Preview ไฟล์ Excel นี้ได้ (รองรับเฉพาะ .xlsx)<br><a href="${url}" target="_blank">ดาวน์โหลด ${escapeHtml(att.file_name)} (${fmtFileSizeLightbox(att.file_size)})</a></p>`;
     return;
@@ -382,7 +446,7 @@ async function renderXlsxAttachmentPreview(att, body, url) {
 async function renderAttachmentLightboxDoc(att) {
   LIGHTBOX_ZOOM = 100;
   const body = document.getElementById("shared-lightbox-body");
-  const url = `/ars/${LIGHTBOX_AR_ID}/attachments/${att.id}/download`;
+  const url = `${LIGHTBOX_BASE_PATH}/attachments/${att.id}/download`;
   const ct = att.content_type || "";
   const isImage = ct.startsWith("image/");
   document.getElementById("shared-lightbox-zoom-group").classList.toggle("hidden", !isImage);
@@ -405,9 +469,9 @@ async function renderAttachmentLightboxDoc(att) {
   applyLightboxZoom();
 }
 
-function openAttachmentLightbox(arId, attachments, index) {
+function openAttachmentLightbox(basePath, attachments, index) {
   ensureLightboxDom();
-  LIGHTBOX_AR_ID = arId;
+  LIGHTBOX_BASE_PATH = basePath;
   LIGHTBOX_ATTACHMENTS = attachments;
   const tabsEl = document.getElementById("shared-lightbox-tabs");
   tabsEl.innerHTML = attachments

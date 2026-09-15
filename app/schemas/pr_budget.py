@@ -7,9 +7,11 @@ BudgetRejectBody ของ AR ตรงๆ (ไม่มี Field เฉพา�
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
+
+from app.models.purchasing_requisition import PRBudgetApprovalStatus
 
 
 class PRApprovalLevelCreate(BaseModel):
@@ -69,3 +71,38 @@ class PRApprovalProgressStep(BaseModel):
     acted_at: datetime | None = None
     reason: str | None = None
     acted_as_override: bool = False
+
+
+class PRMyApprovalItem(BaseModel):
+    """1 แถวในตารางหน้า "การอนุมัติของฉัน" ของ PR (Phase 11 Phase 4, 2026-09-15) — แยก
+    หน้าต่างหากจาก AR ตามที่ผู้ใช้ยืนยัน 2026-09-15 (ไม่รวม Inbox เดียวกัน) — PR ไม่มี
+    Field "subject" แบบ AR จึงใช้ section/division แสดงแทน (Pattern เดียวกับที่
+    dashboard.html/pr_detail.html ใช้อยู่แล้ว) — Field ระดับ Workflow (budget_approval_status/
+    current_approval_level/budget_department) อยู่ใต้ pr.budget_control ที่เป็น Nested
+    Relation ไม่ใช่ Flat Field แบบ ApprovalRequest ของ AR จึงต้องประกอบขึ้นเองในชั้น Route
+    (_to_pr_my_approval_item) ไม่ใช้ model_validate(pr, from_attributes=True) ตรงๆ"""
+
+    id: int
+    pr_no: int
+    pr_no_display: str = ""  # เติมใน Route — "3 Rev.1" ถ้าเป็นฉบับ Revise
+    revision: int
+    section: str
+    division: str
+    doc_date: date
+    budget_department: str | None = None
+    budget_approval_status: PRBudgetApprovalStatus
+    current_approval_level: int | None = None
+    current_level_name: str | None = None  # เติมใน Route
+    requested_by_id: int
+    requested_by_name: str | None = None  # เติมใน Route
+    actionable: bool = False  # เติมใน Route — โชว์/ซ่อนปุ่มอนุมัติ/ปฏิเสธที่ฝั่ง Client
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PRMyApprovalCounts(BaseModel):
+    waiting: int
+    mine: int
+    history: int
+    returned: int

@@ -26,7 +26,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import select, tuple_, update
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -403,3 +403,156 @@ def can_upload_attachment(db: Session, pr: PurchasingRequisition, actor: User) -
     if actor.id == pr.requested_by_id or actor.is_admin:
         return True
     return is_current_level_approver(db, pr, actor)
+
+
+# ───────────────────────── My Approvals (Phase 11 Phase 4, 2026-09-15) ─────────────────────────
+# Pattern เดียวกับส่วน "My Approvals" ท้ายไฟล์ budget_workflow.py ของ AR ทุกประการ แต่ตัด FA
+# Acknowledge ออกทั้งหมด (ไม่มีใน PR) — Query ต้อง Join PRBudgetControl เพราะ Field Workflow
+# (budget_approval_status/current_approval_level/budget_department) อยู่ใต้ Nested Relation
+# ไม่ใช่ Flat Field บน PurchasingRequisition ตรงๆ แบบ ApprovalRequest ของ AR
+
+
+def _approver_departments(db: Session, actor: User) -> set[str]:
+    """แผนกทั้งหมดที่ actor เป็นผู้อนุมัติ Level ใดก็ได้ (Active) — ใช้กับ Bucket
+    "waiting"/"returned" (กว้างกว่า mine — ไม่สนว่า Level ปัจจุบันตรงกับ actor หรือไม่)"""
+    rows = (
+        db.execute(
+            select(PRApprovalLevel.department)
+            .where(
+                PRApprovalLevel.approver_user_id == actor.id,
+                PRApprovalLevel.is_active.is_(True),
+            )
+            .distinct()
+        )
+        .scalars()
+        .all()
+    )
+    return set(rows)
+
+
+def _approver_level_pairs(db: Session, actor: User) -> set[tuple[str, int]]:
+    """คู่ (department, level_no) ที่ actor เป็นผู้อนุมัติจริง (Active) — ใช้กับ Bucket
+    "mine" (ต้องตรง Level ปัจจุบันเป๊ะ ไม่ใช่แค่แผนกเดียวกัน)"""
+    rows = db.execute(
+        select(PRApprovalLevel.department, PRApprovalLevel.level_no).where(
+            PRApprovalLevel.approver_user_id == actor.id,
+            PRApprovalLevel.is_active.is_(True),
+        )
+    ).all()
+    return {(r[0], r[1]) for r in rows}
+
+
+def _order_and_run(db: Session, stmt) -> list[PurchasingRequisition]:
+    stmt = stmt.order_by(
+        PurchasingRequisition.pr_no.desc(), PurchasingRequisition.revision.desc()
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
+def _bucket_waiting(db: Session, actor: User) -> list[PurchasingRequisition]:
+    base = (
+        select(PurchasingRequisition)
+        .join(PRBudgetControl, PRBudgetControl.pr_id == PurchasingRequisition.id)
+        .where(PRBudgetControl.budget_approval_status == PRBudgetApprovalStatus.PENDING)
+    )
+    if actor.is_admin:
+        return _order_and_run(db, base)
+
+    depts = _approver_departments(db, actor)
+    if not depts:
+        return []
+    return _order_and_run(db, base.where(PRBudgetControl.budget_department.in_(depts)))
+
+
+def _bucket_mine(db: Session, actor: User) -> list[PurchasingRequisition]:
+    if actor.is_admin:
+        # Admin Override ได้ทุก Level เสมอ (ดู _check_level_actor) — ทุกใบที่ค้างอยู่จึง
+        # "ถึงคิว" Admin ตัดสินใจได้จริงเท่ากับ Bucket waiting เป๊ะ
+        return _bucket_waiting(db, actor)
+
+    pairs = _approver_level_pairs(db, actor)
+    if not pairs:
+        return []
+    base = (
+        select(PurchasingRequisition)
+        .join(PRBudgetControl, PRBudgetControl.pr_id == PurchasingRequisition.id)
+        .where(
+            PRBudgetControl.budget_approval_status == PRBudgetApprovalStatus.PENDING,
+            tuple_(PRBudgetControl.budget_department, PRBudgetControl.current_approval_level).in_(
+                pairs
+            ),
+        )
+    )
+    return _order_and_run(db, base)
+
+
+def _bucket_history(db: Session, actor: User) -> list[PurchasingRequisition]:
+    """PR ที่ actor เคย "อนุมัติ" (ไม่รวมปฏิเสธ — ปฏิเสธไปโผล่ Bucket "returned" แทน) มาแล้ว
+    อย่างน้อย 1 ครั้ง (Level ใดก็ได้) — เป็น Log ส่วนบุคคลของ actor เอง แม้แต่ Admin ก็ดู
+    เฉพาะที่ตัวเองกดจริง (ต่างจาก waiting/mine/returned ที่ Admin เห็นทั้งระบบเพื่อตรวจสอบ)"""
+    pr_ids_subq = (
+        select(PRBudgetApproval.pr_id)
+        .where(
+            PRBudgetApproval.acted_by_id == actor.id,
+            PRBudgetApproval.action == BudgetApprovalAction.APPROVED,
+        )
+        .distinct()
+        .scalar_subquery()
+    )
+    return _order_and_run(
+        db, select(PurchasingRequisition).where(PurchasingRequisition.id.in_(pr_ids_subq))
+    )
+
+
+def _bucket_returned(db: Session, actor: User) -> list[PurchasingRequisition]:
+    base = (
+        select(PurchasingRequisition)
+        .join(PRBudgetControl, PRBudgetControl.pr_id == PurchasingRequisition.id)
+        .where(PRBudgetControl.budget_approval_status == PRBudgetApprovalStatus.REJECTED)
+    )
+    if actor.is_admin:
+        return _order_and_run(db, base)
+
+    depts = _approver_departments(db, actor)
+    if not depts:
+        return []
+    return _order_and_run(db, base.where(PRBudgetControl.budget_department.in_(depts)))
+
+
+_BUCKET_FUNCS = {
+    "waiting": _bucket_waiting,
+    "mine": _bucket_mine,
+    "history": _bucket_history,
+    "returned": _bucket_returned,
+}
+
+
+def list_my_approvals(db: Session, actor: User, bucket: str) -> list[PurchasingRequisition]:
+    fn = _BUCKET_FUNCS.get(bucket)
+    if fn is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f'ไม่รู้จักหมวด "{bucket}"')
+    return fn(db, actor)
+
+
+def count_my_approvals(db: Session, actor: User) -> dict[str, int]:
+    return {bucket: len(fn(db, actor)) for bucket, fn in _BUCKET_FUNCS.items()}
+
+
+def is_pr_actionable_by(db: Session, pr: PurchasingRequisition, actor: User) -> bool:
+    """True ถ้า actor กด "อนุมัติ/ปฏิเสธ" ใบนี้ได้จริง ณ ตอนนี้ (ใช้โชว์/ซ่อนปุ่ม Action ใน
+    หน้า My Approvals — Logic เดียวกับเงื่อนไขของ Bucket "mine" แต่เช็คทีละใบแทนการ Query
+    ทั้งชุด)"""
+    bc = pr.budget_control
+    if bc is None:
+        return False
+    if actor.is_admin:
+        return bc.budget_approval_status == PRBudgetApprovalStatus.PENDING
+    if (
+        bc.budget_approval_status == PRBudgetApprovalStatus.PENDING
+        and bc.current_approval_level is not None
+        and bc.budget_department
+    ):
+        pairs = _approver_level_pairs(db, actor)
+        if (bc.budget_department, bc.current_approval_level) in pairs:
+            return True
+    return False

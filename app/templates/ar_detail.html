@@ -328,7 +328,7 @@ async function loadAttachments(ar) {
   listEl.querySelectorAll(".att-preview-link").forEach((link) => {
     link.addEventListener("click", (e) => {
       e.preventDefault();
-      openAttachmentLightbox(AR_ID, CURRENT_ATTACHMENTS, Number(link.dataset.index));
+      openAttachmentLightbox(`/ars/${AR_ID}`, CURRENT_ATTACHMENTS, Number(link.dataset.index));
     });
   });
 

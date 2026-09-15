@@ -18,8 +18,14 @@
   </div>
 
   <p class="muted" id="pr-remark-wrap"><strong>Remark:</strong> <span id="pr-remark"></span></p>
+  <p class="muted hidden" id="pending-approval-note">
+    กำลังรอ Level อนุมัติอยู่ — ยังแก้ไขได้ แต่ถ้าแก้ไข คำขออนุมัติที่ค้างอยู่จะถูกยกเลิกอัตโนมัติ ต้องกด "ส่งขออนุมัติ" ใหม่
+  </p>
   <p class="muted hidden" id="finalized-note">
-    PR นี้สรุปแล้ว (Finalized) — พิมพ์เอกสารนี้เพื่อขอลายเซ็นสด (Reviewed by / Approved by / Received by) นอกระบบ
+    PR นี้สรุปแล้ว (Finalized) — ลายเซ็นอนุมัติในตาราง Authority เติมให้อัตโนมัติจาก Workflow อนุมัติดิจิทัลแล้ว เหลือแค่ "Requested by" ที่ต้องเซ็นสดนอกระบบ พิมพ์เอกสารนี้เพื่อใช้ประกอบการขอเซ็นได้เลย
+  </p>
+  <p class="error hidden" id="rejected-note">
+    PR นี้ถูกปฏิเสธไปแล้ว — แก้ไขตรงๆ ไม่ได้ กรุณากด "สร้าง Revision" เพื่อแก้ไขและส่งขออนุมัติใหม่
   </p>
   <p class="muted hidden" id="revised-from-note">
     แก้ไขมาจาก <a id="revised-from-link" href="#">PR ฉบับก่อนหน้า</a>
@@ -47,13 +53,15 @@
         <h2>Budget Control</h2>
         <table>
           <tbody>
-            <tr><th>Account Code 1 / 2</th><td id="bc-accounts"></td></tr>
-            <tr><th>Budget</th><td id="bc-budget"></td></tr>
-            <tr><th>Used Before Amount</th><td id="bc-used"></td></tr>
+            <tr><th>Budget No.</th><td id="bc-budgetno"></td></tr>
+            <tr><th>Account Code</th><td id="bc-account"></td></tr>
+            <tr><th>Department</th><td id="bc-department"></td></tr>
             <tr><th>This Application</th><td id="bc-this"></td></tr>
-            <tr><th>Balance</th><td id="bc-balance"></td></tr>
+            <tr><th>Live Balance (ล่าสุด)</th><td id="bc-live-balance">-</td></tr>
+            <tr class="hidden" id="bc-deducted-row"><th>Budget Deducted Amount</th><td id="bc-deducted"></td></tr>
           </tbody>
         </table>
+        <p class="muted hidden" id="bc-overridden-note">มีการอนุมัติแบบเกินงบประมาณ (Force Override)</p>
       </div>
     </div>
 
@@ -63,13 +71,32 @@
         <div class="actions" style="flex-direction: column;">
           <a class="btn secondary" id="pdf-link" href="#" target="_blank">Print / Download PDF</a>
           <a class="btn secondary hidden" id="edit-link" href="#">Edit PR</a>
+          <button type="button" class="hidden" id="submit-approval-btn">Submit for Approval</button>
           <button type="button" class="secondary hidden" id="revise-btn">Create Revision</button>
         </div>
+        <div class="error hidden" id="submit-approval-error"></div>
+      </div>
+
+      <div class="card">
+        <h2>Attachments (เอกสารแนบ)</h2>
+        <ul class="history-list" id="attachment-list"></ul>
+        <div class="row hidden" id="attachment-upload-row" style="margin-top:8px; gap:8px; flex-direction:column; align-items:stretch;">
+          <input type="file" id="attachment-file-input" aria-label="Attach Document" multiple accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg,.webp">
+          <button type="button" class="secondary" id="attachment-upload-btn">Attach Document</button>
+        </div>
+        <div class="error hidden" id="attachment-error"></div>
       </div>
 
       <div class="card">
         <h2>History (ประวัติ)</h2>
         <ul class="history-list" id="history-list"></ul>
+      </div>
+
+      <div class="card hidden" id="approval-card">
+        <h2>Budget Approval Status (สถานะการอนุมัติ Budget) <span id="budget-status-badge"></span></h2>
+        <ul class="history-list" id="approval-steps"></ul>
+        <div class="error hidden" id="approval-action-error"></div>
+        <div class="actions" id="approval-actions"></div>
       </div>
     </div>
   </div>
@@ -77,14 +104,250 @@
 {% endblock %}
 {% block scripts %}
 <script>
+// PR Detail (Phase 11 Phase 4, 2026-09-15) — Rebuild เต็มรูปแบบจาก Scope Revision Phase
+// 9 (2 สถานะ Draft/Finalized เฉยๆ ไม่มี Workflow อนุมัติ) มาเป็น Pattern เดียวกับ
+// ar_detail.html แต่ต่าง 2 จุดตามที่ยืนยันกับผู้ใช้แล้ว (ดู Docstring บนสุดของ
+// app/services/pr_budget_workflow.py): ไม่มี FA Acknowledge (ไม่มี Step/Branch แยก) และ
+// Level สุดท้ายอนุมัติผ่าน = หักงบจริงทันทีใน approve-level เอง จึงต้องรองรับ 409
+// Over-budget + Force Retry ที่ปุ่ม Approve ตรงนี้เลย (ต่างจาก AR ที่ Over-budget อยู่ที่
+// fa-acknowledge คนละปุ่ม) — pr.budget_control เป็น null ได้ (PR ที่ไม่ติ๊ก "Has Budget
+// Control" เลย) ต้อง Handle เป็นกรณีแยกต่างหากในทุกจุดที่แตะ bc
 const PR_ID = {{ pr_id }};
+let ME = null;
 
 function fmtMoney(v) {
   if (v === null || v === undefined) return "-";
   return Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-async function loadDetail(me) {
+const BUDGET_STATUS_LABEL = {
+  not_submitted: "Not Submitted",
+  pending: "Pending Approval",
+  approved: "Approved (Budget Deducted)",
+  rejected: "Rejected",
+};
+const STEP_STATUS_LABEL = { waiting: "Waiting", approved: "Approved", rejected: "Rejected" };
+
+function budgetStatusBadge(status, levelName) {
+  let label = BUDGET_STATUS_LABEL[status] || status;
+  if (status === "pending" && levelName) {
+    label = `${label}: ${levelName}`;
+  }
+  return `<span class="badge badge-budget-${status}">${label}</span>`;
+}
+
+function approvalStepHtml(step) {
+  const label = STEP_STATUS_LABEL[step.status] || step.status;
+  let html = `<strong>${escapeHtml(step.level_name)}</strong> — ${escapeHtml(step.approver_names || "-")} — <span class="mono">${label}</span>`;
+  if (step.acted_by_name) {
+    html += `<br><span class="muted">โดย ${escapeHtml(step.acted_by_name)} — ${formatDateTimeDMY(step.acted_at)}${step.acted_as_override ? " (Admin Override)" : ""}</span>`;
+  }
+  if (step.reason) {
+    html +=
+      step.status === "rejected"
+        ? `<br><span class="error">เหตุผล: ${escapeHtml(step.reason)}</span>`
+        : `<br><span class="muted">Comment: ${escapeHtml(step.reason)}</span>`;
+  }
+  return `<li class="step-${step.status}">${html}</li>`;
+}
+
+async function submitApprovalAction(kind, force = false, comment = undefined) {
+  const errEl = document.getElementById("approval-action-error");
+  errEl.classList.add("hidden");
+  let path = "";
+  let body = {};
+  if (kind === "approve-level") {
+    if (comment === undefined) comment = prompt("Comment (ถ้ามี — ไม่บังคับ):") || "";
+    path = `/prs/${PR_ID}/approve-level`;
+    body = { comment: comment || null, force };
+  } else if (kind === "reject-level") {
+    const reason = prompt("เหตุผลที่ปฏิเสธ:");
+    if (!reason) return;
+    path = `/prs/${PR_ID}/reject-level`;
+    body = { reason };
+  }
+
+  const res = await apiFetch(path, { method: "POST", body: JSON.stringify(body) });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    // Level สุดท้ายอนุมัติผ่าน = หักงบจริงทันที (ไม่มี FA Acknowledge คั่นแบบ AR) — เกินงบ
+    // ต้อง Confirm Force ตรงนี้เลย (Pattern เดียวกับ fa-acknowledge ของ AR)
+    if (kind === "approve-level" && res.status === 409 && !force && errBody.detail && typeof errBody.detail === "object") {
+      const d = errBody.detail;
+      const confirmForce = confirm(
+        `${d.message}\n\nงบประมาณ: ${d.budgeted_amount}  ใช้ไปแล้ว: ${d.used_amount}  คงเหลือ: ${d.balance}\n` +
+          `ยอดที่ขอ: ${d.requested_amount}  เกินไป: ${d.shortfall}\n\nยืนยันอนุมัติทั้งที่เกินงบ?`
+      );
+      if (confirmForce) await submitApprovalAction("approve-level", true, comment);
+      return;
+    }
+    errEl.textContent =
+      typeof errBody.detail === "string" ? errBody.detail : (errBody.detail && errBody.detail.message) || "ดำเนินการไม่สำเร็จ";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  await loadDetail();
+}
+
+function renderApprovalActions(bc, steps) {
+  const actionsEl = document.getElementById("approval-actions");
+  actionsEl.innerHTML = "";
+
+  if (bc.budget_approval_status === "pending") {
+    const step = steps.find((s) => s.level_no === bc.current_approval_level);
+    if (step && ME && ((step.approver_user_ids || []).includes(ME.id) || ME.is_admin)) {
+      actionsEl.innerHTML = `
+        <button type="button" id="approve-level-btn">Approve "${escapeHtml(step.level_name)}"</button>
+        <button type="button" class="secondary" id="reject-level-btn">Reject</button>
+      `;
+      document.getElementById("approve-level-btn").addEventListener("click", () => submitApprovalAction("approve-level"));
+      document.getElementById("reject-level-btn").addEventListener("click", () => submitApprovalAction("reject-level"));
+    }
+  }
+}
+
+async function loadApprovalProgress(bc) {
+  const card = document.getElementById("approval-card");
+  if (!bc || !bc.budget_approval_status || bc.budget_approval_status === "not_submitted") {
+    card.classList.add("hidden");
+    return [];
+  }
+  card.classList.remove("hidden");
+  document.getElementById("approval-action-error").classList.add("hidden");
+
+  const stepsEl = document.getElementById("approval-steps");
+  const res = await apiFetch(`/prs/${PR_ID}/approval-progress`);
+  if (!res.ok) {
+    stepsEl.innerHTML = '<li class="error">โหลดสถานะการอนุมัติไม่สำเร็จ</li>';
+    document.getElementById("approval-actions").innerHTML = "";
+    document.getElementById("budget-status-badge").innerHTML = budgetStatusBadge(bc.budget_approval_status, null);
+    return [];
+  }
+  const steps = await res.json();
+  // PRBudgetControlRead ไม่มี current_level_name แบบ ARRead (ไม่ได้ Resolve ที่ Backend
+  // ให้ — ดู Task #85 Pending Note) ต้องหาเองจาก Step ที่ level_no ตรงกับ
+  // current_approval_level แทน
+  const currentStep = steps.find((s) => s.level_no === bc.current_approval_level);
+  document.getElementById("budget-status-badge").innerHTML =
+    budgetStatusBadge(bc.budget_approval_status, currentStep ? currentStep.level_name : null) +
+    (bc.budget_overridden ? ' <span class="muted">(มีการอนุมัติแบบเกินงบประมาณ)</span>' : "");
+
+  stepsEl.innerHTML = steps.map(approvalStepHtml).join("");
+  renderApprovalActions(bc, steps);
+  return steps;
+}
+
+// ───────────────────────── เอกสารแนบ (Pattern เดียวกับ ar_detail.html) ─────────────────────────
+function fmtFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+let CURRENT_ATTACHMENTS = [];
+
+function attachmentHtml(a, pr, index) {
+  const canDelete = ME && (ME.id === a.uploaded_by_id || ME.id === pr.requested_by_id || ME.is_admin);
+  const delBtn = canDelete
+    ? ` <button type="button" class="secondary att-del-btn" data-id="${a.id}" style="padding:1px 8px; font-size:12px;">Remove</button>`
+    : "";
+  return `<li>
+    <a href="#" class="att-preview-link" data-index="${index}">${escapeHtml(a.file_name)}</a>
+    (${fmtFileSize(a.file_size)})${delBtn}
+    <br><span class="muted">โดย ${escapeHtml(a.uploaded_by_name || "-")} — ${formatDateTimeDMY(a.uploaded_at)}</span>
+  </li>`;
+}
+
+async function deleteAttachment(attachmentId) {
+  if (!confirm("ลบเอกสารแนบนี้?")) return;
+  const res = await apiFetch(`/prs/${PR_ID}/attachments/${attachmentId}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    alert(typeof body.detail === "string" ? body.detail : "ลบไม่สำเร็จ");
+    return;
+  }
+  await loadDetail();
+}
+
+async function loadAttachments(pr, steps) {
+  const listEl = document.getElementById("attachment-list");
+  const res = await apiFetch(`/prs/${PR_ID}/attachments`);
+  if (!res.ok) {
+    listEl.innerHTML = '<li class="error">โหลดเอกสารแนบไม่สำเร็จ</li>';
+    return;
+  }
+  const attachments = await res.json();
+  CURRENT_ATTACHMENTS = attachments;
+  listEl.innerHTML = attachments.length
+    ? attachments.map((a, i) => attachmentHtml(a, pr, i)).join("")
+    : '<li class="muted">ยังไม่มีเอกสารแนบ</li>';
+  listEl.querySelectorAll(".att-del-btn").forEach((btn) => {
+    btn.addEventListener("click", () => deleteAttachment(Number(btn.dataset.id)));
+  });
+  listEl.querySelectorAll(".att-preview-link").forEach((link) => {
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      openAttachmentLightbox(`/prs/${PR_ID}`, CURRENT_ATTACHMENTS, Number(link.dataset.index));
+    });
+  });
+
+  // เจ้าของ PR/Admin แนบได้เสมอ — ผู้อนุมัติ Level ปัจจุบันแนบได้เฉพาะช่วงที่กำลังรอ
+  // ตัดสินใจอยู่จริงเท่านั้น (ไม่มี FA ใน PR)
+  let canUpload = !!ME && (ME.id === pr.requested_by_id || ME.is_admin);
+  if (!canUpload && ME && pr.budget_control && pr.budget_control.budget_approval_status === "pending") {
+    const step = (steps || []).find((s) => s.level_no === pr.budget_control.current_approval_level);
+    if (step && (step.approver_user_ids || []).includes(ME.id)) canUpload = true;
+  }
+  document.getElementById("attachment-upload-row").classList.toggle("hidden", !canUpload);
+}
+
+async function uploadAttachmentFile(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await apiFetch(`/prs/${PR_ID}/attachments`, { method: "POST", body: formData });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    return { ok: false, fileName: file.name, error: body.detail || "อัปโหลดไม่สำเร็จ" };
+  }
+  return { ok: true };
+}
+
+document.getElementById("attachment-upload-btn").addEventListener("click", async () => {
+  const input = document.getElementById("attachment-file-input");
+  const errEl = document.getElementById("attachment-error");
+  errEl.classList.add("hidden");
+  const files = Array.from(input.files || []);
+  if (files.length === 0) return;
+  const btn = document.getElementById("attachment-upload-btn");
+  btn.disabled = true;
+  const errors = [];
+  for (const file of files) {
+    const result = await uploadAttachmentFile(file);
+    if (!result.ok) errors.push(`${result.fileName}: ${result.error}`);
+  }
+  btn.disabled = false;
+  input.value = "";
+  if (errors.length) {
+    errEl.textContent = errors.join(" / ");
+    errEl.classList.remove("hidden");
+  }
+  await loadDetail();
+});
+
+// อ่านยอดคงเหลือล่าสุดจาก /budget ตรงๆ (budget_no + department ของ bc) — แค่ Readout ช่วย
+// ดูประกอบเฉยๆ ไม่ใช่ยอดที่ใช้คำนวณจริง (ยอดจริงคำนวณที่ Server เสมอตอนกดอนุมัติ)
+async function loadLiveBalance(bc) {
+  const cell = document.getElementById("bc-live-balance");
+  cell.textContent = "-";
+  if (!bc.budget_no || !bc.budget_department) return;
+  const params = new URLSearchParams({ budget_no: bc.budget_no, department: bc.budget_department });
+  const res = await apiFetch("/budget?" + params.toString());
+  if (!res.ok) return;
+  const rows = await res.json();
+  if (rows.length > 0) cell.textContent = fmtMoney(rows[0].balance);
+}
+
+async function loadDetail() {
   const res = await apiFetch(`/prs/${PR_ID}`);
   if (!res.ok) {
     document.getElementById("loading").classList.add("hidden");
@@ -94,6 +357,7 @@ async function loadDetail(me) {
     return;
   }
   const pr = await res.json();
+  const bc = pr.budget_control;
 
   document.getElementById("pr-no").textContent = pr.revision ? `${pr.pr_no} Rev.${pr.revision}` : pr.pr_no;
   document.getElementById("pr-status-badge").innerHTML = statusBadge(pr.status);
@@ -115,36 +379,51 @@ async function loadDetail(me) {
     )
     .join("");
 
-  if (pr.budget_control) {
-    document.getElementById("budget-card").classList.remove("hidden");
-    const bc = pr.budget_control;
-    document.getElementById("bc-accounts").textContent =
-      `${bc.account_code_1 || "-"} / ${bc.account_code_2 || "-"}`;
-    document.getElementById("bc-budget").textContent = fmtMoney(bc.budget);
-    document.getElementById("bc-used").textContent = fmtMoney(bc.used_before_amount);
+  document.getElementById("budget-card").classList.toggle("hidden", !bc);
+  if (bc) {
+    document.getElementById("bc-budgetno").textContent = bc.budget_no || "-";
+    document.getElementById("bc-account").textContent = bc.account_code || "-";
+    document.getElementById("bc-department").textContent = bc.budget_department || "-";
     document.getElementById("bc-this").textContent = fmtMoney(bc.this_application);
-    document.getElementById("bc-balance").textContent = fmtMoney(bc.balance);
+    document.getElementById("bc-deducted-row").classList.toggle("hidden", bc.budget_approval_status !== "approved");
+    document.getElementById("bc-deducted").textContent = fmtMoney(bc.budget_deducted_amount);
+    document.getElementById("bc-overridden-note").classList.toggle("hidden", !bc.budget_overridden);
+    await loadLiveBalance(bc);
   }
 
-  // Scope Revision (Phase 9, 2026-09-03): เหลือแค่ 2 สถานะ ไม่มี Workflow อนุมัติใน
-  // ระบบแล้ว — draft แก้ไขได้/finalized ล็อกแล้ว (เปลี่ยนอัตโนมัติตอนพิมพ์/ดาวน์โหลด
-  // PDF ครั้งแรก ไม่ต้องกดปุ่มแยก)
-  if (pr.status === "draft") {
+  [
+    "edit-link",
+    "submit-approval-btn",
+    "pending-approval-note",
+    "finalized-note",
+    "superseded-note",
+    "rejected-note",
+    "revise-btn",
+  ].forEach((id) => document.getElementById(id).classList.add("hidden"));
+
+  const isRejected = !!bc && bc.budget_approval_status === "rejected";
+  const isSuperseded = !!pr.superseded_by_id;
+
+  if (pr.status === "draft" && !isRejected) {
     document.getElementById("edit-link").href = `/app/prs/${PR_ID}/edit`;
     document.getElementById("edit-link").classList.remove("hidden");
-  } else {
-    document.getElementById("finalized-note").classList.remove("hidden");
-    // Revise (2026-09-03): PR ที่ Finalized แล้วแก้ไขต่อไม่ได้ แต่ Revise เป็น PR
-    // ใหม่สถานะ Draft ได้ — เว้นแต่ฉบับนี้ถูก Revise ไปแล้ว (ให้ไป Revise จากฉบับ
-    // ล่าสุดแทน กันแตกสาขาหลายทาง)
-    if (pr.superseded_by_id) {
-      const link = document.getElementById("superseded-link");
-      link.href = `/app/prs/${pr.superseded_by_id}`;
-      link.textContent = `PR #${pr.superseded_by_id}`;
-      document.getElementById("superseded-note").classList.remove("hidden");
-    } else {
-      document.getElementById("revise-btn").classList.remove("hidden");
+    if (!bc || bc.budget_approval_status === "not_submitted") {
+      document.getElementById("submit-approval-btn").classList.remove("hidden");
+    } else if (bc.budget_approval_status === "pending") {
+      document.getElementById("pending-approval-note").classList.remove("hidden");
     }
+  }
+  if (pr.status === "finalized") {
+    document.getElementById("finalized-note").classList.remove("hidden");
+  }
+  if (isSuperseded) {
+    const link = document.getElementById("superseded-link");
+    link.href = `/app/prs/${pr.superseded_by_id}`;
+    link.textContent = `PR #${pr.superseded_by_id}`;
+    document.getElementById("superseded-note").classList.remove("hidden");
+  } else if (isRejected) {
+    document.getElementById("rejected-note").classList.remove("hidden");
+    document.getElementById("revise-btn").classList.remove("hidden");
   }
 
   if (pr.revised_from_id) {
@@ -152,6 +431,9 @@ async function loadDetail(me) {
     link.href = `/app/prs/${pr.revised_from_id}`;
     document.getElementById("revised-from-note").classList.remove("hidden");
   }
+
+  const steps = await loadApprovalProgress(bc);
+  await loadAttachments(pr, steps);
 
   document.getElementById("loading").classList.add("hidden");
   document.getElementById("pr-content").classList.remove("hidden");
@@ -172,14 +454,38 @@ async function loadHistory() {
     .join("");
 }
 
-// กดพิมพ์/ดาวน์โหลด PDF อาจทำให้ PR เปลี่ยนเป็น Finalized (ถ้ายังเป็น Draft อยู่) —
-// รีโหลดหน้านี้หลังกดสักครู่ เพื่อให้เห็นสถานะล่าสุด (ลิงก์เปิดแท็บใหม่ ไม่รีเฟรชเอง)
-document.getElementById("pdf-link").addEventListener("click", () => {
-  setTimeout(() => window.location.reload(), 1500);
+document.getElementById("submit-approval-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("submit-approval-btn");
+  const errEl = document.getElementById("submit-approval-error");
+  errEl.classList.add("hidden");
+  btn.disabled = true;
+  const res = await apiFetch(`/prs/${PR_ID}/submit-for-approval`, { method: "POST", body: JSON.stringify({}) });
+  btn.disabled = false;
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 409 && body.detail && typeof body.detail === "object") {
+      const d = body.detail;
+      const confirmForce = confirm(
+        `${d.message}\n\nงบประมาณ: ${d.budgeted_amount}  ใช้ไปแล้ว: ${d.used_amount}  คงเหลือ: ${d.balance}\n` +
+          `ยอดที่ขอ: ${d.requested_amount}  เกินไป: ${d.shortfall}\n\nยืนยันส่งขออนุมัติทั้งที่เกินงบ?`
+      );
+      if (confirmForce) {
+        btn.disabled = true;
+        const forced = await apiFetch(`/prs/${PR_ID}/submit-for-approval`, { method: "POST", body: JSON.stringify({ force: true }) });
+        btn.disabled = false;
+        if (forced.ok) {
+          await loadDetail();
+          return;
+        }
+      }
+    }
+    errEl.textContent = typeof body.detail === "string" ? body.detail : "ส่งขออนุมัติไม่สำเร็จ";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  await loadDetail();
 });
 
-// สร้าง Revision จาก PR ที่ Finalized แล้ว — คัดลอกข้อมูลเป็น PR ใหม่สถานะ Draft
-// (เลขเดิม + Rev ต่อท้าย) แล้วพาไปหน้าแก้ไขทันที (Feedback จริงจากผู้ใช้ 2026-09-03)
 document.getElementById("revise-btn").addEventListener("click", async () => {
   const btn = document.getElementById("revise-btn");
   btn.disabled = true;
@@ -195,9 +501,9 @@ document.getElementById("revise-btn").addEventListener("click", async () => {
 });
 
 (async () => {
-  const me = await requireLogin();
-  if (!me) return;
-  await loadDetail(me);
+  ME = await requireLogin();
+  if (!ME) return;
+  await loadDetail();
   await loadHistory();
 })();
 </script>

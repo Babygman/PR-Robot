@@ -60,7 +60,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.deps import get_current_user, require_can_view_pr
+from app.core.deps import get_current_user, require_can_view_approvals, require_can_view_pr
 from app.db.session import get_db
 from app.models import (
     AuditLog,
@@ -73,7 +73,13 @@ from app.models import (
     User,
 )
 from app.schemas.budget import BudgetRejectBody
-from app.schemas.pr_budget import PRApprovalProgressStep, PRApproveLevelBody, PRSubmitBody
+from app.schemas.pr_budget import (
+    PRApprovalProgressStep,
+    PRApproveLevelBody,
+    PRMyApprovalCounts,
+    PRMyApprovalItem,
+    PRSubmitBody,
+)
 from app.schemas.purchasing_requisition import (
     AuditLogRead,
     PRCreate,
@@ -279,6 +285,59 @@ def list_prs(
         .limit(limit)
         .all()
     )
+
+
+@router.get("/my-approvals/counts", response_model=PRMyApprovalCounts)
+def get_my_pr_approval_counts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_can_view_approvals),
+) -> PRMyApprovalCounts:
+    """เติมเลข Badge ทั้ง 4 หมวดที่ Sidebar Submenu "My PR Approvals" (base.html) — เรียก
+    ทุกหน้าที่มีเมนูนี้โชว์อยู่ ไม่ใช่แค่หน้า PR My Approvals เอง (Pattern เดียวกับ
+    get_my_approval_counts ของ AR)"""
+    return PRMyApprovalCounts(**pr_budget_workflow.count_my_approvals(db, current_user))
+
+
+def _to_pr_my_approval_item(
+    db: Session, pr: PurchasingRequisition, names: dict[int, str], actor: User
+) -> PRMyApprovalItem:
+    bc = pr.budget_control
+    level_name = pr_budget_workflow.resolve_current_level_name(db, bc) if bc else None
+    pr_no_display = f"{pr.pr_no} Rev.{pr.revision}" if pr.revision else str(pr.pr_no)
+
+    return PRMyApprovalItem(
+        id=pr.id,
+        pr_no=pr.pr_no,
+        pr_no_display=pr_no_display,
+        revision=pr.revision,
+        section=pr.section,
+        division=pr.division,
+        doc_date=pr.doc_date,
+        budget_department=bc.budget_department if bc else None,
+        budget_approval_status=bc.budget_approval_status
+        if bc
+        else PRBudgetApprovalStatus.NOT_SUBMITTED,
+        current_approval_level=bc.current_approval_level if bc else None,
+        current_level_name=level_name,
+        requested_by_id=pr.requested_by_id,
+        requested_by_name=names.get(pr.requested_by_id),
+        actionable=pr_budget_workflow.is_pr_actionable_by(db, pr, actor),
+        created_at=pr.created_at,
+    )
+
+
+@router.get("/my-approvals", response_model=list[PRMyApprovalItem])
+def list_my_pr_approvals_route(
+    bucket: str = Query(..., pattern="^(waiting|mine|history|returned)$"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_can_view_approvals),
+) -> list[PRMyApprovalItem]:
+    prs = pr_budget_workflow.list_my_approvals(db, current_user, bucket)
+    page = prs[offset : offset + limit]
+    names = resolve_user_names(db, {pr.requested_by_id for pr in page})
+    return [_to_pr_my_approval_item(db, pr, names, current_user) for pr in page]
 
 
 @router.get("/{pr_id}", response_model=PRRead)

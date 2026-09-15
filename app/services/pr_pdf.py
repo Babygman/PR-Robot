@@ -21,8 +21,15 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.orm import Session
 from weasyprint import HTML
 
-from app.models import BudgetMaster, PurchasingRequisition
+from app.models import BudgetMaster, PRStatus, PurchasingRequisition
+from app.services import pr_budget_workflow
 from app.services.user_lookup import resolve_user_names
+
+# 4 ชื่อ Rank ที่ตรงกับตาราง "Authority" ในฟอร์มจริง (pr_form.html) — Pattern เดียวกับ
+# _AUTHORITY_RANKS ของ ar_pdf.py ทุกประการ (ยืนยันกับผู้ใช้แล้ว 2026-09-15 ให้ PR ใช้
+# รายชื่อตำแหน่งตายตัวชุดเดียวกับ AR) — Level ที่ตั้งชื่อไม่ตรงจะไม่ถูก Auto-fill ลงตาราง
+# Authority (ไม่ Error/ไม่ Crash แค่ไม่มีลายเซ็นแสดงในช่องนั้น)
+_AUTHORITY_RANKS = ["President / Director", "General Manager", "Senior Manager", "Manager"]
 
 _TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
 _MIN_DISPLAY_ROWS = 6
@@ -61,9 +68,6 @@ def _fmt_date(value) -> str:
 
 
 def _resolve_names(db: Session, pr: PurchasingRequisition) -> dict[str, str | None]:
-    # Scope Revision (Phase 9, 2026-09-03): เหลือแค่ Requested by — Reviewed/Approved/
-    # Received by ตัดออกจากระบบแล้ว (ลายเซ็นสดบนกระดาษ ดู pr_form.html ช่อง sign-box
-    # ที่เหลือ 3 ช่องนั้นเป็นช่องว่างเสมอ ไม่ผูกกับข้อมูลในระบบอีกต่อไป)
     names = resolve_user_names(db, {pr.requested_by_id})
     return {"requested_by_name": names.get(pr.requested_by_id)}
 
@@ -119,9 +123,9 @@ def render_pr_html(db: Session, pr: PurchasingRequisition) -> str:
         pass
 
     # Phase 11 (2026-09-15): budget/used_before_amount/balance ไม่ Denormalize เก็บใน
-    # pr_budget_control แล้ว — อ่านสดจาก budget_master ผ่าน budget_master_id แทน (ยังไม่
-    # มีค่าจนกว่า Phase 2 จะเพิ่ม Endpoint Submit ที่ Resolve budget_no -> budget_master_id
-    # จริง — ตอนนี้จะว่างเปล่าเสมอ ไม่ใช่บั๊ก)
+    # pr_budget_control แล้ว — อ่านสดจาก budget_master ผ่าน budget_master_id แทน (Resolve
+    # จริงตอนกด "ส่งขออนุมัติ" — ดู pr_budget_workflow.start_budget_workflow — ว่างเปล่า
+    # เฉพาะ PR ที่ยังไม่เคยกดส่งขออนุมัติเลยเท่านั้น)
     budget_view = _BudgetView()
     bc = pr.budget_control
     budget_view.budget_no = bc.budget_no if bc and bc.budget_no else ""
@@ -137,10 +141,29 @@ def render_pr_html(db: Session, pr: PurchasingRequisition) -> str:
         budget_view.used_before_amount = ""
         budget_view.balance = ""
 
+    # PR Approval Level (Phase 11 Phase 4, 2026-09-15): Auto-fill ตาราง Authority จาก
+    # Workflow อนุมัติดิจิทัลจริง (เดิม Hardcode ว่างเปล่าไว้เซ็นสดตาม Scope Revision
+    # Phase 9) — Pattern เดียวกับ ar_pdf.py ทุกประการ แต่ไม่มี fa_signature (PR ไม่มี FA
+    # Acknowledge) และ Step ของ build_approval_progress ไม่มี step_type (ทุกแถวเป็น
+    # Level เสมอ) — เติมทีละแถวทันทีที่ Level นั้นอนุมัติผ่านจริง ไม่ต้องรอครบทุก Level
+    authority_signatures: dict[str, dict[str, str]] = {}
+    if pr.status == PRStatus.FINALIZED:
+        for step in pr_budget_workflow.build_approval_progress(db, pr):
+            if step["status"] != "approved":
+                continue
+            if step["level_name"] not in _AUTHORITY_RANKS:
+                continue
+            authority_signatures[step["level_name"]] = {
+                "name": step["acted_by_name"] or "",
+                "date": _fmt_date(step["acted_at"]),
+                "comment": step["reason"] or "",
+            }
+
     return template.render(
         pr=pr_view,
         display_items=display_items,
         budget=budget_view,
+        authority_signatures=authority_signatures,
         generated_at=_now_str(),
     )
 

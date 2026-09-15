@@ -87,6 +87,11 @@ def page_my_approvals(request: Request):
     return templates.TemplateResponse(request=request, name="ar_my_approvals.html", context={})
 
 
+@router.get("/pr-my-approvals")
+def page_pr_my_approvals(request: Request):
+    return templates.TemplateResponse(request=request, name="pr_my_approvals.html", context={})
+
+
 @router.get("/ai-usage")
 def page_ai_usage(request: Request):
     return templates.TemplateResponse(request=request, name="ai_usage.html", context={})
@@ -112,6 +117,11 @@ def page_users(request: Request):
 @router.get("/budget-levels")
 def page_budget_levels(request: Request):
     return templates.TemplateResponse(request=request, name="budget_levels.html", context={})
+
+
+@router.get("/pr-approval-levels")
+def page_pr_approval_levels(request: Request):
+    return templates.TemplateResponse(request=request, name="pr_approval_levels.html", context={})
 
 
 @router.get("/budget")

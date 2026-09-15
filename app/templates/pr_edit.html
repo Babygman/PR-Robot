@@ -37,12 +37,23 @@
     </label>
     <div id="budget-fields" class="hidden">
       <div class="row">
+        <div class="field" style="flex:2;">
+          <label for="bc-budget-select">Select Budget (Budget No. ของแผนกคุณ)</label>
+          <select id="bc-budget-select"><option value="">— Select, or enter Budget No. below —</option></select>
+        </div>
+      </div>
+      <div class="row">
         <div class="field"><label for="bc-budgetno">Budget No.</label><input type="text" id="bc-budgetno"></div>
+        <div class="field"><label for="bc-account">Account Code</label><input type="text" id="bc-account" readonly></div>
+        <div class="field"><label for="bc-balance">Balance (คงเหลือปัจจุบัน)</label><input type="text" id="bc-balance" readonly></div>
         <div class="field"><label for="bc-this">This Application</label><input type="text" id="bc-this"></div>
       </div>
-      <!-- Phase 11 (2026-09-15): Dropdown เลือก Budget No. + Auto-fill Account Code/
-           Balance (Pattern เดียวกับ ar_edit.html) เป็น Phase 3-4 ของรอบ PR Approval
-           Level — ตอนนี้ยังเป็นช่องกรอก Budget No. เปล่าๆ ก่อน -->
+      <p class="muted" style="font-size:12px;">
+        เลือก Budget No. จาก Dropdown ด้านบนจะ Auto-fill "Account Code" และ "Balance" (คงเหลือ ณ ขณะนี้)
+        ให้ดูประกอบการกรอก — Account Code ตัวจริงที่บันทึกลง PR จะ Snapshot จาก Budget No. ที่ตรงกัน
+        อีกครั้งตอนกด "ส่งขออนุมัติ" เสมอ (ไม่ได้ส่งค่าจากช่องนี้ตรงๆ) ยังพิมพ์ Budget No. เองได้ถ้ายัง
+        ไม่เจอในรายการ (เช่น แผนก/รหัสนั้นยังไม่ได้ Upload Excel เข้ามา)
+      </p>
     </div>
   </div>
 
@@ -95,6 +106,51 @@ document.getElementById("add-item-btn").addEventListener("click", () => addItemR
 
 document.getElementById("has-budget").addEventListener("change", (e) => {
   document.getElementById("budget-fields").classList.toggle("hidden", !e.target.checked);
+});
+
+// PR Approval Level Phase 4 (2026-09-15): Dropdown ช่วยเลือก Budget No. ที่มีอยู่แล้วใน
+// ระบบ (Pattern เดียวกับ ar_edit.html แต่ไม่มี budget_type Expenses/Assets เพราะ PR ไม่มี
+// แนวคิดนี้ — Filter แค่ Department ของผู้ Login เอง) ยังกรอก Budget No. เป็น Text อิสระ
+// ได้เหมือนเดิมเผื่อแผนกนั้นยังไม่ได้ Upload Excel เข้ามา — Account Code/Balance ในนี้เป็น
+// แค่ Readout ช่วยดูประกอบ ไม่ได้ส่งเป็น Payload (Server Snapshot เองจริงตอน Submit)
+let PR_BUDGET_OPTIONS = [];
+
+function fmtMoneyPr(v) {
+  if (v === null || v === undefined) return "-";
+  return Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+async function loadPrBudgetOptions(department) {
+  const select = document.getElementById("bc-budget-select");
+  select.innerHTML = '<option value="">— Select, or enter Budget No. below —</option>';
+  if (!department) return;
+  const params2 = new URLSearchParams({ department });
+  const res = await apiFetch("/budget?" + params2.toString());
+  if (!res.ok) return;
+  PR_BUDGET_OPTIONS = await res.json();
+  PR_BUDGET_OPTIONS.forEach((b) => {
+    const opt = document.createElement("option");
+    opt.value = b.id;
+    opt.textContent = `${b.budget_no} — ${b.account_code}${b.budget_name ? " / " + b.budget_name : ""} (Balance ${fmtMoneyPr(b.balance)})`;
+    select.appendChild(opt);
+  });
+}
+
+function applyPrBudgetReadout(budgetNo) {
+  const chosen = PR_BUDGET_OPTIONS.find((b) => b.budget_no === budgetNo);
+  document.getElementById("bc-account").value = chosen ? chosen.account_code : "";
+  document.getElementById("bc-balance").value = chosen ? fmtMoneyPr(chosen.balance) : "";
+}
+
+document.getElementById("bc-budget-select").addEventListener("change", (e) => {
+  const chosen = PR_BUDGET_OPTIONS.find((b) => String(b.id) === e.target.value);
+  if (!chosen) return;
+  document.getElementById("bc-budgetno").value = chosen.budget_no;
+  applyPrBudgetReadout(chosen.budget_no);
+});
+
+document.getElementById("bc-budgetno").addEventListener("input", (e) => {
+  applyPrBudgetReadout(e.target.value.trim());
 });
 
 // รวม product_name / description / color เป็น Description บรรทัดเดียว ตรงตาม
@@ -229,6 +285,7 @@ async function loadForEdit() {
     document.getElementById("budget-fields").classList.remove("hidden");
     document.getElementById("bc-budgetno").value = pr.budget_control.budget_no || "";
     document.getElementById("bc-this").value = pr.budget_control.this_application ?? "";
+    applyPrBudgetReadout(pr.budget_control.budget_no || "");
   }
   document.getElementById("source-doc-card").classList.add("hidden"); // แก้ไขเอกสารที่ผูกไว้ ทำใน Phase หน้า
   return true;
@@ -300,6 +357,7 @@ bindDateFieldsIn(document);
   if (!me) return;
 
   await loadSourceDocuments();
+  await loadPrBudgetOptions(me.department);
 
   if (PR_ID) {
     const ok = await loadForEdit();
