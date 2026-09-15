@@ -37,7 +37,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
@@ -72,6 +72,8 @@ from app.schemas.purchasing_requisition import AuditLogRead
 from app.services import budget_workflow
 from app.services.ar_numbering import allocate_ar_no, format_ar_no
 from app.services.ar_pdf import render_ar_pdf
+from app.services.audit_signature import build_signer_snapshot
+from app.services.system_log import get_client_ip
 from app.services.user_lookup import resolve_user_names
 
 router = APIRouter(prefix="/ars", tags=["approval-requests"])
@@ -510,6 +512,7 @@ def revise_ar(
 @router.post("/{ar_id}/submit-for-approval", response_model=ARRead)
 def submit_ar_for_approval(
     ar_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ARRead:
@@ -537,9 +540,15 @@ def submit_ar_for_approval(
         ar.status = ARStatus.FINALIZED
         detail["auto_finalized"] = "no_levels_configured"
 
+    client_ip = get_client_ip(request)
+    detail["signer"] = build_signer_snapshot(current_user)
     db.add(
         AuditLog(
-            ar_id=ar.id, action="ar.submitted_for_approval", actor_id=current_user.id, detail=detail
+            ar_id=ar.id,
+            action="ar.submitted_for_approval",
+            actor_id=current_user.id,
+            detail=detail,
+            ip_address=client_ip,
         )
     )
     if ar.status == ARStatus.FINALIZED:
@@ -550,7 +559,12 @@ def submit_ar_for_approval(
                 ar_id=ar.id,
                 action="ar.finalized",
                 actor_id=current_user.id,
-                detail={"trigger": "submit_for_approval", "reason": "no_levels_configured"},
+                detail={
+                    "trigger": "submit_for_approval",
+                    "reason": "no_levels_configured",
+                    "signer": detail["signer"],
+                },
+                ip_address=client_ip,
             )
         )
     db.commit()
@@ -592,6 +606,7 @@ def get_ar_approval_progress(
 @router.post("/{ar_id}/approve-level", response_model=ARRead)
 def approve_ar_level(
     ar_id: int,
+    request: Request,
     body: BudgetApproveLevelBody = BudgetApproveLevelBody(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -600,12 +615,15 @@ def approve_ar_level(
     level_before = ar.current_approval_level
     was_draft = ar.status == ARStatus.DRAFT
     budget_workflow.approve_level(db, ar, current_user, comment=body.comment)
+    client_ip = get_client_ip(request)
+    signer = build_signer_snapshot(current_user)
     db.add(
         AuditLog(
             ar_id=ar.id,
             action="ar.budget_level_approved",
             actor_id=current_user.id,
-            detail={"level_no": level_before, "comment": body.comment},
+            detail={"level_no": level_before, "comment": body.comment, "signer": signer},
+            ip_address=client_ip,
         )
     )
     if was_draft and ar.status == ARStatus.FINALIZED:
@@ -616,7 +634,8 @@ def approve_ar_level(
                 ar_id=ar.id,
                 action="ar.finalized",
                 actor_id=current_user.id,
-                detail={"trigger": "level_approved", "level_no": level_before},
+                detail={"trigger": "level_approved", "level_no": level_before, "signer": signer},
+                ip_address=client_ip,
             )
         )
     db.commit()
@@ -628,6 +647,7 @@ def approve_ar_level(
 def reject_ar_level(
     ar_id: int,
     body: BudgetRejectBody,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ARRead:
@@ -639,7 +659,12 @@ def reject_ar_level(
             ar_id=ar.id,
             action="ar.budget_level_rejected",
             actor_id=current_user.id,
-            detail={"level_no": level_before, "reason": body.reason},
+            detail={
+                "level_no": level_before,
+                "reason": body.reason,
+                "signer": build_signer_snapshot(current_user),
+            },
+            ip_address=get_client_ip(request),
         )
     )
     db.commit()
@@ -651,6 +676,7 @@ def reject_ar_level(
 def fa_acknowledge_ar(
     ar_id: int,
     body: BudgetFaAcknowledgeBody,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ARRead:
@@ -667,7 +693,9 @@ def fa_acknowledge_ar(
                 else None,
                 "overridden": ar.budget_overridden,
                 "comment": body.comment,
+                "signer": build_signer_snapshot(current_user),
             },
+            ip_address=get_client_ip(request),
         )
     )
     db.commit()
@@ -679,6 +707,7 @@ def fa_acknowledge_ar(
 def reject_ar_fa(
     ar_id: int,
     body: BudgetRejectBody,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ARRead:
@@ -689,7 +718,8 @@ def reject_ar_fa(
             ar_id=ar.id,
             action="ar.budget_fa_rejected",
             actor_id=current_user.id,
-            detail={"reason": body.reason},
+            detail={"reason": body.reason, "signer": build_signer_snapshot(current_user)},
+            ip_address=get_client_ip(request),
         )
     )
     db.commit()

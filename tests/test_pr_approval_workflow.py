@@ -14,7 +14,7 @@ from decimal import Decimal
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models import PRApprovalLevel, User
+from app.models import AuditLog, PRApprovalLevel, User
 from tests.test_budget_control import _make_budget_master, _make_user
 from tests.test_purchasing_requisitions import _login, _sample_pr_body
 
@@ -569,3 +569,69 @@ def test_admin_sees_all_pending_in_my_pr_approvals_waiting(
     assert [i["id"] for i in waiting] == [created["id"]]
     counts = client.get("/prs/my-approvals/counts").json()
     assert counts["waiting"] == 1
+
+
+# ───────────────────────── Electronic Signature Hardening (Design §3.2) ─────────────────────────
+def test_signing_actions_record_ip_and_signer_snapshot(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    """ทุกจุดที่เป็นการ "เซ็น" จริง (submit/approve-level/reject-level/finalized) ต้องมี
+    ip_address ไม่ว่าง และ detail["signer"] เป็น Snapshot ชื่อ/อีเมล/ตำแหน่ง/แผนกของผู้เซ็น
+    ณ ขณะกระทำจริง — แก้ User ภายหลังไม่ควรกระทบ Snapshot เก่านี้"""
+    manager = _make_user(
+        db_session,
+        name="Sig Mgr PR",
+        email="sigmgrpr@example.com",
+        department="Production",
+        position="Manager",
+    )
+    _make_pr_level(
+        db_session,
+        department="Production",
+        level_no=1,
+        level_name="Manager",
+        approver_user_id=manager.id,
+    )
+    _pr_budget_master(db_session)
+
+    _login(client)
+    created = client.post("/prs", json=_sample_pr_body()).json()
+    pr_id = created["id"]
+    submitted = client.post(f"/prs/{pr_id}/submit-for-approval")
+    assert submitted.status_code == 200, submitted.text
+
+    _login_as(client, manager.email)
+    approved = client.post(f"/prs/{pr_id}/approve-level")
+    assert approved.status_code == 200, approved.text
+
+    logs = {
+        log.action: log
+        for log in db_session.query(AuditLog).filter(AuditLog.pr_id == pr_id).all()
+    }
+    for action in (
+        "pr.submitted_for_approval",
+        "pr.budget_level_approved",
+        "pr.finalized",
+    ):
+        assert action in logs, f"missing audit log: {action}"
+        log = logs[action]
+        assert log.ip_address, f"{action} ต้องมี ip_address"
+        signer = log.detail.get("signer")
+        assert signer is not None, f"{action} ต้องมี signer snapshot"
+        assert signer["name"]
+        assert signer["email"]
+
+    # เปลี่ยนชื่อ/ตำแหน่งผู้อนุมัติภายหลัง — Snapshot เก่าต้องไม่เปลี่ยนตาม
+    db_session.refresh(manager)
+    manager.name = "Renamed Mgr PR"
+    manager.position = "Renamed Position"
+    db_session.commit()
+
+    db_session.expire_all()
+    approved_log = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.pr_id == pr_id, AuditLog.action == "pr.budget_level_approved")
+        .one()
+    )
+    assert approved_log.detail["signer"]["name"] == "Sig Mgr PR"
+    assert approved_log.detail["signer"]["position"] == "Manager"

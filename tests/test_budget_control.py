@@ -16,7 +16,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
-from app.models import ApprovalRequest, ARBudgetType, BudgetApprovalLevel, BudgetMaster, User
+from app.models import (
+    ApprovalRequest,
+    ARBudgetType,
+    AuditLog,
+    BudgetApprovalLevel,
+    BudgetMaster,
+    User,
+)
 from app.services.ar_pdf import render_ar_html
 from tests.test_approval_requests import _sample_ar_body
 
@@ -434,6 +441,79 @@ def test_two_level_then_fa_acknowledge_deducts_budget_once(
     assert "Manager A" in html
     assert "GM A" in html
     assert "FA A" in html
+
+
+# ───────────────────────── Electronic Signature Hardening (Design §3.2) ─────────────────────────
+def test_ar_signing_actions_record_ip_and_signer_snapshot(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    """ทุกจุดที่เป็นการ "เซ็น" จริงของ AR (submit/approve-level/finalized/fa_acknowledged)
+    ต้องมี ip_address ไม่ว่าง และ detail["signer"] เป็น Snapshot ชื่อ/อีเมล/ตำแหน่ง/แผนก
+    ของผู้เซ็น ณ ขณะกระทำจริง — แก้ User ภายหลังไม่ควรกระทบ Snapshot เก่านี้"""
+    manager = _make_user(
+        db_session,
+        name="Sig Mgr AR",
+        email="sigmgrar@example.com",
+        department="Production",
+        position="Manager",
+    )
+    fa = _make_user(
+        db_session, name="Sig FA AR", email="sigfaar@example.com", is_fa=True, position="FA Staff"
+    )
+    _make_level(
+        db_session,
+        department="Production",
+        level_no=1,
+        level_name="Manager",
+        approver_user_id=manager.id,
+    )
+    _make_budget_master(db_session)
+
+    _login_as(client, plain_user.email, "plainpass123")
+    created = client.post("/ars", json=_sample_ar_body()).json()
+    ar_id = created["id"]
+    _submit_for_approval(client, ar_id)
+
+    _login_as(client, manager.email)
+    approved = client.post(f"/ars/{ar_id}/approve-level")
+    assert approved.status_code == 200, approved.text
+
+    _login_as(client, fa.email)
+    acked = client.post(f"/ars/{ar_id}/fa-acknowledge", json={"force": False})
+    assert acked.status_code == 200, acked.text
+
+    logs = {
+        log.action: log
+        for log in db_session.query(AuditLog).filter(AuditLog.ar_id == ar_id).all()
+    }
+    for action in (
+        "ar.submitted_for_approval",
+        "ar.budget_level_approved",
+        "ar.finalized",
+        "ar.budget_fa_acknowledged",
+    ):
+        assert action in logs, f"missing audit log: {action}"
+        log = logs[action]
+        assert log.ip_address, f"{action} ต้องมี ip_address"
+        signer = log.detail.get("signer")
+        assert signer is not None, f"{action} ต้องมี signer snapshot"
+        assert signer["name"]
+        assert signer["email"]
+
+    # เปลี่ยนชื่อ/ตำแหน่งผู้อนุมัติภายหลัง — Snapshot เก่าต้องไม่เปลี่ยนตาม
+    db_session.refresh(manager)
+    manager.name = "Renamed Mgr AR"
+    manager.position = "Renamed Position"
+    db_session.commit()
+
+    db_session.expire_all()
+    approved_log = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.ar_id == ar_id, AuditLog.action == "ar.budget_level_approved")
+        .one()
+    )
+    assert approved_log.detail["signer"]["name"] == "Sig Mgr AR"
+    assert approved_log.detail["signer"]["position"] == "Manager"
 
 
 # ───────────────────────── Admin Override ─────────────────────────

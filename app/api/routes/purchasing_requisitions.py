@@ -56,7 +56,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
@@ -88,8 +88,10 @@ from app.schemas.purchasing_requisition import (
     PRUpdate,
 )
 from app.services import pr_budget_workflow
+from app.services.audit_signature import build_signer_snapshot
 from app.services.pr_numbering import allocate_pr_no
 from app.services.pr_pdf import render_pr_pdf
+from app.services.system_log import get_client_ip
 from app.services.user_lookup import resolve_user_names
 
 router = APIRouter(prefix="/prs", tags=["purchasing-requisitions"])
@@ -541,6 +543,7 @@ def get_pr_pdf(
 @router.post("/{pr_id}/submit-for-approval", response_model=PRRead)
 def submit_pr_for_approval(
     pr_id: int,
+    request: Request,
     body: PRSubmitBody = PRSubmitBody(),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_can_view_pr),
@@ -577,9 +580,15 @@ def submit_pr_for_approval(
             pr.status = PRStatus.FINALIZED
             detail["auto_finalized"] = "no_levels_configured"
 
+    client_ip = get_client_ip(request)
+    detail["signer"] = build_signer_snapshot(current_user)
     db.add(
         AuditLog(
-            pr_id=pr.id, action="pr.submitted_for_approval", actor_id=current_user.id, detail=detail
+            pr_id=pr.id,
+            action="pr.submitted_for_approval",
+            actor_id=current_user.id,
+            detail=detail,
+            ip_address=client_ip,
         )
     )
     if pr.status == PRStatus.FINALIZED:
@@ -590,7 +599,12 @@ def submit_pr_for_approval(
                 pr_id=pr.id,
                 action="pr.finalized",
                 actor_id=current_user.id,
-                detail={"trigger": "submit_for_approval", "reason": detail.get("auto_finalized")},
+                detail={
+                    "trigger": "submit_for_approval",
+                    "reason": detail.get("auto_finalized"),
+                    "signer": build_signer_snapshot(current_user),
+                },
+                ip_address=client_ip,
             )
         )
     db.commit()
@@ -611,6 +625,7 @@ def get_pr_approval_progress(
 @router.post("/{pr_id}/approve-level", response_model=PRRead)
 def approve_pr_level(
     pr_id: int,
+    request: Request,
     body: PRApproveLevelBody = PRApproveLevelBody(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -623,12 +638,15 @@ def approve_pr_level(
     level_before = pr.budget_control.current_approval_level if pr.budget_control else None
     was_draft = pr.status == PRStatus.DRAFT
     pr_budget_workflow.approve_level(db, pr, current_user, comment=body.comment, force=body.force)
+    client_ip = get_client_ip(request)
+    signer = build_signer_snapshot(current_user)
     db.add(
         AuditLog(
             pr_id=pr.id,
             action="pr.budget_level_approved",
             actor_id=current_user.id,
-            detail={"level_no": level_before, "comment": body.comment},
+            detail={"level_no": level_before, "comment": body.comment, "signer": signer},
+            ip_address=client_ip,
         )
     )
     if was_draft and pr.status == PRStatus.FINALIZED:
@@ -637,7 +655,8 @@ def approve_pr_level(
                 pr_id=pr.id,
                 action="pr.finalized",
                 actor_id=current_user.id,
-                detail={"trigger": "level_approved", "level_no": level_before},
+                detail={"trigger": "level_approved", "level_no": level_before, "signer": signer},
+                ip_address=client_ip,
             )
         )
     db.commit()
@@ -649,6 +668,7 @@ def approve_pr_level(
 def reject_pr_level(
     pr_id: int,
     body: BudgetRejectBody,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> PRRead:
@@ -660,7 +680,12 @@ def reject_pr_level(
             pr_id=pr.id,
             action="pr.budget_level_rejected",
             actor_id=current_user.id,
-            detail={"level_no": level_before, "reason": body.reason},
+            detail={
+                "level_no": level_before,
+                "reason": body.reason,
+                "signer": build_signer_snapshot(current_user),
+            },
+            ip_address=get_client_ip(request),
         )
     )
     db.commit()
