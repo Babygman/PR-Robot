@@ -38,6 +38,11 @@ class SourceDocument(Base):
         ForeignKey("approval_requests.id", ondelete="SET NULL")
     )
     file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    # ชื่อไฟล์จริงตอน Upload (2026-09-15, Feedback: หน้าเลือกเอกสารก่อนหน้านี้โชว์ชื่อไฟล์
+    # แบบ UUID ที่ระบบตั้งให้ตอนเก็บ ไม่ใช่ชื่อไฟล์เดิมที่ผู้ใช้อัปโหลดมา ทำให้แยกไม่ออกว่า
+    # ไฟล์ไหนคือไฟล์อะไร) Nullable เพราะเอกสารเก่าก่อนรอบนี้ไม่มีค่านี้ — หน้าเว็บ Fallback
+    # ไปใช้ชื่อจาก file_path เหมือนเดิมถ้าเป็น None
+    original_filename: Mapped[str | None] = mapped_column(String(255))
     doc_type: Mapped[SourceDocType | None] = mapped_column(
         # values_callable: เหตุผลเดียวกับ PRStatus ใน purchasing_requisition.py —
         # บังคับเก็บ .value ("quotation") ไม่ใช่ .name ("QUOTATION") ให้ตรงกับ Native

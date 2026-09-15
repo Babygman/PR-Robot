@@ -149,6 +149,7 @@ async def upload_document(
 
     document = SourceDocument(
         file_path=str(stored_path),
+        original_filename=file.filename,
         doc_type=doc_type,
         uploaded_by_id=current_user.id,
     )

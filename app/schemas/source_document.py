@@ -54,6 +54,7 @@ class SourceDocumentRead(BaseModel):
     id: int
     pr_id: int | None
     file_path: str
+    original_filename: str | None = None
     doc_type: SourceDocType | None
     uploaded_by_id: int
     uploaded_at: datetime

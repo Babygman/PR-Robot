@@ -89,7 +89,7 @@ function docResultRowHtml(doc, errorMsg) {
     return `<div class="item-row">
       <label style="display:flex; align-items:center; gap:6px;">
         <input type="checkbox" class="doc-checkbox" disabled style="width:auto;">
-        <strong>${escapeHtml(doc?.file_path?.split("/").pop() || "ไฟล์")}</strong>
+        <strong>${escapeHtml(doc?.original_filename || doc?.file_path?.split("/").pop() || "ไฟล์")}</strong>
       </label>
       <div class="error">อัปโหลดไม่สำเร็จ: ${escapeHtml(errorMsg)}</div>
     </div>`;
@@ -107,7 +107,7 @@ function docResultRowHtml(doc, errorMsg) {
     <div class="row">
       <label style="display:flex; align-items:center; gap:6px; flex: 2;">
         <input type="checkbox" class="doc-checkbox" value="${doc.id}" checked style="width:auto;">
-        <strong>#${doc.id} — ${escapeHtml(doc.file_path.split("/").pop())}</strong>
+        <strong>#${doc.id} — ${escapeHtml(doc.original_filename || doc.file_path.split("/").pop())}</strong>
       </label>
       <div class="field">
         <label>Document Type</label>

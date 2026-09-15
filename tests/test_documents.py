@@ -97,6 +97,9 @@ def test_upload_success_stores_extraction(client: TestClient, plain_user: User, 
         assert res.status_code == 201
         body = res.json()
         assert body["doc_type"] == "quotation"
+        # Feedback 2026-09-15: หน้าเลือกเอกสารต้องโชว์ชื่อไฟล์เดิมที่ผู้ใช้อัปโหลดมา ไม่ใช่
+        # ชื่อไฟล์ UUID ที่ระบบตั้งให้ตอนเก็บ (ดู file_path ที่ยังเป็น UUID เหมือนเดิม)
+        assert body["original_filename"] == "q.pdf"
         assert body["extraction_error"] is None
         assert body["ai_extraction_raw_json"]["vendor_name"] == "บริษัท ทดสอบ จำกัด"
         assert body["ai_extraction_raw_json"]["items"][0]["product_name"] == "SILICONE PAPER"
