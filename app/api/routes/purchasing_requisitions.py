@@ -4,34 +4,52 @@ Requested by = ผู้ใช้ที่ Login ตอนสร้าง PR เ
 
 Scope Revision (Phase 9, 2026-09-03): ตัด Workflow อนุมัติในระบบออกทั้งหมด (เดิม
 draft->reviewed->approved->received) ตาม Feedback จริงจาก Product Owner ว่า Design
-เดิมผิดตั้งแต่แรก — ดูตัวอย่าง PR จริงที่ส่งมาใน docs/00_KICKOFF_AND_DESIGN.md แล้ว
-พบว่า Reviewed/Approved/Received by เป็นลายเซ็นสดบนกระดาษที่พิมพ์ออกไปใช้งานนอกระบบ
-ล้วนๆ ไม่มีการอนุมัติในระบบเลย เหลือ 2 สถานะ: draft (แก้ไขได้) / finalized (ล็อกแล้ว)
-เปลี่ยนอัตโนมัติตอนกดพิมพ์/ดาวน์โหลด PDF ครั้งแรก ไม่ต้องกดปุ่มแยก
+เดิมผิดตั้งแต่แรก — เหลือ 2 สถานะ: draft (แก้ไขได้) / finalized (ล็อกแล้ว)
+
+PR Approval Level (Phase 11, 2026-09-15): กลับมามี Workflow อนุมัติงบในระบบอีกครั้ง —
+Pattern เดียวกับ AR (app/services/budget_workflow.py) แต่แยกตาราง Level/Audit Trail
+เต็มรูปแบบ (PRApprovalLevel/PRBudgetApproval ไม่ใช่ BudgetApprovalLevel/ARBudgetApproval
+ของ AR) และต่าง 3 จุดตามที่ยืนยันกับผู้ใช้แล้ว (ดู Docstring บนสุดของ
+app/services/pr_budget_workflow.py): ไม่มี FA Acknowledge, ไม่มีขั้น Received แยก, PR
+ที่ไม่มี budget_control เลย Finalize ทันทีตอนกด "ส่งขออนุมัติ" ไม่มี Workflow เลย
 
 Flow:
 1. POST /prs -> สร้าง PR ใหม่ (Status = draft) รับ source_document_ids ได้หลายรายการ
    (AI สกัดจากหลายเอกสารมารวมเป็น Item เดียวกันได้ — Scope Revision Phase 9)
 2. GET /prs (รองรับค้นหา/กรอง), GET /prs/{id} -> ดูรายการ/รายละเอียด PR
-3. PATCH /prs/{id} -> แก้ไขได้เฉพาะตอน Status = draft เท่านั้น
-4. GET /prs/{id}/pdf -> Generate PDF ตาม Template จริงของฟอร์ม FM-PU-02 — เปลี่ยน
-   Status เป็น finalized อัตโนมัติถ้ายังเป็น draft (ล็อกแก้ไขไม่ได้อีกหลังจากนี้)
-5. GET /prs/{id}/history -> ประวัติการกระทำทั้งหมดของ PR นี้จาก audit_log
+3. PATCH /prs/{id} -> แก้ไขได้เฉพาะตอน Status = draft และไม่ได้ถูก Reject มา (Phase 11) —
+   ถ้ากำลังรอ Level อนุมัติอยู่ (pending) การแก้ไขจะยกเลิกคำขออนุมัติที่ค้างอยู่อัตโนมัติ
+4. POST /prs/{id}/submit-for-approval -> (Phase 11, ใหม่) เริ่ม Workflow อนุมัติงบ ถ้าไม่มี
+   budget_control เลย Finalize ทันที ถ้ามีแต่แผนกไม่มี Level ตั้งไว้ หักงบจริงทันที +
+   Finalize เช่นกัน (ไม่มี FA Acknowledge คั่นแบบ AR) นอกนั้นเข้าคิวรอ Level 1
+5. GET /prs/{id}/pdf -> Generate PDF อย่างเดียว ไม่มีผลข้างเคียงใดๆ อีกต่อไป (Phase 11 —
+   เดิม Finalize อัตโนมัติตอนพิมพ์ครั้งแรก ย้ายไป submit-for-approval แทนแล้ว เหมือน AR
+   Correction 2026-09-10)
+6. POST /prs/{id}/revise -> Revise ได้ 2 กรณี (Phase 11 Hybrid Gate — ดู revise_pr):
+   PR ที่ไม่เคยมี budget_control เลย ยังคง Gate ด้วย status == Finalized แบบเดิม ส่วน PR
+   ที่มี budget_control ต้อง Gate ด้วย budget_approval_status == Rejected แทน (ไม่เกี่ยว
+   กับ pr.status อีกต่อไป เพราะถูก Reject ที่ Level แรกอาจไม่เคยถึง Finalized เลยก็ได้)
+7. GET /prs/{id}/history -> ประวัติการกระทำทั้งหมดของ PR นี้จาก audit_log
 
-Full RBAC (Correction 2026-09-10): PR ไม่มี Workflow อนุมัติในระบบ (ดู Scope Revision
-Phase 9 ด้านบน) จึงไม่มีผู้ใช้อื่นที่มีเหตุผลอันชอบธรรมต้องดู PR ของคนอื่น นอกจาก Admin/
-can_view_all_pr — ทุก Route ที่รับ pr_id จึงบังคับเช็ค Access เหมือนกันหมด (ต่างจาก AR
-ที่มีผู้อนุมัติต้องดู AR ของคนอื่นได้) ผู้ใช้ที่ติ๊ก can_view_pr เห็น/แก้ไข/พิมพ์ได้เฉพาะ PR
-ที่ตัวเองสร้าง (requested_by_id ตรงกับตัวเอง) เท่านั้น — can_view_all_pr ขยายให้เห็นทั้งหมด
-แต่ไม่ได้แปลว่าสร้าง PR ใหม่ได้ (create_pr ต้อง is_admin หรือ can_view_pr เท่านั้น)
+Full RBAC (Correction 2026-09-10, ขยาย Phase 11): ผู้ใช้ที่ติ๊ก can_view_pr เห็น/แก้ไข/
+พิมพ์ได้เฉพาะ PR ที่ตัวเองสร้าง (requested_by_id ตรงกับตัวเอง) เท่านั้น — can_view_all_pr
+ขยายให้เห็นทั้งหมด แต่ไม่ได้แปลว่าสร้าง PR ใหม่ได้ (create_pr ต้อง is_admin หรือ
+can_view_pr เท่านั้น) Phase 11 เพิ่มเหตุผลชอบธรรมใหม่อีกข้อ: ผู้อนุมัติ Level ปัจจุบันที่
+กำลังรอ PR ใบนั้นอยู่ ดูได้แม้ไม่มี can_view_pr/can_view_all_pr เลยก็ตาม (ดู
+_check_pr_view_access) — แต่ไม่ได้ทำให้ RBAC ของ PR เปิดกว้างเท่า AR (ที่ไม่เช็ค Ownership
+เลย) ยังคงจำกัดเฉพาะเจ้าของ/Admin/can_view_all_pr/ผู้อนุมัติ Level ปัจจุบันเท่านั้น
 
 Correction 2 (แยก ALL ตาม PR/AR, 2026-09-10): "เห็นทั้งหมด" ไม่ได้แปลว่า "แก้ไขทั้งหมด" —
 แยก Access เป็น 2 ระดับ:
-- _check_pr_view_access: Admin, can_view_all_pr, หรือเจ้าของ — ใช้กับ get_pr/get_pr_history
-  (แค่ "ดู" อย่างเดียว)
-- _check_pr_edit_access: Admin หรือเจ้าของเท่านั้น (ไม่รวม can_view_all_pr) — ใช้กับ
-  update_pr/revise_pr/get_pr_pdf (แก้ไข/สร้าง Revision/พิมพ์ ซึ่งพิมพ์ครั้งแรก = Finalize
-  ล็อกเอกสาร ถือเป็นการกระทำต่อ PR โดยตรง ไม่ใช่แค่ดูเฉยๆ)
+- _check_pr_view_access: Admin, can_view_all_pr, เจ้าของ, หรือผู้อนุมัติ Level ปัจจุบัน
+  (Phase 11) — ใช้กับ get_pr/get_pr_history/get_pr_approval_progress (แค่ "ดู" อย่างเดียว)
+- _check_pr_edit_access: Admin หรือเจ้าของเท่านั้น (ไม่รวม can_view_all_pr/ผู้อนุมัติ) —
+  ใช้กับ update_pr/revise_pr/get_pr_pdf/submit_pr_for_approval (แก้ไข/สร้าง Revision/
+  พิมพ์/เริ่ม Workflow ถือเป็นการกระทำต่อ PR โดยตรง ไม่ใช่แค่ดูเฉยๆ)
+- approve_pr_level/reject_pr_level: ไม่เช็คทั้งสองแบบข้างบน (ผู้อนุมัติ Level อาจไม่มี
+  can_view_pr/can_view_all_pr เลยก็ได้ — เป็นคนละ Role กัน) ใช้แค่ Login (get_current_user)
+  แล้วปล่อยให้ pr_budget_workflow._check_level_actor เช็ค Authorization เอง (Pattern
+  เดียวกับ approve_ar_level/reject_ar_level ของ AR ทุกประการ)
 """
 
 from __future__ import annotations
@@ -42,10 +60,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.deps import require_can_view_pr
+from app.core.deps import get_current_user, require_can_view_pr
 from app.db.session import get_db
 from app.models import (
     AuditLog,
+    PRBudgetApprovalStatus,
     PRBudgetControl,
     PRItem,
     PRStatus,
@@ -53,6 +72,8 @@ from app.models import (
     SourceDocument,
     User,
 )
+from app.schemas.budget import BudgetRejectBody
+from app.schemas.pr_budget import PRApprovalProgressStep, PRApproveLevelBody, PRSubmitBody
 from app.schemas.purchasing_requisition import (
     AuditLogRead,
     PRCreate,
@@ -60,6 +81,7 @@ from app.schemas.purchasing_requisition import (
     PRRead,
     PRUpdate,
 )
+from app.services import pr_budget_workflow
 from app.services.pr_numbering import allocate_pr_no
 from app.services.pr_pdf import render_pr_pdf
 from app.services.user_lookup import resolve_user_names
@@ -115,16 +137,20 @@ def _get_pr_or_404(db: Session, pr_id: int) -> PurchasingRequisition:
     return pr
 
 
-def _check_pr_view_access(pr: PurchasingRequisition, user: User) -> None:
-    """ดู PR ได้ — Admin, can_view_all_pr (เห็น PR ทั้งหมด), หรือเจ้าของ (ดู Docstring
-    บนสุดของไฟล์นี้: Correction 2 — "เห็นทั้งหมด" ครอบคลุมแค่การ "ดู" เท่านั้น)"""
+def _check_pr_view_access(db: Session, pr: PurchasingRequisition, user: User) -> None:
+    """ดู PR ได้ — Admin, can_view_all_pr (เห็น PR ทั้งหมด), เจ้าของ, หรือ (Phase 11)
+    ผู้อนุมัติ Level ปัจจุบันที่กำลังรอ PR ใบนี้อยู่ (ดู Docstring บนสุดของไฟล์นี้:
+    Correction 2 — "เห็นทั้งหมด" ครอบคลุมแค่การ "ดู" เท่านั้น)"""
     if user.is_admin or user.can_view_all_pr:
         return
-    if pr.requested_by_id != user.id:
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN,
-            "คุณไม่มีสิทธิ์เข้าถึง PR ฉบับนี้ (เห็นได้เฉพาะ PR ที่ตัวเองสร้าง)",
-        )
+    if pr.requested_by_id == user.id:
+        return
+    if pr_budget_workflow.is_current_level_approver(db, pr, user):
+        return
+    raise HTTPException(
+        status.HTTP_403_FORBIDDEN,
+        "คุณไม่มีสิทธิ์เข้าถึง PR ฉบับนี้ (เห็นได้เฉพาะ PR ที่ตัวเองสร้าง หรือที่รอตัวเองอนุมัติ)",
+    )
 
 
 def _check_pr_edit_access(pr: PurchasingRequisition, user: User) -> None:
@@ -257,10 +283,15 @@ def list_prs(
 
 @router.get("/{pr_id}", response_model=PRRead)
 def get_pr(
-    pr_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_can_view_pr)
+    pr_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ) -> PRRead:
+    """Phase 11 (2026-09-15): เปลี่ยนจาก require_can_view_pr เป็น get_current_user เฉยๆ —
+    ผู้อนุมัติ Level ปัจจุบันอาจไม่มี can_view_pr/can_view_all_pr เลยก็ได้ (เป็นคนละ Role
+    กัน) ถ้ายังใช้ require_can_view_pr อยู่จะโดนบล็อกตั้งแต่ Dependency ก่อนถึง
+    _check_pr_view_access ที่ Extend ไว้ให้แล้วด้วยซ้ำ — Authorization จริงทำใน
+    _check_pr_view_access ทั้งหมด (Pattern เดียวกับ get_ar ของ AR)"""
     pr = _get_pr_or_404(db, pr_id)
-    _check_pr_view_access(pr, current_user)
+    _check_pr_view_access(db, pr, current_user)
     return _to_pr_read(db, pr)
 
 
@@ -271,15 +302,42 @@ def update_pr(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_can_view_pr),
 ) -> PRRead:
+    """แก้ไข PR — Phase 11 (2026-09-15): พิมพ์/ดาวน์โหลด PDF ไม่ Lock อีกต่อไป (ดู
+    get_pr_pdf) เอกสารจึงแก้ได้ตราบใดที่ยังเป็น Draft และไม่ได้ถูก Reject มา (Reject
+    แล้วต้องผ่าน Revise เท่านั้น — ดู revise_pr) ถ้ากำลังรอ Level อนุมัติอยู่ตอนแก้
+    (budget_approval_status == pending) ถือว่ายกเลิกคำขออนุมัติที่ค้างอยู่โดยอัตโนมัติ
+    กัน Level เห็นข้อมูลเก่าที่ถูกแก้ไปแล้วโดยไม่รู้ตัว — ต้องกด "ส่งขออนุมัติ" ใหม่
+    (Pattern เดียวกับ update_ar ของ AR ทุกประการ)"""
     pr = _get_pr_or_404(db, pr_id)
     _check_pr_edit_access(pr, current_user)
     if pr.status != PRStatus.DRAFT:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "แก้ไขได้เฉพาะ PR ที่ยังเป็นสถานะ Draft เท่านั้น (Finalized แล้วแก้ไม่ได้)"
         )
+    bc = pr.budget_control
+    if bc is not None and bc.budget_approval_status == PRBudgetApprovalStatus.REJECTED:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            'PR นี้ถูกปฏิเสธไปแล้ว แก้ไขตรงๆ ไม่ได้ — กรุณาใช้ปุ่ม "สร้าง Revision" แทน',
+        )
+
+    approval_cancelled = (
+        bc is not None and bc.budget_approval_status == PRBudgetApprovalStatus.PENDING
+    )
+    if approval_cancelled:
+        pr_budget_workflow.reset_for_new_draft(bc)
 
     _apply_items_and_budget(pr, body)
     db.add(AuditLog(pr_id=pr.id, action="pr.updated", actor_id=current_user.id, detail=None))
+    if approval_cancelled:
+        db.add(
+            AuditLog(
+                pr_id=pr.id,
+                action="pr.approval_cancelled_by_edit",
+                actor_id=current_user.id,
+                detail={"reason": "แก้ไข PR ระหว่างรอ Level อนุมัติ — ยกเลิกคำขออนุมัติที่ค้างอยู่อัตโนมัติ"},
+            )
+        )
     db.commit()
     db.refresh(pr)
     return _to_pr_read(db, pr)
@@ -291,17 +349,31 @@ def revise_pr(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_can_view_pr),
 ) -> PRRead:
-    """สร้าง PR ใหม่สถานะ Draft คัดลอกข้อมูลจาก PR ต้นฉบับที่ Finalized แล้ว เพื่อแก้ไข
-    ต่อโดยไม่ไปรื้อของเดิมที่พิมพ์/เซ็นกระดาษไปแล้ว (Feedback จริงจากผู้ใช้ 2026-09-03)
+    """สร้าง PR ใหม่สถานะ Draft คัดลอกข้อมูลจาก PR ต้นฉบับ เพื่อแก้ไขต่อโดยไม่ไปรื้อของเดิม
+    (Feedback จริงจากผู้ใช้ 2026-09-03)
 
     เลข PR ใช้เลขเดิม + Rev ต่อท้าย (revision +1 จากฉบับล่าสุดของ pr_no นี้ — เผื่อกรณี
     Revise ซ้ำหลายรอบ) — requested_by คงเป็นคนเดิม (เป็น PR เดียวกันที่แก้ไข ไม่ใช่คำขอ
     ใหม่) ส่วนคนที่กด Revise จริงบันทึกแยกไว้ใน Audit Log (actor_id)
-    """
+
+    Hybrid Gate (Phase 11, 2026-09-15): PR ที่ไม่เคยมี budget_control เลย (ไม่เคยติ๊ก
+    "Has Budget Control") ไม่เคยผ่าน Workflow อนุมัติใดๆ เลย — คง Gate เดิมไว้คือ Revise
+    ได้ต่อเมื่อ status == Finalized (พิมพ์แล้ว) เท่านั้น ส่วน PR ที่มี budget_control ต้อง
+    Gate ด้วย budget_approval_status == Rejected แทน (Pattern เดียวกับ revise_ar) เพราะ
+    ถูก Level ไหนก็ได้ Reject มา ไม่จำเป็นต้องเคยถึง Finalized เลยก็ได้ (approve_level
+    เท่านั้นที่ทำให้ pr.status เป็น Finalized ไม่ใช่ reject_level)"""
     original = _get_pr_or_404(db, pr_id)
     _check_pr_edit_access(original, current_user)
-    if original.status != PRStatus.FINALIZED:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Revise ได้เฉพาะ PR ที่ Finalized แล้วเท่านั้น")
+    bc = original.budget_control
+    if bc is None:
+        if original.status != PRStatus.FINALIZED:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "Revise ได้เฉพาะ PR ที่ Finalized แล้วเท่านั้น"
+            )
+    elif bc.budget_approval_status != PRBudgetApprovalStatus.REJECTED:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Revise ได้เฉพาะ PR ที่ถูกปฏิเสธ (Rejected) แล้วเท่านั้น"
+        )
 
     already_superseded = (
         db.query(PurchasingRequisition.id)
@@ -344,16 +416,19 @@ def revise_pr(
         )
         for item in original.items
     ]
-    if original.budget_control is not None:
-        bc = original.budget_control
+    if bc is not None:
         # Phase 11 (2026-09-15): คัดลอกแค่ budget_no/this_application (Input เดิมของ
         # ผู้ใช้) — Field Workflow อนุมัติ (budget_approval_status/account_code/
         # budget_master_id/ฯลฯ) รีเซ็ตเป็นค่าเริ่มต้นเสมอ (Pattern เดียวกับ AR
-        # reset_for_new_draft: Revise ต้องเข้าคิว Level 1 ใหม่หมด ไม่ข้าม Level เดิม)
-        new_pr.budget_control = PRBudgetControl(
+        # reset_for_new_draft: Revise ต้องเข้าคิว Level 1 ใหม่หมด ไม่ข้าม Level เดิม) —
+        # คืนยอดงบทันทีถ้าต้นฉบับเคย Approved แล้ว (หักยอดไปแล้วจริง)
+        pr_budget_workflow.refund_on_revise(db, original)
+        new_bc = PRBudgetControl(
             budget_no=bc.budget_no,
             this_application=bc.this_application,
         )
+        pr_budget_workflow.reset_for_new_draft(new_bc)
+        new_pr.budget_control = new_bc
 
     db.add(new_pr)
     db.flush()  # ให้ new_pr.id พร้อมใช้ก่อน Commit
@@ -389,24 +464,12 @@ def get_pr_pdf(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_can_view_pr),
 ) -> Response:
+    """Phase 11 (2026-09-15): พิมพ์/ดาวน์โหลด PDF ไม่มีผลข้างเคียงต่อ PR อีกต่อไป (เดิม
+    Finalize อัตโนมัติตอนพิมพ์ครั้งแรก — ย้ายไป submit_pr_for_approval แทนแล้ว Pattern
+    เดียวกับ AR Correction 2026-09-10 ทุกประการ) พิมพ์ดูกี่ครั้งก็ได้ไม่ว่าจะสถานะไหน"""
     pr = _get_pr_or_404(db, pr_id)
     _check_pr_edit_access(pr, current_user)
     pdf_bytes = render_pr_pdf(db, pr)
-
-    # Scope Revision (Phase 9, 2026-09-03): กดพิมพ์/ดาวน์โหลด PDF ครั้งแรกคือจุดที่
-    # ล็อก PR ไม่ให้แก้ไขได้อีก (แทน Workflow Review/Approve/Receive เดิม) — Generate
-    # สำเร็จก่อนค่อย Finalize เพื่อไม่ให้ PR ถูกล็อกถ้า Render PDF พังกลางทาง
-    if pr.status == PRStatus.DRAFT:
-        pr.status = PRStatus.FINALIZED
-        db.add(
-            AuditLog(
-                pr_id=pr.id,
-                action="pr.finalized",
-                actor_id=current_user.id,
-                detail={"trigger": "pdf_download"},
-            )
-        )
-        db.commit()
 
     rev_suffix = f"-Rev{pr.revision}" if pr.revision else ""
     return Response(
@@ -416,12 +479,142 @@ def get_pr_pdf(
     )
 
 
+@router.post("/{pr_id}/submit-for-approval", response_model=PRRead)
+def submit_pr_for_approval(
+    pr_id: int,
+    body: PRSubmitBody = PRSubmitBody(),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_can_view_pr),
+) -> PRRead:
+    """Phase 11 (2026-09-15): จุดเริ่ม Workflow อนุมัติงบ — PR ยังเป็น Draft แก้ไขได้อยู่
+    หลังกดปุ่มนี้ (ดู update_pr สำหรับ Logic ยกเลิกคำขออนุมัติอัตโนมัติถ้าแก้ระหว่างรออยู่)
+    จะ Finalized (ล็อกแก้ไข) ก็ต่อเมื่อ Level แรกอนุมัติผ่านจริง (ดู
+    pr_budget_workflow.approve_level) ยกเว้น 2 กรณี Finalize ทันทีตอนกดปุ่มนี้เลย: (1) PR
+    นี้ไม่มี budget_control เลย (ไม่เคยติ๊ก "Has Budget Control") หรือ (2) แผนกยังไม่ได้
+    ตั้ง Level อนุมัติเลยสักคน (หักงบจริงทันทีในนี้เลย — ไม่มี FA Acknowledge คั่นแบบ AR)"""
+    pr = _get_pr_or_404(db, pr_id)
+    _check_pr_edit_access(pr, current_user)
+    if pr.status != PRStatus.DRAFT:
+        raise HTTPException(status.HTTP_409_CONFLICT, "PR นี้ Finalized ไปแล้ว")
+
+    bc = pr.budget_control
+    detail: dict = {"trigger": "submit_for_approval"}
+
+    if bc is None or not bc.budget_no:
+        # ไม่มี budget_control เลย — Finalize ทันที ไม่มี Workflow อนุมัติ (ยืนยันกับ
+        # ผู้ใช้แล้ว 2026-09-15 — ดู Docstring บนสุดของ pr_budget_workflow.py ข้อ 3)
+        pr.status = PRStatus.FINALIZED
+        detail["auto_finalized"] = "no_budget_control"
+    else:
+        if bc.budget_approval_status != PRBudgetApprovalStatus.NOT_SUBMITTED:
+            raise HTTPException(status.HTTP_409_CONFLICT, "PR นี้ถูกส่งขออนุมัติไปแล้ว")
+        requester = db.get(User, pr.requested_by_id)
+        pr_budget_workflow.start_budget_workflow(
+            db, bc, requester, pr.doc_date or date.today(), force=body.force
+        )
+        if bc.budget_approval_status == PRBudgetApprovalStatus.APPROVED:
+            # แผนกนี้ไม่มี Level อนุมัติเลย — หักงบจริงทันทีใน start_budget_workflow แล้ว
+            # ไม่มี Level 1 ให้รอ จึง Finalize ทันที (ดู Docstring บนสุดของฟังก์ชันนี้)
+            pr.status = PRStatus.FINALIZED
+            detail["auto_finalized"] = "no_levels_configured"
+
+    db.add(
+        AuditLog(
+            pr_id=pr.id, action="pr.submitted_for_approval", actor_id=current_user.id, detail=detail
+        )
+    )
+    if pr.status == PRStatus.FINALIZED:
+        # Log แยก "pr.finalized" ไว้ให้เห็นชัดในประวัติเหมือน Path ที่ Finalize ผ่านการ
+        # อนุมัติ Level (ดู approve_pr_level) — Consistency ของ Audit Trail ทั้ง 2 ทาง
+        db.add(
+            AuditLog(
+                pr_id=pr.id,
+                action="pr.finalized",
+                actor_id=current_user.id,
+                detail={"trigger": "submit_for_approval", "reason": detail.get("auto_finalized")},
+            )
+        )
+    db.commit()
+    db.refresh(pr)
+    return _to_pr_read(db, pr)
+
+
+@router.get("/{pr_id}/approval-progress", response_model=list[PRApprovalProgressStep])
+def get_pr_approval_progress(
+    pr_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+) -> list[PRApprovalProgressStep]:
+    pr = _get_pr_or_404(db, pr_id)
+    _check_pr_view_access(db, pr, current_user)
+    steps = pr_budget_workflow.build_approval_progress(db, pr)
+    return [PRApprovalProgressStep(**s) for s in steps]
+
+
+@router.post("/{pr_id}/approve-level", response_model=PRRead)
+def approve_pr_level(
+    pr_id: int,
+    body: PRApproveLevelBody = PRApproveLevelBody(),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PRRead:
+    """ไม่เช็ค _check_pr_view_access/_check_pr_edit_access — ผู้อนุมัติ Level อาจไม่มี
+    can_view_pr/can_view_all_pr เลยก็ได้ (เป็นคนละ Role กัน) ปล่อยให้
+    pr_budget_workflow._check_level_actor เช็ค Authorization เอง (Pattern เดียวกับ
+    approve_ar_level ของ AR ทุกประการ)"""
+    pr = _get_pr_or_404(db, pr_id)
+    level_before = pr.budget_control.current_approval_level if pr.budget_control else None
+    was_draft = pr.status == PRStatus.DRAFT
+    pr_budget_workflow.approve_level(db, pr, current_user, comment=body.comment, force=body.force)
+    db.add(
+        AuditLog(
+            pr_id=pr.id,
+            action="pr.budget_level_approved",
+            actor_id=current_user.id,
+            detail={"level_no": level_before, "comment": body.comment},
+        )
+    )
+    if was_draft and pr.status == PRStatus.FINALIZED:
+        db.add(
+            AuditLog(
+                pr_id=pr.id,
+                action="pr.finalized",
+                actor_id=current_user.id,
+                detail={"trigger": "level_approved", "level_no": level_before},
+            )
+        )
+    db.commit()
+    db.refresh(pr)
+    return _to_pr_read(db, pr)
+
+
+@router.post("/{pr_id}/reject-level", response_model=PRRead)
+def reject_pr_level(
+    pr_id: int,
+    body: BudgetRejectBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PRRead:
+    pr = _get_pr_or_404(db, pr_id)
+    level_before = pr.budget_control.current_approval_level if pr.budget_control else None
+    pr_budget_workflow.reject_level(db, pr, current_user, body.reason)
+    db.add(
+        AuditLog(
+            pr_id=pr.id,
+            action="pr.budget_level_rejected",
+            actor_id=current_user.id,
+            detail={"level_no": level_before, "reason": body.reason},
+        )
+    )
+    db.commit()
+    db.refresh(pr)
+    return _to_pr_read(db, pr)
+
+
 @router.get("/{pr_id}/history", response_model=list[AuditLogRead])
 def get_pr_history(
-    pr_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_can_view_pr)
+    pr_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ) -> list[AuditLogRead]:
     pr = _get_pr_or_404(db, pr_id)  # 404 ถ้าไม่มี PR นี้จริง
-    _check_pr_view_access(pr, current_user)
+    _check_pr_view_access(db, pr, current_user)
     logs = (
         db.query(AuditLog).filter(AuditLog.pr_id == pr_id).order_by(AuditLog.timestamp.asc()).all()
     )

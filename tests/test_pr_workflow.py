@@ -1,10 +1,14 @@
 """Test สถานะ PR (Draft/Finalized) + ประวัติ/ค้นหา (Phase 6, ปรับปรุงตาม Scope
 Revision Phase 9, 2026-09-03)
 
-Scope Revision: ไม่มี Workflow อนุมัติในระบบอีกต่อไป (Reviewed/Approved/Received
-เป็นการเซ็นชื่อสดบนกระดาษที่พิมพ์ออกไปทั้งหมด) เหลือแค่ 2 สถานะ: draft (แก้ไขได้)
-และ finalized (ล็อกอัตโนมัติเมื่อกด Print/Download PDF ครั้งแรก — ดู
-test_purchasing_requisitions.py::test_get_pr_pdf_auto_finalizes_on_first_download)
+Scope Revision Phase 9: เหลือแค่ 2 สถานะ: draft (แก้ไขได้) และ finalized (ล็อกแล้ว)
+
+PR Approval Level (Phase 11, 2026-09-15): จุด Finalize ย้ายจาก "พิมพ์/ดาวน์โหลด PDF
+ครั้งแรก" ไปเป็น POST /prs/{id}/submit-for-approval แทนแล้ว (พิมพ์ดูกี่ครั้งก็ได้ไม่มีผล
+ข้างเคียงอีกต่อไป — ดู test_purchasing_requisitions.py::test_get_pr_pdf_does_not_finalize)
+ไฟล์นี้ใช้ budget_control=None (ไม่มี Budget Control เลย) จึง Finalize ทันทีตอน Submit
+ไม่มี Workflow อนุมัติเข้ามาเกี่ยวข้อง (ดู tests/test_pr_approval_workflow.py สำหรับ Case
+ที่มี Budget Control)
 """
 from __future__ import annotations
 
@@ -59,12 +63,12 @@ def test_pr_created_as_draft_with_only_requested_by(client: TestClient, plain_us
 
 def test_pr_history_records_creation_and_finalize(client: TestClient, plain_user: User):
     created = _create_pr_as_plain(client)
-    client.get(f"/prs/{created['id']}/pdf")
+    client.post(f"/prs/{created['id']}/submit-for-approval")
 
     history = client.get(f"/prs/{created['id']}/history")
     assert history.status_code == 200
     actions = [h["action"] for h in history.json()]
-    assert actions == ["pr.created", "pr.finalized"]
+    assert actions == ["pr.created", "pr.submitted_for_approval", "pr.finalized"]
 
 
 def test_list_prs_search_by_q(client: TestClient, plain_user: User):
@@ -94,7 +98,7 @@ def test_list_prs_filter_by_status(client: TestClient, plain_user: User):
     _login_as(client, "plain@example.com", "plainpass123")
     draft = client.post("/prs", json=_sample_pr_body()).json()
     finalized = client.post("/prs", json=_sample_pr_body()).json()
-    client.get(f"/prs/{finalized['id']}/pdf")
+    client.post(f"/prs/{finalized['id']}/submit-for-approval")
 
     res = client.get("/prs", params={"status_filter": "finalized"})
     assert res.status_code == 200

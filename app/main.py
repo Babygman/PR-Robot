@@ -16,6 +16,8 @@ from app.api.routes.budget import router as budget_router
 from app.api.routes.budget_levels import router as budget_levels_router
 from app.api.routes.documents import router as documents_router
 from app.api.routes.pages import router as pages_router
+from app.api.routes.pr_approval_levels import router as pr_approval_levels_router
+from app.api.routes.pr_attachments import router as pr_attachments_router
 from app.api.routes.purchasing_requisitions import router as prs_router
 from app.api.routes.system_log import router as system_log_router
 from app.api.routes.term_of_payment import router as term_of_payment_router
@@ -30,6 +32,8 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(documents_router)
 app.include_router(prs_router)
+app.include_router(pr_attachments_router)
+app.include_router(pr_approval_levels_router)
 app.include_router(ars_router)
 app.include_router(ar_attachments_router)
 app.include_router(audit_logs_router)

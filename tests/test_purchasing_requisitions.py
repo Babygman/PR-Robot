@@ -172,9 +172,10 @@ def test_get_pr_pdf_returns_valid_pdf(client: TestClient, plain_user: User):
     assert len(res.content) > 1000
 
 
-def test_get_pr_pdf_auto_finalizes_on_first_download(
-    client: TestClient, plain_user: User, db_session: Session
-):
+def test_get_pr_pdf_does_not_finalize(client: TestClient, plain_user: User, db_session: Session):
+    """Phase 11 (2026-09-15): พิมพ์/ดาวน์โหลด PDF ไม่มีผลข้างเคียงต่อ PR อีกต่อไป (ย้าย
+    จุด Finalize ไป submit-for-approval แทนแล้ว — Pattern เดียวกับ AR Correction
+    2026-09-10 ทุกประการ) พิมพ์ดูกี่ครั้งก็ได้ ยังเป็น Draft เหมือนเดิม"""
     _login(client)
     created = client.post("/prs", json=_sample_pr_body()).json()
 
@@ -185,9 +186,8 @@ def test_get_pr_pdf_auto_finalizes_on_first_download(
     assert res.status_code == 200
 
     db_session.refresh(pr)
-    assert pr.status == PRStatus.FINALIZED
+    assert pr.status == PRStatus.DRAFT
 
-    # ครั้งที่สองยังดาวน์โหลดได้ปกติ (ไม่ error แม้ Finalized แล้ว)
     res2 = client.get(f"/prs/{created['id']}/pdf")
     assert res2.status_code == 200
 
@@ -195,7 +195,7 @@ def test_get_pr_pdf_auto_finalizes_on_first_download(
 def test_finalized_pr_rejects_edit(client: TestClient, plain_user: User, db_session: Session):
     _login(client)
     created = client.post("/prs", json=_sample_pr_body()).json()
-    client.get(f"/prs/{created['id']}/pdf")
+    client.post(f"/prs/{created['id']}/submit-for-approval")
 
     res = client.patch(f"/prs/{created['id']}", json=_sample_pr_body(remark="แก้ไม่ได้แล้ว"))
     assert res.status_code == 409
@@ -215,9 +215,12 @@ def test_revise_draft_pr_rejected(client: TestClient, plain_user: User):
 
 
 def test_revise_finalized_pr_creates_draft_copy(client: TestClient, plain_user: User):
+    """Hybrid Gate (Phase 11): PR นี้ไม่มี budget_control เลย — ยังใช้ Gate เดิม (Revise
+    ได้เมื่อ Finalized แล้วเท่านั้น) เหมือน Scope Revision Phase 9 ทุกประการ — Case ที่มี
+    budget_control (Gate ด้วย Rejected แทน) ดู tests/test_pr_approval_workflow.py"""
     _login(client)
-    original = client.post("/prs", json=_sample_pr_body()).json()
-    client.get(f"/prs/{original['id']}/pdf")
+    original = client.post("/prs", json=_sample_pr_body(budget_control=None)).json()
+    client.post(f"/prs/{original['id']}/submit-for-approval")
 
     res = client.post(f"/prs/{original['id']}/revise")
     assert res.status_code == 201
@@ -231,8 +234,7 @@ def test_revise_finalized_pr_creates_draft_copy(client: TestClient, plain_user: 
     assert revised["requested_by_id"] == original["requested_by_id"]
     assert revised["section"] == original["section"]
     assert revised["items"][0]["description"] == original["items"][0]["description"]
-    assert revised["budget_control"]["budget_no"] == original["budget_control"]["budget_no"]
-    assert revised["budget_control"]["budget_approval_status"] == "not_submitted"
+    assert revised["budget_control"] is None
 
     # ต้นฉบับต้องไม่ถูกแตะต้อง แต่รู้ตัวว่าถูก Revise ไปแล้วเป็นฉบับไหน
     orig_after = client.get(f"/prs/{original['id']}").json()
@@ -244,12 +246,12 @@ def test_revise_can_be_edited_and_finalized_independently(
     client: TestClient, plain_user: User
 ):
     _login(client)
-    original = client.post("/prs", json=_sample_pr_body()).json()
-    client.get(f"/prs/{original['id']}/pdf")
+    original = client.post("/prs", json=_sample_pr_body(budget_control=None)).json()
+    client.post(f"/prs/{original['id']}/submit-for-approval")
     revised = client.post(f"/prs/{original['id']}/revise").json()
 
     patch_res = client.patch(
-        f"/prs/{revised['id']}", json=_sample_pr_body(remark="แก้ไขหลัง Revise")
+        f"/prs/{revised['id']}", json=_sample_pr_body(budget_control=None, remark="แก้ไขหลัง Revise")
     )
     assert patch_res.status_code == 200
     assert patch_res.json()["remark"] == "แก้ไขหลัง Revise"
@@ -257,8 +259,8 @@ def test_revise_can_be_edited_and_finalized_independently(
 
 def test_revise_already_superseded_pr_rejected(client: TestClient, plain_user: User):
     _login(client)
-    original = client.post("/prs", json=_sample_pr_body()).json()
-    client.get(f"/prs/{original['id']}/pdf")
+    original = client.post("/prs", json=_sample_pr_body(budget_control=None)).json()
+    client.post(f"/prs/{original['id']}/submit-for-approval")
     client.post(f"/prs/{original['id']}/revise")
 
     # Revise ซ้ำจากต้นฉบับเดิมอีกรอบ (ไม่ใช่จากฉบับ Rev.1 ล่าสุด) ต้องถูกปฏิเสธ
@@ -268,10 +270,10 @@ def test_revise_already_superseded_pr_rejected(client: TestClient, plain_user: U
 
 def test_revise_second_time_increments_revision(client: TestClient, plain_user: User):
     _login(client)
-    original = client.post("/prs", json=_sample_pr_body()).json()
-    client.get(f"/prs/{original['id']}/pdf")
+    original = client.post("/prs", json=_sample_pr_body(budget_control=None)).json()
+    client.post(f"/prs/{original['id']}/submit-for-approval")
     rev1 = client.post(f"/prs/{original['id']}/revise").json()
-    client.get(f"/prs/{rev1['id']}/pdf")
+    client.post(f"/prs/{rev1['id']}/submit-for-approval")
 
     res = client.post(f"/prs/{rev1['id']}/revise")
     assert res.status_code == 201
@@ -294,8 +296,8 @@ def test_revise_requires_login(client: TestClient):
 
 def test_revised_pr_pdf_shows_rev_suffix(client: TestClient, plain_user: User, db_session: Session):
     _login(client)
-    original = client.post("/prs", json=_sample_pr_body()).json()
-    client.get(f"/prs/{original['id']}/pdf")
+    original = client.post("/prs", json=_sample_pr_body(budget_control=None)).json()
+    client.post(f"/prs/{original['id']}/submit-for-approval")
     revised = client.post(f"/prs/{original['id']}/revise").json()
 
     orig_pr = db_session.get(PurchasingRequisition, original["id"])
