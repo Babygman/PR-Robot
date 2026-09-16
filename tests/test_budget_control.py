@@ -8,13 +8,16 @@ Excel Upload (Phase 10, 2026-09-09, Business Decision v4.1)
 
 from __future__ import annotations
 
+import hashlib
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import openpyxl
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.security import hash_password
 from app.models import (
     ApprovalRequest,
@@ -514,6 +517,163 @@ def test_ar_signing_actions_record_ip_and_signer_snapshot(
     )
     assert approved_log.detail["signer"]["name"] == "Sig Mgr AR"
     assert approved_log.detail["signer"]["position"] == "Manager"
+
+
+# ───────────────────────── Phase C: Sealed PDF (2026-09-16) ─────────────────────────
+def test_ar_seals_only_after_fa_acknowledge_not_at_finalized(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    """จุด Seal จริงของ AR คือ FA Acknowledge เท่านั้น — ar.status เปลี่ยนเป็น
+    FINALIZED เร็วกว่านั้น (ตั้งแต่ Level แรกอนุมัติผ่าน) ต้องยังไม่ Seal ตอนนั้น เพิ่ง
+    Seal ตอน FA Acknowledge ผ่านจริง — ตรวจ Path/Hash/ไฟล์บน Disk + ดาวน์โหลดซ้ำได้ Bytes
+    เดิมเป๊ะ (พิสูจน์ว่าคืนไฟล์ Seal ตรงๆ ไม่ Re-render)"""
+    manager = _make_user(
+        db_session,
+        name="Seal Mgr AR",
+        email="sealmgrar@example.com",
+        department="Production",
+        position="Manager",
+    )
+    fa = _make_user(
+        db_session, name="Seal FA AR", email="sealfaar@example.com", is_fa=True, position="FA Staff"
+    )
+    _make_level(
+        db_session,
+        department="Production",
+        level_no=1,
+        level_name="Manager",
+        approver_user_id=manager.id,
+    )
+    _make_budget_master(db_session)
+
+    _login_as(client, plain_user.email, "plainpass123")
+    created = client.post("/ars", json=_sample_ar_body()).json()
+    ar_id = created["id"]
+    _submit_for_approval(client, ar_id)
+
+    _login_as(client, manager.email)
+    approved = client.post(f"/ars/{ar_id}/approve-level")
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "finalized"
+
+    # ar.status = finalized แล้ว แต่ยังไม่ถึง FA Acknowledge — ต้องยังไม่ Seal
+    ar_row = db_session.get(ApprovalRequest, ar_id)
+    db_session.refresh(ar_row)
+    assert ar_row.status.value == "finalized"
+    assert ar_row.sealed_pdf_path is None
+
+    _login_as(client, fa.email)
+    acked = client.post(f"/ars/{ar_id}/fa-acknowledge", json={"force": False})
+    assert acked.status_code == 200, acked.text
+
+    db_session.expire_all()
+    ar_row = db_session.get(ApprovalRequest, ar_id)
+    assert ar_row.sealed_pdf_path
+    assert ar_row.sealed_pdf_hash
+    assert ar_row.sealed_at is not None
+
+    sealed_file = Path(settings.generated_dir) / ar_row.sealed_pdf_path
+    assert sealed_file.exists()
+    on_disk_bytes = sealed_file.read_bytes()
+    assert hashlib.sha256(on_disk_bytes).hexdigest() == ar_row.sealed_pdf_hash
+
+    first = client.get(f"/ars/{ar_id}/pdf")
+    assert first.status_code == 200
+    second = client.get(f"/ars/{ar_id}/pdf")
+    assert second.status_code == 200
+    assert first.content == second.content == on_disk_bytes
+
+
+def test_ar_seals_pdf_when_no_levels_configured(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    """แผนกไม่มี Level อนุมัติเลย — ข้ามตรงไป FA Acknowledge (ar.status Finalized ทันที
+    ตอน Submit) แต่ Seal ต้องยังรอถึง FA Acknowledge เหมือนกรณีมี Level ทุกประการ"""
+    fa = _make_user(
+        db_session,
+        name="Seal FA AR2",
+        email="sealfaar2@example.com",
+        is_fa=True,
+        position="FA Staff",
+    )
+    _make_budget_master(db_session)
+
+    _login_as(client, plain_user.email, "plainpass123")
+    created = client.post("/ars", json=_sample_ar_body()).json()
+    ar_id = created["id"]
+    submitted = _submit_for_approval(client, ar_id)
+    assert submitted["status"] == "finalized"
+
+    ar_row = db_session.get(ApprovalRequest, ar_id)
+    db_session.refresh(ar_row)
+    assert ar_row.sealed_pdf_path is None
+
+    _login_as(client, fa.email)
+    acked = client.post(f"/ars/{ar_id}/fa-acknowledge", json={"force": False})
+    assert acked.status_code == 200, acked.text
+
+    db_session.expire_all()
+    ar_row = db_session.get(ApprovalRequest, ar_id)
+    assert ar_row.sealed_pdf_path
+    assert ar_row.sealed_pdf_hash
+
+
+def test_sealed_ar_pdf_embeds_signature_log_with_ip(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    """PDF ที่ Seal แล้วต้องฝัง Signature Log (Name/Position/Date-time/IP) ลงในตัวไฟล์
+    เอง (Design §3.2.3) — ตรวจผ่าน render_ar_html ตรงๆ (String) แทนการ Parse PDF Bytes
+    กลับมา (Pattern เดียวกับ tests/test_ar_pdf_security.py)"""
+    manager = _make_user(
+        db_session,
+        name="Log Mgr AR",
+        email="logmgrar@example.com",
+        department="Production",
+        position="Manager",
+    )
+    fa = _make_user(
+        db_session, name="Log FA AR", email="logfaar@example.com", is_fa=True, position="FA Staff"
+    )
+    _make_level(
+        db_session,
+        department="Production",
+        level_no=1,
+        level_name="Manager",
+        approver_user_id=manager.id,
+    )
+    _make_budget_master(db_session)
+
+    _login_as(client, plain_user.email, "plainpass123")
+    created = client.post("/ars", json=_sample_ar_body()).json()
+    ar_id = created["id"]
+    _submit_for_approval(client, ar_id)
+
+    _login_as(client, manager.email)
+    client.post(f"/ars/{ar_id}/approve-level").raise_for_status()
+
+    _login_as(client, fa.email)
+    acked = client.post(f"/ars/{ar_id}/fa-acknowledge", json={"force": False})
+    assert acked.status_code == 200, acked.text
+
+    db_session.expire_all()
+    ar_row = db_session.get(ApprovalRequest, ar_id)
+    html_out = render_ar_html(
+        db_session,
+        ar_row,
+        signature_log=[
+            {
+                "action_label": "F&A Acknowledged",
+                "name": "Log FA AR",
+                "position": "FA Staff",
+                "timestamp": "16/09/2026 00:00 UTC",
+                "ip_address": "127.0.0.1",
+            }
+        ],
+    )
+    assert "Electronic Signature Log" in html_out
+    assert "Log FA AR" in html_out
+    assert "FA Staff" in html_out
+    assert "127.0.0.1" in html_out
 
 
 # ───────────────────────── Admin Override ─────────────────────────

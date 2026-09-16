@@ -265,6 +265,21 @@
   .a-sig-date { font-weight: 400; font-size: 6.4px; color: #6d7078; margin-top: 0.3mm; }
   .req-only-row { margin-top: 3.5mm; max-width: 60mm; }
 
+  /* ---------------- Signature Log (Electronic Signature Hardening Phase C, 2026-09-16)
+     ขึ้นเฉพาะ PDF ที่ Seal แล้ว (signature_log ไม่ None) — ดู
+     app/services/pdf_sealing.py::seal_pr — Design §3.2.3 บังคับให้ฝัง Name/Position/
+     Date-time/IP ลงในตัว PDF เอง ไม่ใช่แค่แสดงบนหน้าเว็บ */
+  .seal-block { margin-top: 4mm; }
+  table.seal-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+  .seal-table col.s-action { width: 26%; }
+  .seal-table col.s-name { width: 22%; }
+  .seal-table col.s-pos { width: 20%; }
+  .seal-table col.s-time { width: 20%; }
+  .seal-table col.s-ip { width: 12%; }
+  .seal-table th { background: #f2efe9; border-bottom: 1px solid #dcd8d1; text-transform: uppercase; font-size: 6.2px; letter-spacing: 0.08em; font-weight: 600; text-align: left; padding: 1.2mm 2mm; }
+  .seal-table td { border-bottom: 1px solid #e6e2db; padding: 1.3mm 2mm; font-size: 7px; color: #16181c; }
+  .seal-note { margin-top: 1.5mm; font-size: 6.4px; color: #8a8d94; }
+
   .footer { display: flex; justify-content: space-between; margin-top: 5mm; font-size: 8px; color: #6d7078; }
 </style>
 </head>
@@ -400,6 +415,30 @@
       <div class="sign-label">Requested by</div>
       <div class="sign-line{{ '' if pr.requested_by_name else ' placeholder' }}">{{ pr.requested_by_name or "Signature" }}</div>
     </div>
+
+    {% if signature_log %}
+    <div class="seal-block">
+      <div class="auth-title">Electronic Signature Log</div>
+      <table class="seal-table">
+        <colgroup><col class="s-action"><col class="s-name"><col class="s-pos"><col class="s-time"><col class="s-ip"></colgroup>
+        <thead>
+          <tr><th>Action</th><th>Name</th><th>Position</th><th>Date / Time (UTC)</th><th>IP Address</th></tr>
+        </thead>
+        <tbody>
+          {% for entry in signature_log %}
+          <tr>
+            <td>{{ entry.action_label }}</td>
+            <td>{{ entry.name }}</td>
+            <td>{{ entry.position or "" }}</td>
+            <td class="mono">{{ entry.timestamp }}</td>
+            <td class="mono">{{ entry.ip_address or "" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="seal-note">This document has been electronically sealed by PR-Robot at the point of finalization. Its content is locked and cannot be altered thereafter.</div>
+    </div>
+    {% endif %}
 
     <div class="footer">
       <span class="mono">FM-PU-02 &middot; Revision 3</span>

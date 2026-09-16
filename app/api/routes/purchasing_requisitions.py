@@ -89,6 +89,7 @@ from app.schemas.purchasing_requisition import (
 )
 from app.services import pr_budget_workflow
 from app.services.audit_signature import build_signer_snapshot
+from app.services.pdf_sealing import read_sealed_pdf, seal_pr
 from app.services.pr_numbering import allocate_pr_no
 from app.services.pr_pdf import render_pr_pdf
 from app.services.system_log import get_client_ip
@@ -527,10 +528,15 @@ def get_pr_pdf(
 ) -> Response:
     """Phase 11 (2026-09-15): พิมพ์/ดาวน์โหลด PDF ไม่มีผลข้างเคียงต่อ PR อีกต่อไป (เดิม
     Finalize อัตโนมัติตอนพิมพ์ครั้งแรก — ย้ายไป submit_pr_for_approval แทนแล้ว Pattern
-    เดียวกับ AR Correction 2026-09-10 ทุกประการ) พิมพ์ดูกี่ครั้งก็ได้ไม่ว่าจะสถานะไหน"""
+    เดียวกับ AR Correction 2026-09-10 ทุกประการ) พิมพ์ดูกี่ครั้งก็ได้ไม่ว่าจะสถานะไหน
+
+    Phase C (2026-09-16, Design §3.2.3): ถ้า PR นี้ Seal ไปแล้ว (sealed_pdf_path ไม่
+    None) คืนไฟล์ที่ Seal ไว้ตรงๆ ไม่ Re-render จาก Template ปัจจุบันอีกต่อไป (กัน
+    Template เปลี่ยนภายหลังแล้วเอกสารที่เคย Finalized หน้าตาเปลี่ยนตาม) — ก่อน Seal
+    (ยังเป็น Draft/รอ Level อนุมัติอยู่) ยัง Render สดตามปกติทุกครั้งเหมือนเดิม"""
     pr = _get_pr_or_404(db, pr_id)
     _check_pr_edit_access(pr, current_user)
-    pdf_bytes = render_pr_pdf(db, pr)
+    pdf_bytes = read_sealed_pdf(pr.sealed_pdf_path) if pr.sealed_pdf_path else render_pr_pdf(db, pr)
 
     rev_suffix = f"-Rev{pr.revision}" if pr.revision else ""
     return Response(
@@ -607,6 +613,12 @@ def submit_pr_for_approval(
                 ip_address=client_ip,
             )
         )
+    if pr.status == PRStatus.FINALIZED:
+        # Phase C (2026-09-16): Seal ครั้งเดียวตอน Finalize จริง — flush ก่อนเพื่อให้
+        # AuditLog ที่เพิ่ง add() ด้านบน (ยังไม่ Commit — Session นี้ autoflush=False)
+        # ถูก Query เจอตอนสร้าง Signature Log ฝังใน PDF (ดู pdf_sealing._build_signature_log)
+        db.flush()
+        seal_pr(db, pr)
     db.commit()
     db.refresh(pr)
     return _to_pr_read(db, pr)
@@ -659,6 +671,11 @@ def approve_pr_level(
                 ip_address=client_ip,
             )
         )
+    if was_draft and pr.status == PRStatus.FINALIZED:
+        # Phase C (2026-09-16): Seal ครั้งเดียวตอน Level สุดท้ายอนุมัติผ่านจริง (ดู
+        # Docstring ของ submit_pr_for_approval สำหรับเหตุผลของ db.flush())
+        db.flush()
+        seal_pr(db, pr)
     db.commit()
     db.refresh(pr)
     return _to_pr_read(db, pr)

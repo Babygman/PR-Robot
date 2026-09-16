@@ -9,12 +9,15 @@ Workflow เลย — และ budget_control อยู่ Nested ใต้ pr
 
 from __future__ import annotations
 
+import hashlib
 from decimal import Decimal
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models import AuditLog, PRApprovalLevel, User
+from app.core.config import settings
+from app.models import AuditLog, PRApprovalLevel, PurchasingRequisition, User
 from tests.test_budget_control import _make_budget_master, _make_user
 from tests.test_purchasing_requisitions import _login, _sample_pr_body
 
@@ -635,3 +638,140 @@ def test_signing_actions_record_ip_and_signer_snapshot(
     )
     assert approved_log.detail["signer"]["name"] == "Sig Mgr PR"
     assert approved_log.detail["signer"]["position"] == "Manager"
+
+
+# ───────────────────────── Phase C: Sealed PDF (2026-09-16) ─────────────────────────
+def test_pr_seals_pdf_on_last_level_approved(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    """Level สุดท้ายอนุมัติผ่าน (pr.status -> FINALIZED) ต้อง Seal ทันที: มี
+    sealed_pdf_path/sealed_pdf_hash/sealed_at ครบ, ไฟล์มีอยู่จริงใน settings.generated_dir,
+    Hash ตรงกับ SHA-256 ของ Bytes ไฟล์จริง และดาวน์โหลดซ้ำหลายครั้งต้องได้ Bytes เดิมเป๊ะ
+    (พิสูจน์ว่าคืนไฟล์ Seal ตรงๆ ไม่ได้ Re-render ใหม่ทุกครั้ง)"""
+    manager = _make_user(
+        db_session,
+        name="Seal Mgr PR",
+        email="sealmgrpr@example.com",
+        department="Production",
+        position="Manager",
+    )
+    _make_pr_level(
+        db_session,
+        department="Production",
+        level_no=1,
+        level_name="Manager",
+        approver_user_id=manager.id,
+    )
+    _pr_budget_master(db_session)
+
+    _login(client)
+    created = client.post("/prs", json=_sample_pr_body()).json()
+    pr_id = created["id"]
+    submitted = client.post(f"/prs/{pr_id}/submit-for-approval")
+    assert submitted.status_code == 200, submitted.text
+
+    # ก่อน Finalize — ยังไม่ Seal
+    pr_row = db_session.get(PurchasingRequisition, pr_id)
+    db_session.refresh(pr_row)
+    assert pr_row.sealed_pdf_path is None
+
+    _login_as(client, manager.email)
+    approved = client.post(f"/prs/{pr_id}/approve-level")
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "finalized"
+
+    db_session.expire_all()
+    pr_row = db_session.get(PurchasingRequisition, pr_id)
+    assert pr_row.sealed_pdf_path
+    assert pr_row.sealed_pdf_hash
+    assert pr_row.sealed_at is not None
+
+    sealed_file = Path(settings.generated_dir) / pr_row.sealed_pdf_path
+    assert sealed_file.exists()
+    on_disk_bytes = sealed_file.read_bytes()
+    assert hashlib.sha256(on_disk_bytes).hexdigest() == pr_row.sealed_pdf_hash
+
+    # get_pr_pdf ต้องเป็น Admin หรือเจ้าของ PR เท่านั้น (_check_pr_edit_access) — ผู้อนุมัติ
+    # Level เฉยๆ ไม่มีสิทธิ์พิมพ์ PDF ใบนี้ ต้อง Login กลับมาเป็นเจ้าของก่อน
+    _login(client)
+    first = client.get(f"/prs/{pr_id}/pdf")
+    assert first.status_code == 200
+    second = client.get(f"/prs/{pr_id}/pdf")
+    assert second.status_code == 200
+    assert first.content == second.content == on_disk_bytes
+
+
+def test_pr_seals_pdf_on_submit_without_budget_control(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    """PR ไม่มี budget_control เลย — Finalize ทันทีตอน Submit ต้อง Seal ทันทีเช่นกัน (ไม่
+    ใช่แค่กรณีผ่าน Level อนุมัติเท่านั้น)"""
+    _login(client)
+    created = client.post("/prs", json=_sample_pr_body(budget_control=None)).json()
+    pr_id = created["id"]
+
+    res = client.post(f"/prs/{pr_id}/submit-for-approval")
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "finalized"
+
+    pr_row = db_session.get(PurchasingRequisition, pr_id)
+    db_session.refresh(pr_row)
+    assert pr_row.sealed_pdf_path
+    assert pr_row.sealed_pdf_hash
+
+    pdf = client.get(f"/prs/{pr_id}/pdf")
+    assert pdf.status_code == 200
+    assert pdf.content
+
+
+def test_sealed_pr_pdf_embeds_signature_log_with_ip(
+    client: TestClient, plain_user: User, db_session: Session
+):
+    """PDF ที่ Seal แล้วต้องฝัง Signature Log (Name/Position/Date-time/IP) ลงในตัวไฟล์เอง
+    (Design §3.2.3) — ตรวจผ่าน render_pr_html ตรงๆ (String) แทนการ Parse PDF Bytes กลับมา"""
+    from app.services.pr_pdf import render_pr_html
+
+    manager = _make_user(
+        db_session,
+        name="Log Mgr PR",
+        email="logmgrpr@example.com",
+        department="Production",
+        position="Manager",
+    )
+    _make_pr_level(
+        db_session,
+        department="Production",
+        level_no=1,
+        level_name="Manager",
+        approver_user_id=manager.id,
+    )
+    _pr_budget_master(db_session)
+
+    _login(client)
+    created = client.post("/prs", json=_sample_pr_body()).json()
+    pr_id = created["id"]
+    client.post(f"/prs/{pr_id}/submit-for-approval").raise_for_status()
+
+    _login_as(client, manager.email)
+    approved = client.post(f"/prs/{pr_id}/approve-level")
+    assert approved.status_code == 200, approved.text
+
+    db_session.expire_all()
+    pr_row = db_session.get(PurchasingRequisition, pr_id)
+    html_out = render_pr_html(
+        db_session,
+        pr_row,
+        signature_log=[
+            {
+                "action_label": "Approved — Level 1",
+                "name": "Log Mgr PR",
+                "position": "Manager",
+                "timestamp": "16/09/2026 00:00 UTC",
+                "ip_address": "127.0.0.1",
+            }
+        ],
+    )
+    assert "Electronic Signature Log" in html_out
+    assert "Log Mgr PR" in html_out
+    assert "Manager" in html_out
+    assert "127.0.0.1" in html_out

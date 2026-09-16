@@ -123,6 +123,16 @@ class PurchasingRequisition(Base):
 
     remark: Mapped[str | None] = mapped_column(Text)
 
+    # --- Sealed PDF (Electronic Signature Hardening Phase C, 2026-09-16, Design §3.2.3) ---
+    # เขียนครั้งเดียวตอน pr.status เปลี่ยนเป็น FINALIZED จริง (ดู
+    # app/services/pdf_sealing.py::seal_pr) — หลังจากนั้น GET /prs/{id}/pdf คืนไฟล์นี้
+    # เสมอ ไม่ Re-render จาก Template ปัจจุบันอีก กัน Template เปลี่ยนภายหลังแล้วเอกสารที่
+    # เคย Finalized หน้าตาเปลี่ยนตาม — sealed_pdf_path เป็น Path สัมพัทธ์กับ
+    # settings.generated_dir (เช่น "pr-123.pdf") ไม่ใช่ Path เต็ม
+    sealed_pdf_path: Mapped[str | None] = mapped_column(String(255))
+    sealed_pdf_hash: Mapped[str | None] = mapped_column(String(64))
+    sealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

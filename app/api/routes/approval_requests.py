@@ -73,6 +73,7 @@ from app.services import budget_workflow
 from app.services.ar_numbering import allocate_ar_no, format_ar_no
 from app.services.ar_pdf import render_ar_pdf
 from app.services.audit_signature import build_signer_snapshot
+from app.services.pdf_sealing import read_sealed_pdf, seal_ar
 from app.services.system_log import get_client_ip
 from app.services.user_lookup import resolve_user_names
 
@@ -580,9 +581,15 @@ def get_ar_pdf(
 ) -> Response:
     """Correction 2026-09-10: พิมพ์/ดาวน์โหลด PDF ไม่มีผลข้างเคียงต่อ AR อีกต่อไป (เดิม
     Finalize + เริ่ม Workflow ให้อัตโนมัติตอนพิมพ์ครั้งแรก — ย้ายไป submit_ar_for_approval
-    แทนแล้ว) พิมพ์ดูกี่ครั้งก็ได้ไม่ว่าจะสถานะไหน"""
+    แทนแล้ว) พิมพ์ดูกี่ครั้งก็ได้ไม่ว่าจะสถานะไหน
+
+    Phase C (2026-09-16, Design §3.2.3): ถ้า AR นี้ Seal ไปแล้ว (sealed_pdf_path ไม่
+    None — เกิดตอน FA Acknowledge ผ่านจริงเท่านั้น ไม่ใช่แค่ ar.status = FINALIZED) คืน
+    ไฟล์ที่ Seal ไว้ตรงๆ ไม่ Re-render จาก Template ปัจจุบันอีกต่อไป — ก่อนหน้านั้น
+    (รวมถึงตอน ar.status FINALIZED แล้วแต่ยังรอ Level ถัดไป/FA Acknowledge อยู่) ยัง
+    Render สดตามปกติทุกครั้งเหมือนเดิม"""
     ar = _get_ar_or_404(db, ar_id)
-    pdf_bytes = render_ar_pdf(db, ar)
+    pdf_bytes = read_sealed_pdf(ar.sealed_pdf_path) if ar.sealed_pdf_path else render_ar_pdf(db, ar)
 
     rev_suffix = f"-Rev{ar.revision}" if ar.revision else ""
     return Response(
@@ -698,6 +705,12 @@ def fa_acknowledge_ar(
             ip_address=get_client_ip(request),
         )
     )
+    # Phase C (2026-09-16, Design §3.2.3): FA Acknowledge คือจุด Finalized จริงของ AR
+    # (ต่างจาก ar.status ที่ FINALIZED เร็วกว่านี้แล้วตั้งแต่ Level แรกอนุมัติผ่าน) —
+    # Seal ครั้งเดียวตรงนี้ — flush ก่อนให้ AuditLog ที่เพิ่ง add() (Session นี้
+    # autoflush=False) ถูก Query เจอตอนสร้าง Signature Log ฝังใน PDF
+    db.flush()
+    seal_ar(db, ar)
     db.commit()
     db.refresh(ar)
     return _to_ar_read(db, ar)

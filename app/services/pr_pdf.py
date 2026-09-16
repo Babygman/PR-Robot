@@ -72,10 +72,17 @@ def _resolve_names(db: Session, pr: PurchasingRequisition) -> dict[str, str | No
     return {"requested_by_name": names.get(pr.requested_by_id)}
 
 
-def render_pr_html(db: Session, pr: PurchasingRequisition) -> str:
+def render_pr_html(
+    db: Session, pr: PurchasingRequisition, *, signature_log: list[dict] | None = None
+) -> str:
     """Render แค่ HTML String (แยกจากขั้น WeasyPrint แปลงเป็น PDF) — เปิดให้ Test
     ตรวจสอบ Autoescape ได้ตรงๆ โดยไม่ต้อง Parse PDF Bytes กลับมา (ดู
     tests/test_pr_pdf_security.py)
+
+    signature_log (Phase C, 2026-09-16, Design §3.2.3): รายการ Signature Log ที่จะฝังลง
+    ท้ายเอกสาร (Name/Position/Date-time/IP) — ส่งมาเฉพาะตอน Seal ครั้งเดียวตอน Finalize
+    จริงเท่านั้น (ดู app/services/pdf_sealing.py::seal_pr) การเรียกแบบปกติ (พิมพ์/
+    ดาวน์โหลดระหว่างขั้นตอน) ไม่ส่งพารามิเตอร์นี้ — None แปลว่าไม่แสดง Section นี้เลย
     """
     # Security Review (Phase 8, 2026-09-02): Autoescape ต้องเปิดเสมอ — description/
     # reason/remark/section/division ฯลฯ อาจมาจาก Gemini AI สกัดข้อมูลจากเอกสารที่
@@ -164,12 +171,15 @@ def render_pr_html(db: Session, pr: PurchasingRequisition) -> str:
         display_items=display_items,
         budget=budget_view,
         authority_signatures=authority_signatures,
+        signature_log=signature_log,
         generated_at=_now_str(),
     )
 
 
-def render_pr_pdf(db: Session, pr: PurchasingRequisition) -> bytes:
-    html_out = render_pr_html(db, pr)
+def render_pr_pdf(
+    db: Session, pr: PurchasingRequisition, *, signature_log: list[dict] | None = None
+) -> bytes:
+    html_out = render_pr_html(db, pr, signature_log=signature_log)
     return HTML(string=html_out, base_url=str(_TEMPLATE_DIR)).write_pdf()
 
 

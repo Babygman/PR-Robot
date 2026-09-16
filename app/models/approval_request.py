@@ -195,6 +195,16 @@ class ApprovalRequest(Base):
     # Mark ไว้ว่า FA Acknowledge ทั้งที่เกินงบ (Force) — โชว์ชัดใน UI/Report
     budget_overridden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # --- Sealed PDF (Electronic Signature Hardening Phase C, 2026-09-16, Design §3.2.3) ---
+    # เขียนครั้งเดียวตอน FA Acknowledge ผ่านจริง (budget_approval_status = APPROVED) —
+    # นี่คือจุด "Finalized จริง" ของ AR (ต่างจาก ar.status ที่เปลี่ยนเป็น FINALIZED เร็ว
+    # กว่านั้นตอน Level แรกอนุมัติผ่าน/ไม่มี Level เลย — แค่ล็อกแก้ไขเท่านั้น ยังไม่ใช่จุด
+    # ปิดงบจริง) ดู app/services/pdf_sealing.py::seal_ar — หลังจากนั้น GET /ars/{id}/pdf
+    # คืนไฟล์นี้เสมอ ไม่ Re-render จาก Template ปัจจุบันอีก
+    sealed_pdf_path: Mapped[str | None] = mapped_column(String(255))
+    sealed_pdf_hash: Mapped[str | None] = mapped_column(String(64))
+    sealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

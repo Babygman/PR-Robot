@@ -49,13 +49,19 @@ def _fmt_date(value) -> str:
     return value.strftime("%d/%m/%Y")
 
 
-def render_ar_html(db: Session, ar: ApprovalRequest) -> str:
+def render_ar_html(
+    db: Session, ar: ApprovalRequest, *, signature_log: list[dict] | None = None
+) -> str:
     """Render แค่ HTML String (แยกจากขั้น WeasyPrint แปลงเป็น PDF) — เปิดให้ Test
     ตรวจสอบ Autoescape ได้ตรงๆ โดยไม่ต้อง Parse PDF Bytes กลับมา (ดู
     tests/test_ar_pdf_security.py) — เหตุผลของ Autoescape เหมือน render_pr_html
     ทุกประการ (subject/description/suppliers ฯลฯ เป็นข้อความที่ผู้ใช้พิมพ์เองตรงๆ
     ถ้าไม่ Escape จะเปิดช่องให้ฝัง Tag แปลกปลอมเข้าไปใน HTML ก่อนส่งให้ WeasyPrint
     Render เป็น PDF ซึ่งอาจนำไปสู่ SSRF ผ่าน WeasyPrint url_fetcher เริ่มต้น)
+
+    signature_log (Phase C, 2026-09-16, Design §3.2.3): ดู Docstring เดียวกันใน
+    render_pr_html ทุกประการ — ส่งมาเฉพาะตอน Seal ครั้งเดียวตอน FA Acknowledge ผ่านจริง
+    (ดู app/services/pdf_sealing.py::seal_ar)
     """
     env = Environment(
         loader=FileSystemLoader(str(_TEMPLATE_DIR)),
@@ -146,12 +152,15 @@ def render_ar_html(db: Session, ar: ApprovalRequest) -> str:
         real_item_count=real_item_count,
         authority_signatures=authority_signatures,
         fa_signature=fa_signature,
+        signature_log=signature_log,
         generated_at=_now_str(),
     )
 
 
-def render_ar_pdf(db: Session, ar: ApprovalRequest) -> bytes:
-    html_out = render_ar_html(db, ar)
+def render_ar_pdf(
+    db: Session, ar: ApprovalRequest, *, signature_log: list[dict] | None = None
+) -> bytes:
+    html_out = render_ar_html(db, ar, signature_log=signature_log)
     return HTML(string=html_out, base_url=str(_TEMPLATE_DIR)).write_pdf()
 
 
